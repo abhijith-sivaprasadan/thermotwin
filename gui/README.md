@@ -20,6 +20,15 @@ needed Win32 libraries (`user32`, `gdi32`, `comctl32`, `kernel32`).
 
 Run `thermotwin-gui.exe` from the repository root.
 
+If the GUI closes immediately, build the console-attached diagnostic version:
+
+```powershell
+make gui-debug
+.\thermotwin-gui-debug.exe
+```
+
+The GUI also writes a short startup trace to `gui_debug.log`.
+
 ## Current scope
 
 - Live demand slider.

@@ -30,3 +30,4 @@ Thumbs.db
 # output/*.pdf
 output/gui_last_run.txt
 output/results_gui_run.csv
+gui_debug.log

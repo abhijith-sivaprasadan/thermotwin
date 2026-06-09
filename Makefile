@@ -7,6 +7,7 @@
 #   make debug      # build with bounds-checking and warnings
 #   make run        # build, then run the design-point case
 #   make gui        # build the optional native Windows GUI launcher
+#   make gui-debug  # build the GUI with a console attached for diagnostics
 #   make clean      # remove build artefacts
 #
 # fpm users can ignore this file and simply use `fpm build` / `fpm test`.
@@ -35,8 +36,9 @@ TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
 
 EXE := thermotwin
 GUI_EXE := thermotwin-gui.exe
+GUI_DEBUG_EXE := thermotwin-gui-debug.exe
 
-.PHONY: all tests check debug run gui clean
+.PHONY: all tests check debug run gui gui-debug clean
 .SECONDEXPANSION:
 
 all: $(EXE)
@@ -98,5 +100,10 @@ gui: $(GUI_EXE)
 $(GUI_EXE): gui/gui_win32.f90 $(OBJS)
 	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< -o $@ -mwindows -luser32 -lgdi32 -lcomctl32 -lkernel32
 
+gui-debug: $(GUI_DEBUG_EXE)
+
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< -o $@ -luser32 -lgdi32 -lcomctl32 -lkernel32
+
 clean:
-	rm -rf $(BUILD) $(EXE) $(GUI_EXE)
+	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)

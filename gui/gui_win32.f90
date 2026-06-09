@@ -55,6 +55,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_RESET = 203_c_int
     integer(c_int), parameter :: TIMER_ID = 1_c_int
     integer(c_int), parameter :: TIMER_MS = 250_c_int
+    character(len=*), parameter :: DEBUG_LOG = "gui_debug.log"
 
     real(dp), parameter :: DEMAND_MIN_MW = 10.0_dp
     real(dp), parameter :: DEMAND_MAX_MW = 100.0_dp
@@ -244,6 +245,15 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function SetWindowTextA
 
+        function MessageBoxA(hWnd, lpText, lpCaption, uType) bind(C, name="MessageBoxA") result(choice)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hWnd
+            type(c_ptr), value :: lpText
+            type(c_ptr), value :: lpCaption
+            integer(c_int), value :: uType
+            integer(c_int) :: choice
+        end function MessageBoxA
+
         function SendMessageA(hwnd, msg, wParam, lParam) bind(C, name="SendMessageA") result(lres)
             import :: c_int, c_intptr_t, c_ptr
             type(c_ptr), value :: hwnd
@@ -396,11 +406,15 @@ contains
         integer(c_int) :: atom, ok
         integer(c_intptr_t) :: lres
 
+        call reset_debug_log()
+        call log_debug("startup: entering run_gui")
         call InitCommonControls()
+        call log_debug("startup: InitCommonControls returned")
         call make_c_string("ThermoTwinFGridDashboard", class_name)
         call make_c_string("ThermoTwin-F Grid Balancer", title)
 
         h_instance = GetModuleHandleA(c_null_ptr)
+        call log_debug("startup: acquired module handle")
 
         wc%cbSize = int(c_sizeof(wc), c_int)
         wc%style = 0_c_int
@@ -416,15 +430,24 @@ contains
         wc%hIconSm = c_null_ptr
 
         atom = RegisterClassExA(wc)
-        if (atom == 0_c_int) stop "Could not register ThermoTwin-F GUI window class."
+        if (atom == 0_c_int) then
+            call fatal_gui("Could not register ThermoTwin-F GUI window class.")
+            stop
+        end if
+        call log_debug("startup: registered window class")
 
         hwnd = CreateWindowExA(0_c_int, c_loc(class_name), c_loc(title), &
             WS_OVERLAPPEDWINDOW + WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, &
             1180_c_int, 860_c_int, c_null_ptr, c_null_ptr, h_instance, c_null_ptr)
-        if (.not. c_associated(hwnd)) stop "Could not create ThermoTwin-F GUI window."
+        if (.not. c_associated(hwnd)) then
+            call fatal_gui("Could not create ThermoTwin-F GUI window.")
+            stop
+        end if
+        call log_debug("startup: created main window")
 
         ok = ShowWindow(hwnd, SW_SHOW)
         ok = UpdateWindow(hwnd)
+        call log_debug("startup: entering message loop")
 
         do while (GetMessageA(message, c_null_ptr, 0_c_int, 0_c_int) > 0_c_int)
             ok = TranslateMessage(message)
@@ -432,11 +455,13 @@ contains
         end do
 
         if (ok < 0_c_int .and. lres == -1_c_intptr_t) then
-            stop "ThermoTwin-F GUI message loop failed."
+            call fatal_gui("ThermoTwin-F GUI message loop failed.")
+            stop
         end if
+        call log_debug("shutdown: message loop exited")
     end subroutine run_gui
 
-    function window_proc(hwnd, msg, wParam, lParam) bind(C) result(lres)
+    recursive function window_proc(hwnd, msg, wParam, lParam) bind(C) result(lres)
         type(c_ptr), value :: hwnd
         integer(c_int), value :: msg
         integer(c_intptr_t), value :: wParam
@@ -448,6 +473,7 @@ contains
 
         select case (msg)
         case (WM_CREATE)
+            call log_debug("message: WM_CREATE")
             h_main = hwnd
             call create_controls(hwnd)
             call read_controls()
@@ -455,6 +481,7 @@ contains
             call update_control_labels()
             call append_history()
             lres = SetTimer(hwnd, int(TIMER_ID, c_intptr_t), TIMER_MS, c_null_ptr)
+            call log_debug("message: WM_CREATE complete")
             lres = 0_c_intptr_t
             return
 
@@ -492,6 +519,7 @@ contains
             return
 
         case (WM_DESTROY)
+            call log_debug("message: WM_DESTROY")
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
             call PostQuitMessage(0_c_int)
             lres = 0_c_intptr_t
@@ -560,6 +588,9 @@ contains
         hwnd = CreateWindowExA(0_c_int, c_loc(c_class), c_loc(c_text), style, &
             int(x, c_int), int(y, c_int), int(width, c_int), int(height, c_int), &
             parent, int_to_cptr(control_id), h_instance, c_null_ptr)
+        if (.not. c_associated(hwnd)) then
+            call log_debug("control: failed to create " // trim(class_name) // " " // trim(text))
+        end if
     end function create_child
 
     subroutine configure_slider(hwnd, min_value, max_value, position, tick_freq)
@@ -778,7 +809,6 @@ contains
         integer(c_int), parameter :: DEMAND = int(Z'004B5FD7', c_int)
         integer(c_int), parameter :: ALERT = int(Z'002A48D9', c_int)
         integer(c_int), parameter :: OK = int(Z'0064A05A', c_int)
-        integer(c_int), parameter :: WARN = int(Z'0000A5FF', c_int)
         integer :: x0, y0, w, h
         real(dp) :: scale_MW
         character(len=96) :: status, subtitle
@@ -935,6 +965,7 @@ contains
         integer(c_int) :: color
         character(len=128) :: line1, line2
 
+        if (height < 1) return
         if (grid%battery_soc_pct < 15.0_dp .or. grid%battery_soc_pct > 95.0_dp) then
             color = LOW
         else
@@ -1035,8 +1066,9 @@ contains
         integer, intent(in) :: x, y, width, height
         integer :: center_x, marker_x
         real(dp) :: frac
-        character(len=64) :: text
+        character(len=96) :: text
 
+        if (height < 1) return
         call fill_box(hdc, x, y, x + width, y + height, int(Z'00EFECE8', c_int))
         center_x = x + width / 2
         call fill_box(hdc, center_x - 28, y, center_x + 28, y + height, int(Z'00D6EBD2', c_int))
@@ -1195,9 +1227,41 @@ contains
         character(kind=c_char), allocatable, target :: c_text(:)
         integer(c_int) :: ok
 
+        if (.not. c_associated(hwnd)) return
         call make_c_string(text, c_text)
         ok = SetWindowTextA(hwnd, c_loc(c_text))
     end subroutine set_text
+
+    subroutine reset_debug_log()
+        integer :: unit, ios
+
+        open(newunit=unit, file=DEBUG_LOG, status="replace", action="write", iostat=ios)
+        if (ios == 0) then
+            write(unit, "(A)") "ThermoTwin-F GUI debug log"
+            close(unit)
+        end if
+    end subroutine reset_debug_log
+
+    subroutine log_debug(message)
+        character(len=*), intent(in) :: message
+        integer :: unit, ios
+
+        open(newunit=unit, file=DEBUG_LOG, status="old", position="append", action="write", iostat=ios)
+        if (ios /= 0) return
+        write(unit, "(A)") trim(message)
+        close(unit)
+    end subroutine log_debug
+
+    subroutine fatal_gui(message)
+        character(len=*), intent(in) :: message
+        character(kind=c_char), allocatable, target :: c_text(:), c_caption(:)
+        integer(c_int) :: ignored
+
+        call log_debug("fatal: " // trim(message))
+        call make_c_string(message, c_text)
+        call make_c_string("ThermoTwin-F GUI", c_caption)
+        ignored = MessageBoxA(c_null_ptr, c_loc(c_text), c_loc(c_caption), 0_c_int)
+    end subroutine fatal_gui
 
     subroutine make_c_string(text, c_text)
         character(len=*), intent(in) :: text
