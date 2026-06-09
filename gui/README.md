@@ -25,15 +25,18 @@ Run `thermotwin-gui.exe` from the repository root.
 - Live demand slider.
 - Live renewable supply slider.
 - Signed storage slider for charge/discharge.
+- Battery energy state with capacity, round-trip efficiency and state of charge.
 - Gas-turbine dispatch slider.
 - Ambient-temperature and firing-temperature sliders.
 - Auto-balance mode that ramps gas dispatch toward supply/demand balance.
-- Balance, frequency, reserve, power-flow and KPI visuals drawn with Win32 GDI.
+- Balance, frequency, reserve, battery SOC, power-flow and KPI visuals drawn
+  with Win32 GDI.
+- Rolling live traces for frequency, demand and gas dispatch.
 
 ## Likely next steps
 
-- Add battery state-of-charge and storage energy limits.
 - Add load-shed/curtailment actions and event logging.
 - Add multiple generators with unit commitment constraints.
 - Add CSV export for time-series scenarios.
-- Add a plot panel for live traces of frequency, demand and dispatch.
+- Add operator presets for stress events such as renewable drop, demand spike
+  and generator trip.

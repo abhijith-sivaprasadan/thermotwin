@@ -64,7 +64,8 @@ The repository also includes an early native Windows GUI written in Fortran. It
 uses Win32 controls and GDI drawing through `iso_c_binding`, links directly to
 the simulator modules, and lets you manipulate demand, renewables, storage, gas
 dispatch, ambient temperature, and firing temperature while watching live grid
-balance and frequency estimates.
+balance, battery state of charge, frequency estimates, reserves, and rolling
+time-series traces.
 
 ```powershell
 make gui

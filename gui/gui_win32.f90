@@ -61,9 +61,13 @@ module thermotwin_win32_gui
     real(dp), parameter :: RENEWABLE_MAX_MW = 60.0_dp
     real(dp), parameter :: STORAGE_MIN_MW = -20.0_dp
     real(dp), parameter :: STORAGE_MAX_MW = 20.0_dp
+    real(dp), parameter :: BATTERY_CAPACITY_MWH = 30.0_dp
+    real(dp), parameter :: BATTERY_INITIAL_SOC_PCT = 50.0_dp
+    real(dp), parameter :: BATTERY_EFFICIENCY = 0.92_dp
     real(dp), parameter :: GAS_MIN_PCT = 20.0_dp
     real(dp), parameter :: GAS_MAX_PCT = 100.0_dp
     real(dp), parameter :: GAS_RAMP_PCT_PER_S = 18.0_dp
+    integer, parameter :: HISTORY_N = 240
 
     type, bind(C) :: Point
         integer(c_long) :: x
@@ -113,7 +117,10 @@ module thermotwin_win32_gui
     type :: GridState
         real(dp) :: demand_MW = 45.0_dp
         real(dp) :: renewable_MW = 12.0_dp
+        real(dp) :: storage_request_MW = 0.0_dp
         real(dp) :: storage_MW = 0.0_dp
+        real(dp) :: battery_energy_MWh = BATTERY_CAPACITY_MWH * BATTERY_INITIAL_SOC_PCT / 100.0_dp
+        real(dp) :: battery_soc_pct = BATTERY_INITIAL_SOC_PCT
         real(dp) :: gas_dispatch_pct = 82.0_dp
         real(dp) :: ambient_C = 15.0_dp
         real(dp) :: TIT_K = 1400.0_dp
@@ -126,6 +133,11 @@ module thermotwin_win32_gui
         real(dp) :: heat_rate_kJ_kWh = 0.0_dp
         real(dp) :: exhaust_K = 0.0_dp
         real(dp) :: elapsed_s = 0.0_dp
+        integer :: history_count = 0
+        integer :: history_head = 0
+        real(dp) :: hist_frequency_Hz(HISTORY_N) = 60.0_dp
+        real(dp) :: hist_demand_MW(HISTORY_N) = 45.0_dp
+        real(dp) :: hist_gas_dispatch_pct(HISTORY_N) = 82.0_dp
         logical :: auto_balance = .true.
     end type GridState
 
@@ -408,7 +420,7 @@ contains
 
         hwnd = CreateWindowExA(0_c_int, c_loc(class_name), c_loc(title), &
             WS_OVERLAPPEDWINDOW + WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, &
-            1120_c_int, 760_c_int, c_null_ptr, c_null_ptr, h_instance, c_null_ptr)
+            1180_c_int, 860_c_int, c_null_ptr, c_null_ptr, h_instance, c_null_ptr)
         if (.not. c_associated(hwnd)) stop "Could not create ThermoTwin-F GUI window."
 
         ok = ShowWindow(hwnd, SW_SHOW)
@@ -441,6 +453,7 @@ contains
             call read_controls()
             call refresh_model()
             call update_control_labels()
+            call append_history()
             lres = SetTimer(hwnd, int(TIMER_ID, c_intptr_t), TIMER_MS, c_null_ptr)
             lres = 0_c_intptr_t
             return
@@ -463,6 +476,9 @@ contains
             grid%elapsed_s = grid%elapsed_s + real(TIMER_MS, dp) / 1000.0_dp
             call tick_auto_balance(real(TIMER_MS, dp) / 1000.0_dp)
             call refresh_model()
+            call update_battery_soc(real(TIMER_MS, dp) / 1000.0_dp)
+            call refresh_model()
+            call append_history()
             call update_control_labels()
             ok = InvalidateRect(hwnd, c_null_ptr, 0_c_int)
             lres = 0_c_intptr_t
@@ -577,7 +593,7 @@ contains
     subroutine read_controls()
         grid%demand_MW = real(get_slider_pos(h_demand), dp)
         grid%renewable_MW = real(get_slider_pos(h_renewable), dp)
-        grid%storage_MW = STORAGE_MIN_MW + 0.5_dp * real(get_slider_pos(h_storage), dp)
+        grid%storage_request_MW = STORAGE_MIN_MW + 0.5_dp * real(get_slider_pos(h_storage), dp)
         grid%gas_dispatch_pct = real(get_slider_pos(h_gas), dp)
         grid%ambient_C = -20.0_dp + real(get_slider_pos(h_ambient), dp)
         grid%TIT_K = real(get_slider_pos(h_tit), dp)
@@ -603,11 +619,49 @@ contains
         grid%gas_power_MW = max(0.0_dp, res%net_power_MW)
         grid%heat_rate_kJ_kWh = res%heat_rate_kJ_kWh
         grid%exhaust_K = res%exhaust_temperature_K
+        grid%storage_MW = limited_storage_power(grid%storage_request_MW)
         grid%supply_MW = grid%gas_power_MW + grid%renewable_MW + grid%storage_MW
         grid%imbalance_MW = grid%supply_MW - grid%demand_MW
         grid%reserve_MW = max(0.0_dp, grid%gas_capacity_MW - grid%gas_power_MW)
         grid%frequency_Hz = clamp_real(60.0_dp + 0.045_dp * grid%imbalance_MW, 58.5_dp, 61.5_dp)
     end subroutine refresh_model
+
+    function limited_storage_power(request_MW) result(actual_MW)
+        real(dp), intent(in) :: request_MW
+        real(dp) :: actual_MW
+
+        actual_MW = clamp_real(request_MW, STORAGE_MIN_MW, STORAGE_MAX_MW)
+        if (actual_MW > 0.0_dp .and. grid%battery_energy_MWh <= 1.0e-6_dp) then
+            actual_MW = 0.0_dp
+        else if (actual_MW < 0.0_dp .and. grid%battery_energy_MWh >= BATTERY_CAPACITY_MWH - 1.0e-6_dp) then
+            actual_MW = 0.0_dp
+        end if
+    end function limited_storage_power
+
+    subroutine update_battery_soc(dt_s)
+        real(dp), intent(in) :: dt_s
+        real(dp) :: delta_MWh
+
+        if (grid%storage_MW > 0.0_dp) then
+            delta_MWh = -grid%storage_MW * dt_s / 3600.0_dp / BATTERY_EFFICIENCY
+        else
+            delta_MWh = -grid%storage_MW * dt_s / 3600.0_dp * BATTERY_EFFICIENCY
+        end if
+
+        grid%battery_energy_MWh = clamp_real(grid%battery_energy_MWh + delta_MWh, 0.0_dp, BATTERY_CAPACITY_MWH)
+        grid%battery_soc_pct = 100.0_dp * grid%battery_energy_MWh / BATTERY_CAPACITY_MWH
+    end subroutine update_battery_soc
+
+    subroutine append_history()
+        integer :: idx
+
+        idx = mod(grid%history_head, HISTORY_N) + 1
+        grid%hist_frequency_Hz(idx) = grid%frequency_Hz
+        grid%hist_demand_MW(idx) = grid%demand_MW
+        grid%hist_gas_dispatch_pct(idx) = grid%gas_dispatch_pct
+        grid%history_head = idx
+        grid%history_count = min(grid%history_count + 1, HISTORY_N)
+    end subroutine append_history
 
     function baseline_case() result(ic)
         type(InputCase) :: ic
@@ -662,6 +716,11 @@ contains
 
     subroutine reset_controls()
         grid%auto_balance = .true.
+        grid%battery_energy_MWh = BATTERY_CAPACITY_MWH * BATTERY_INITIAL_SOC_PCT / 100.0_dp
+        grid%battery_soc_pct = BATTERY_INITIAL_SOC_PCT
+        grid%elapsed_s = 0.0_dp
+        grid%history_count = 0
+        grid%history_head = 0
         call set_slider_pos(h_demand, 45)
         call set_slider_pos(h_renewable, 12)
         call set_slider_pos(h_storage, 40)
@@ -725,12 +784,12 @@ contains
         character(len=96) :: status, subtitle
         integer(c_int) :: status_color
 
-        call fill_box(hdc, 0, 0, 1120, 760, BG)
+        call fill_box(hdc, 0, 0, 1180, 860, BG)
 
         x0 = 386
         y0 = 18
-        w = 690
-        h = 670
+        w = 750
+        h = 790
         call fill_box(hdc, x0, y0, x0 + w, y0 + h, PANEL)
         call stroke_box(hdc, x0, y0, x0 + w, y0 + h, BORDER, 1)
 
@@ -742,21 +801,27 @@ contains
         scale_MW = max(max(DEMAND_MAX_MW, grid%demand_MW), max(grid%supply_MW, grid%gas_capacity_MW))
         call draw_kpi_tiles(hdc, x0 + 24, y0 + 78)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 190, "Power balance")
-        call draw_bar(hdc, x0 + 24, y0 + 220, 610, 24, "Demand", grid%demand_MW, scale_MW, DEMAND)
-        call draw_bar(hdc, x0 + 24, y0 + 260, 610, 24, "Total supply", grid%supply_MW, scale_MW, OK)
-        call draw_stacked_supply(hdc, x0 + 24, y0 + 304, 610, 32, scale_MW, GAS, RENEW, STORAGE, ALERT)
+        call draw_section_title(hdc, x0 + 24, y0 + 180, "Power balance")
+        call draw_bar(hdc, x0 + 24, y0 + 210, 680, 24, "Demand", grid%demand_MW, scale_MW, DEMAND)
+        call draw_bar(hdc, x0 + 24, y0 + 248, 680, 24, "Total supply", grid%supply_MW, scale_MW, OK)
+        call draw_stacked_supply(hdc, x0 + 24, y0 + 290, 680, 32, scale_MW, GAS, RENEW, STORAGE, ALERT)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 372, "Frequency and reserve")
-        call draw_frequency_meter(hdc, x0 + 24, y0 + 402, 610, 42)
-        call draw_bar(hdc, x0 + 24, y0 + 470, 610, 24, "Gas reserve", grid%reserve_MW, max(1.0_dp, grid%gas_capacity_MW), RENEW)
+        call draw_section_title(hdc, x0 + 24, y0 + 348, "Battery")
+        call draw_battery_panel(hdc, x0 + 24, y0 + 378, 680, 56)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 530, "One-line power flow")
-        call draw_power_flow(hdc, x0 + 26, y0 + 558)
+        call draw_section_title(hdc, x0 + 24, y0 + 460, "Frequency and reserve")
+        call draw_frequency_meter(hdc, x0 + 24, y0 + 490, 680, 38)
+        call draw_bar(hdc, x0 + 24, y0 + 554, 680, 22, "Gas reserve", grid%reserve_MW, max(1.0_dp, grid%gas_capacity_MW), RENEW)
+
+        call draw_section_title_width(hdc, x0 + 24, y0 + 608, "Live traces", 360)
+        call draw_history_traces(hdc, x0 + 24, y0 + 638, 360, 120)
+
+        call draw_section_title_width(hdc, x0 + 418, y0 + 608, "Power flow", 286)
+        call draw_power_flow(hdc, x0 + 420, y0 + 638)
 
         call grid_status(status, status_color)
-        call fill_box(hdc, x0 + 24, y0 + 632, x0 + 634, y0 + 656, status_color)
-        call draw_text(hdc, x0 + 34, y0 + 637, trim(status), int(Z'00FFFFFF', c_int))
+        call fill_box(hdc, x0 + 24, y0 + 762, x0 + 704, y0 + 786, status_color)
+        call draw_text(hdc, x0 + 34, y0 + 767, trim(status), int(Z'00FFFFFF', c_int))
     end subroutine draw_dashboard
 
     subroutine draw_kpi_tiles(hdc, x, y)
@@ -804,6 +869,15 @@ contains
         call draw_line(hdc, x, y + 20, x + 610, y + 20, int(Z'00E5E1DB', c_int), 1)
     end subroutine draw_section_title
 
+    subroutine draw_section_title_width(hdc, x, y, text, width)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width
+        character(len=*), intent(in) :: text
+
+        call draw_text(hdc, x, y, text, int(Z'00211B16', c_int))
+        call draw_line(hdc, x, y + 20, x + width, y + 20, int(Z'00E5E1DB', c_int), 1)
+    end subroutine draw_section_title_width
+
     subroutine draw_bar(hdc, x, y, width, height, label, value, maximum, color)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
@@ -850,6 +924,112 @@ contains
         call draw_text(hdc, x + 8, y + 8, adjustl(text), int(Z'00211B16', c_int))
     end subroutine draw_stacked_supply
 
+    subroutine draw_battery_panel(hdc, x, y, width, height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height
+        integer(c_int), parameter :: BORDER = int(Z'00D4D0CA', c_int)
+        integer(c_int), parameter :: FILL = int(Z'00D87B24', c_int)
+        integer(c_int), parameter :: LOW = int(Z'002A48D9', c_int)
+        integer(c_int), parameter :: INK = int(Z'00211B16', c_int)
+        integer :: fill_w
+        integer(c_int) :: color
+        character(len=128) :: line1, line2
+
+        if (grid%battery_soc_pct < 15.0_dp .or. grid%battery_soc_pct > 95.0_dp) then
+            color = LOW
+        else
+            color = FILL
+        end if
+
+        fill_w = int(real(width - 160, dp) * clamp_real(grid%battery_soc_pct / 100.0_dp, 0.0_dp, 1.0_dp))
+        call fill_box(hdc, x, y, x + width - 160, y + 22, int(Z'00EFECE8', c_int))
+        call fill_box(hdc, x, y, x + fill_w, y + 22, color)
+        call stroke_box(hdc, x, y, x + width - 160, y + 22, BORDER, 1)
+
+        write(line1, '("SOC ",F5.1,"%  ",F5.1,"/",F4.0," MWh")') &
+            grid%battery_soc_pct, grid%battery_energy_MWh, BATTERY_CAPACITY_MWH
+        call draw_text(hdc, x + width - 148, y + 4, adjustl(line1), INK)
+
+        write(line2, '("Request ",SP,F5.1," MW | actual ",SP,F5.1," MW")') &
+            grid%storage_request_MW, grid%storage_MW
+        call draw_text(hdc, x, y + 34, adjustl(line2), INK)
+    end subroutine draw_battery_panel
+
+    subroutine draw_history_traces(hdc, x, y, width, height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height
+        integer(c_int), parameter :: BORDER = int(Z'00D4D0CA', c_int)
+        integer(c_int), parameter :: FREQ = int(Z'002A48D9', c_int)
+        integer(c_int), parameter :: DEMAND = int(Z'004B5FD7', c_int)
+        integer(c_int), parameter :: GAS = int(Z'0038A06B', c_int)
+        integer(c_int), parameter :: MUTED = int(Z'007D746C', c_int)
+        integer :: gx, gy, gw, gh
+
+        call fill_box(hdc, x, y, x + width, y + height, int(Z'00F8FBFC', c_int))
+        call stroke_box(hdc, x, y, x + width, y + height, BORDER, 1)
+
+        call draw_text(hdc, x + 8, y + 6, "Hz", FREQ)
+        call draw_text(hdc, x + 42, y + 6, "Demand", DEMAND)
+        call draw_text(hdc, x + 112, y + 6, "Gas dispatch", GAS)
+
+        gx = x + 8
+        gy = y + 28
+        gw = width - 16
+        gh = height - 38
+        call draw_line(hdc, gx, gy + gh / 2, gx + gw, gy + gh / 2, int(Z'00E5E1DB', c_int), 1)
+        call draw_line(hdc, gx, gy, gx, gy + gh, int(Z'00E5E1DB', c_int), 1)
+        call draw_line(hdc, gx, gy + gh, gx + gw, gy + gh, int(Z'00E5E1DB', c_int), 1)
+
+        if (grid%history_count < 2) then
+            call draw_text(hdc, gx + 56, gy + 28, "Waiting for samples", MUTED)
+            return
+        end if
+
+        call draw_trace(hdc, gx, gy, gw, gh, 1, 59.0_dp, 61.0_dp, FREQ)
+        call draw_trace(hdc, gx, gy, gw, gh, 2, 0.0_dp, DEMAND_MAX_MW, DEMAND)
+        call draw_trace(hdc, gx, gy, gw, gh, 3, 0.0_dp, 100.0_dp, GAS)
+    end subroutine draw_history_traces
+
+    subroutine draw_trace(hdc, x, y, width, height, series, lo, hi, color)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height, series
+        real(dp), intent(in) :: lo, hi
+        integer(c_int), intent(in) :: color
+        integer :: i, idx, px, py, prev_x, prev_y
+        real(dp) :: value, norm
+
+        prev_x = x
+        prev_y = y + height
+        do i = 1, grid%history_count
+            idx = history_index(i)
+            select case (series)
+            case (1)
+                value = grid%hist_frequency_Hz(idx)
+            case (2)
+                value = grid%hist_demand_MW(idx)
+            case default
+                value = grid%hist_gas_dispatch_pct(idx)
+            end select
+            norm = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
+            if (grid%history_count > 1) then
+                px = x + int(real(width, dp) * real(i - 1, dp) / real(grid%history_count - 1, dp))
+            else
+                px = x
+            end if
+            py = y + height - int(real(height, dp) * norm)
+            if (i > 1) call draw_line(hdc, prev_x, prev_y, px, py, color, 2)
+            prev_x = px
+            prev_y = py
+        end do
+    end subroutine draw_trace
+
+    function history_index(position) result(idx)
+        integer, intent(in) :: position
+        integer :: idx
+
+        idx = mod(grid%history_head - grid%history_count + position - 1 + HISTORY_N, HISTORY_N) + 1
+    end function history_index
+
     subroutine draw_frequency_meter(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
@@ -881,21 +1061,21 @@ contains
         integer(c_int), parameter :: DEMAND = int(Z'004B5FD7', c_int)
         character(len=64) :: text
 
-        call draw_node(hdc, x, y, 118, 46, "Gas", grid%gas_power_MW, GAS)
-        call draw_node(hdc, x, y + 72, 118, 46, "Renew", grid%renewable_MW, RENEW)
-        call draw_node(hdc, x, y + 144, 118, 46, "Storage", grid%storage_MW, STORAGE)
+        call draw_node(hdc, x, y, 82, 34, "Gas", grid%gas_power_MW, GAS)
+        call draw_node(hdc, x, y + 43, 82, 34, "Renew", grid%renewable_MW, RENEW)
+        call draw_node(hdc, x, y + 86, 82, 34, "Storage", grid%storage_MW, STORAGE)
 
-        call fill_box(hdc, x + 238, y + 62, x + 348, y + 128, NODE)
-        call stroke_box(hdc, x + 238, y + 62, x + 348, y + 128, BORDER, 1)
-        call draw_text(hdc, x + 273, y + 82, "GRID", INK)
+        call fill_box(hdc, x + 118, y + 36, x + 194, y + 88, NODE)
+        call stroke_box(hdc, x + 118, y + 36, x + 194, y + 88, BORDER, 1)
+        call draw_text(hdc, x + 140, y + 50, "GRID", INK)
         write(text, '(F6.2," Hz")') grid%frequency_Hz
-        call draw_text(hdc, x + 264, y + 104, adjustl(text), frequency_color())
+        call draw_text(hdc, x + 130, y + 70, adjustl(text), frequency_color())
 
-        call draw_node(hdc, x + 492, y + 62, 118, 46, "Load", grid%demand_MW, DEMAND)
-        call draw_line(hdc, x + 118, y + 23, x + 238, y + 84, GAS, 3)
-        call draw_line(hdc, x + 118, y + 95, x + 238, y + 95, RENEW, 3)
-        call draw_line(hdc, x + 118, y + 167, x + 238, y + 106, STORAGE, 3)
-        call draw_line(hdc, x + 348, y + 95, x + 492, y + 85, DEMAND, 4)
+        call draw_node(hdc, x + 228, y + 43, 82, 34, "Load", grid%demand_MW, DEMAND)
+        call draw_line(hdc, x + 82, y + 17, x + 118, y + 48, GAS, 3)
+        call draw_line(hdc, x + 82, y + 60, x + 118, y + 62, RENEW, 3)
+        call draw_line(hdc, x + 82, y + 103, x + 118, y + 76, STORAGE, 3)
+        call draw_line(hdc, x + 194, y + 62, x + 228, y + 60, DEMAND, 4)
     end subroutine draw_power_flow
 
     subroutine draw_node(hdc, x, y, width, height, label, value, color)
