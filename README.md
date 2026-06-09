@@ -58,6 +58,19 @@ A `Makefile` is also provided (`make`, `make check`, `make run`, `make debug`).
 This produces all result CSVs in `output/`, six figures in `output/figures/`,
 and a multi-page report at `output/ThermoTwin-F_report.pdf`.
 
+### Optional Windows GUI launcher
+
+The repository also includes an early native Windows GUI launcher written in
+Fortran. It uses Win32 controls through `iso_c_binding`, runs `thermotwin.exe`
+under the hood, and displays the captured output.
+
+```powershell
+make gui
+.\thermotwin-gui.exe
+```
+
+See [`gui/README.md`](gui/README.md) for scope and next steps.
+
 ---
 
 ## Command-line modes

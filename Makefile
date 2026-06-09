@@ -6,12 +6,13 @@
 #   make check      # build and run the full test suite
 #   make debug      # build with bounds-checking and warnings
 #   make run        # build, then run the design-point case
+#   make gui        # build the optional native Windows GUI launcher
 #   make clean      # remove build artefacts
 #
 # fpm users can ignore this file and simply use `fpm build` / `fpm test`.
 # ===========================================================================
 
-FC      ?= gfortran
+FC      = gfortran
 BUILD   := build
 SRC     := src
 APP     := app
@@ -33,8 +34,9 @@ TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
 TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
 
 EXE := thermotwin
+GUI_EXE := thermotwin-gui.exe
 
-.PHONY: all tests check debug run clean
+.PHONY: all tests check debug run gui clean
 .SECONDEXPANSION:
 
 all: $(EXE)
@@ -91,5 +93,10 @@ debug: clean all
 run: $(EXE)
 	./$(EXE) run cases/design_point.csv output/results_design_point.csv
 
+gui: $(GUI_EXE)
+
+$(GUI_EXE): gui/gui_win32.f90 $(EXE)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $< -o $@ -mwindows -luser32 -lkernel32
+
 clean:
-	rm -rf $(BUILD) $(EXE)
+	rm -rf $(BUILD) $(EXE) $(GUI_EXE)

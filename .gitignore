@@ -28,3 +28,5 @@ Thumbs.db
 # output/*.csv
 # output/figures/
 # output/*.pdf
+output/gui_last_run.txt
+output/results_gui_run.csv
