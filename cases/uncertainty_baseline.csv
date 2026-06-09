@@ -1,0 +1,3 @@
+# Baseline machine for uncertainty (Monte Carlo) study.
+case_name,ambient_T_K,ambient_P_Pa,relative_humidity,inlet_pressure_loss,mdot_air_kg_s,pressure_ratio,eta_compressor,T_turbine_inlet_K,eta_combustor,combustor_pressure_loss,LHV_J_kg,eta_turbine,exhaust_pressure_loss,eta_mechanical,eta_generator,auxiliary_load_fraction,degradation_mode
+baseline,288.15,101325,0.60,0.010,100.0,15.0,0.86,1400.0,0.98,0.030,50.0e6,0.89,0.020,0.990,0.985,0.020,clean

@@ -1,0 +1,37 @@
+name = "thermotwin-f"
+version = "0.1.0"
+license = "MIT"
+author = "Abhijith Sivaprasadan"
+maintainer = "Abhijith Sivaprasadan"
+copyright = "Copyright 2026, Abhijith Sivaprasadan"
+description = "Modern Fortran gas-turbine performance simulator (design, degradation, transient, uncertainty, diagnostics)."
+
+# ThermoTwin-F builds cleanly with the Fortran Package Manager (fpm):
+#
+#   fpm build                 # compile library + app
+#   fpm run -- selftest       # run the physics self-test
+#   fpm run -- run cases/design_point.csv
+#   fpm test                  # run the full unit-test suite
+#
+# If you do not have fpm installed, the included scripts/build.sh and
+# scripts/run_tests.sh reproduce the same builds with gfortran directly.
+
+[build]
+auto-executables = true
+auto-tests = true
+auto-examples = false
+module-naming = false
+
+[install]
+library = false
+
+[fortran]
+implicit-typing = false
+implicit-external = false
+source-form = "free"
+
+# Single application target: app/main.f90 -> `thermotwin`.
+[[executable]]
+name = "thermotwin"
+source-dir = "app"
+main = "main.f90"

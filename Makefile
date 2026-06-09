@@ -1,0 +1,95 @@
+# ===========================================================================
+# Makefile for ThermoTwin-F (gfortran, no fpm required)
+#
+#   make            # build the thermotwin executable
+#   make tests      # build the unit-test programs into build/tests/
+#   make check      # build and run the full test suite
+#   make debug      # build with bounds-checking and warnings
+#   make run        # build, then run the design-point case
+#   make clean      # remove build artefacts
+#
+# fpm users can ignore this file and simply use `fpm build` / `fpm test`.
+# ===========================================================================
+
+FC      ?= gfortran
+BUILD   := build
+SRC     := src
+APP     := app
+TEST    := test
+
+FFLAGS_COMMON := -J $(BUILD) -I $(BUILD) -ffree-line-length-none -std=f2008
+FFLAGS_REL    := -O2
+FFLAGS_DBG    := -O0 -g -fcheck=all -fbacktrace -Wall -Wextra -fimplicit-none
+FFLAGS        := $(FFLAGS_COMMON) $(FFLAGS_REL)
+
+# Modules in strict dependency order.
+MODS := precision_kinds constants types utilities fluid_properties ambient \
+        compressor combustor turbine shaft_generator cycle_solver degradation \
+        transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
+        csv_io sensitivity_driver
+
+OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
+TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
+TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
+
+EXE := thermotwin
+
+.PHONY: all tests check debug run clean
+.SECONDEXPANSION:
+
+all: $(EXE)
+
+$(BUILD):
+	@mkdir -p $(BUILD)
+
+# Pattern rule: each module object depends on its source. Ordering is enforced
+# by the explicit prerequisite chain below.
+$(BUILD)/%.o: $(SRC)/%.f90 | $(BUILD)
+	$(FC) $(FFLAGS) -c $< -o $@
+
+# Explicit inter-module dependencies (so parallel make is still correct).
+$(BUILD)/constants.o:            $(BUILD)/precision_kinds.o
+$(BUILD)/types.o:                $(BUILD)/precision_kinds.o
+$(BUILD)/utilities.o:            $(BUILD)/precision_kinds.o $(BUILD)/constants.o
+$(BUILD)/fluid_properties.o:     $(BUILD)/precision_kinds.o $(BUILD)/constants.o
+$(BUILD)/ambient.o:              $(BUILD)/types.o $(BUILD)/utilities.o
+$(BUILD)/compressor.o:           $(BUILD)/fluid_properties.o $(BUILD)/utilities.o
+$(BUILD)/combustor.o:            $(BUILD)/fluid_properties.o $(BUILD)/utilities.o
+$(BUILD)/turbine.o:              $(BUILD)/fluid_properties.o $(BUILD)/utilities.o
+$(BUILD)/shaft_generator.o:      $(BUILD)/utilities.o
+$(BUILD)/cycle_solver.o:         $(BUILD)/ambient.o $(BUILD)/compressor.o $(BUILD)/combustor.o \
+                                 $(BUILD)/turbine.o $(BUILD)/shaft_generator.o $(BUILD)/fluid_properties.o
+$(BUILD)/degradation.o:          $(BUILD)/types.o $(BUILD)/utilities.o
+$(BUILD)/transient_thermal.o:    $(BUILD)/types.o $(BUILD)/utilities.o
+$(BUILD)/sensor_model.o:         $(BUILD)/types.o $(BUILD)/utilities.o
+$(BUILD)/uncertainty_analysis.o: $(BUILD)/cycle_solver.o $(BUILD)/utilities.o
+$(BUILD)/diagnostics_solver.o:   $(BUILD)/cycle_solver.o $(BUILD)/degradation.o
+$(BUILD)/csv_io.o:               $(BUILD)/types.o $(BUILD)/utilities.o
+$(BUILD)/sensitivity_driver.o:   $(BUILD)/cycle_solver.o
+
+$(EXE): $(OBJS) $(BUILD)/main.o
+	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/main.o -o $@
+
+$(BUILD)/main.o: $(APP)/main.f90 $(OBJS) | $(BUILD)
+	$(FC) $(FFLAGS) -c $< -o $@
+
+tests: $(TEST_BINS)
+
+$(BUILD)/tests:
+	@mkdir -p $(BUILD)/tests
+
+$(BUILD)/tests/%: $(TEST)/%.f90 $(OBJS) | $(BUILD)/tests
+	$(FC) $(FFLAGS) -I $(TEST) -c $< -o $(BUILD)/$*.o
+	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/$*.o -o $@
+
+check: tests $(EXE)
+	@bash scripts/run_tests.sh
+
+debug: FFLAGS := $(FFLAGS_COMMON) $(FFLAGS_DBG)
+debug: clean all
+
+run: $(EXE)
+	./$(EXE) run cases/design_point.csv output/results_design_point.csv
+
+clean:
+	rm -rf $(BUILD) $(EXE)

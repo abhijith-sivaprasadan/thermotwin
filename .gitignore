@@ -1,0 +1,30 @@
+# Build artefacts
+build/
+*.o
+*.mod
+*.smod
+thermotwin
+thermotwin.exe
+a.out
+*.exe
+
+# fpm
+/build/
+
+# Python
+__pycache__/
+*.pyc
+
+# Captured run logs
+*.out
+*.err
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated outputs are kept in this distribution as a demonstration.
+# If you prefer a clean repo, uncomment the lines below to ignore them:
+# output/*.csv
+# output/figures/
+# output/*.pdf
