@@ -28,6 +28,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: WM_COMMAND = 273_c_int
     integer(c_int), parameter :: WM_TIMER = 275_c_int
     integer(c_int), parameter :: WM_HSCROLL = 276_c_int
+    integer(c_int), parameter :: WM_MOUSEMOVE = 512_c_int
+    integer(c_int), parameter :: WM_LBUTTONDOWN = 513_c_int
+    integer(c_int), parameter :: WM_LBUTTONUP = 514_c_int
     integer(c_int), parameter :: WM_USER = 1024_c_int
 
     integer(c_int), parameter :: WS_OVERLAPPEDWINDOW = int(Z'00CF0000', c_int)
@@ -60,6 +63,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_AUTO = 201_c_int
     integer(c_int), parameter :: ID_BALANCE = 202_c_int
     integer(c_int), parameter :: ID_RESET = 203_c_int
+    integer(c_int), parameter :: ID_NONE = 0_c_int
     integer(c_int), parameter :: TIMER_ID = 1_c_int
     integer(c_int), parameter :: TIMER_MS = 250_c_int
     character(len=*), parameter :: DEBUG_LOG = "gui_debug.log"
@@ -267,6 +271,17 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function SetWindowTextA
 
+        function SetCapture(hwnd) bind(C, name="SetCapture") result(previous)
+            import :: c_ptr
+            type(c_ptr), value :: hwnd
+            type(c_ptr) :: previous
+        end function SetCapture
+
+        function ReleaseCapture() bind(C, name="ReleaseCapture") result(ok)
+            import :: c_int
+            integer(c_int) :: ok
+        end function ReleaseCapture
+
         function MessageBoxA(hWnd, lpText, lpCaption, uType) bind(C, name="MessageBoxA") result(choice)
             import :: c_int, c_ptr
             type(c_ptr), value :: hWnd
@@ -458,28 +473,9 @@ module thermotwin_win32_gui
 
     type(c_ptr) :: h_instance = c_null_ptr
     type(c_ptr) :: h_main = c_null_ptr
-    type(c_ptr) :: h_demand = c_null_ptr
-    type(c_ptr) :: h_renewable = c_null_ptr
-    type(c_ptr) :: h_storage = c_null_ptr
-    type(c_ptr) :: h_gas = c_null_ptr
-    type(c_ptr) :: h_ambient = c_null_ptr
-    type(c_ptr) :: h_tit = c_null_ptr
-    type(c_ptr) :: h_auto_button = c_null_ptr
-    type(c_ptr) :: h_value_demand = c_null_ptr
-    type(c_ptr) :: h_value_renewable = c_null_ptr
-    type(c_ptr) :: h_value_storage = c_null_ptr
-    type(c_ptr) :: h_value_gas = c_null_ptr
-    type(c_ptr) :: h_value_ambient = c_null_ptr
-    type(c_ptr) :: h_value_tit = c_null_ptr
     type(c_ptr) :: h_font_ui = c_null_ptr
     type(c_ptr) :: h_font_title = c_null_ptr
-    character(len=40) :: last_demand_label = ""
-    character(len=40) :: last_renewable_label = ""
-    character(len=40) :: last_storage_label = ""
-    character(len=40) :: last_gas_label = ""
-    character(len=40) :: last_ambient_label = ""
-    character(len=40) :: last_tit_label = ""
-    character(len=40) :: last_auto_label = ""
+    integer(c_int) :: active_control = ID_NONE
     type(GridState) :: grid
 
 contains
@@ -564,9 +560,7 @@ contains
             h_main = hwnd
             call init_fonts()
             call create_controls(hwnd)
-            call read_controls()
             call refresh_model()
-            call update_control_labels()
             call append_history()
             lres = SetTimer(hwnd, int(TIMER_ID, c_intptr_t), TIMER_MS, c_null_ptr)
             call log_debug("message: WM_CREATE complete")
@@ -574,9 +568,7 @@ contains
             return
 
         case (WM_HSCROLL)
-            call read_controls()
             call refresh_model()
-            call update_control_labels()
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -594,7 +586,27 @@ contains
             call update_battery_soc(real(TIMER_MS, dp) / 1000.0_dp)
             call refresh_model()
             call append_history()
-            call update_control_labels()
+            call invalidate_dashboard(hwnd)
+            lres = 0_c_intptr_t
+            return
+
+        case (WM_LBUTTONDOWN)
+            call handle_mouse_down(hwnd, mouse_x(lParam), mouse_y(lParam))
+            call invalidate_dashboard(hwnd)
+            lres = 0_c_intptr_t
+            return
+
+        case (WM_MOUSEMOVE)
+            if (active_control /= ID_NONE) then
+                call update_active_slider(mouse_x(lParam))
+                call refresh_model()
+                call invalidate_dashboard(hwnd)
+            end if
+            lres = 0_c_intptr_t
+            return
+
+        case (WM_LBUTTONUP)
+            call handle_mouse_up()
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -624,69 +636,9 @@ contains
 
     subroutine create_controls(parent)
         type(c_ptr), value :: parent
-        integer(c_int), parameter :: LABEL = WS_CHILD + WS_VISIBLE
-        integer(c_int), parameter :: BUTTON = WS_CHILD + WS_VISIBLE + BS_PUSHBUTTON
-        integer(c_int), parameter :: SLIDER = WS_CHILD + WS_VISIBLE + TBS_AUTOTICKS
-        type(c_ptr) :: unused
-
-        unused = create_child(parent, "STATIC", "Grid controls", 24, 18, 300, 22, 0, LABEL)
-
-        unused = create_child(parent, "STATIC", "Demand", 24, 54, 140, 20, 0, LABEL)
-        h_value_demand = create_child(parent, "STATIC", "", 268, 54, 92, 20, 0, LABEL)
-        h_demand = create_child(parent, "msctls_trackbar32", "", 22, 76, 330, 38, ID_DEMAND, SLIDER)
-        call configure_slider(h_demand, 10, 100, 45, 10)
-
-        unused = create_child(parent, "STATIC", "Renewables", 24, 128, 140, 20, 0, LABEL)
-        h_value_renewable = create_child(parent, "STATIC", "", 268, 128, 92, 20, 0, LABEL)
-        h_renewable = create_child(parent, "msctls_trackbar32", "", 22, 150, 330, 38, ID_RENEWABLE, SLIDER)
-        call configure_slider(h_renewable, 0, 60, 12, 10)
-
-        unused = create_child(parent, "STATIC", "Storage charge/discharge", 24, 202, 190, 20, 0, LABEL)
-        h_value_storage = create_child(parent, "STATIC", "", 268, 202, 92, 20, 0, LABEL)
-        h_storage = create_child(parent, "msctls_trackbar32", "", 22, 224, 330, 38, ID_STORAGE, SLIDER)
-        call configure_slider(h_storage, 0, 80, 40, 10)
-
-        unused = create_child(parent, "STATIC", "Gas dispatch", 24, 276, 140, 20, 0, LABEL)
-        h_value_gas = create_child(parent, "STATIC", "", 268, 276, 92, 20, 0, LABEL)
-        h_gas = create_child(parent, "msctls_trackbar32", "", 22, 298, 330, 38, ID_GAS, SLIDER)
-        call configure_slider(h_gas, 20, 100, 82, 10)
-
-        unused = create_child(parent, "STATIC", "Ambient temperature", 24, 350, 160, 20, 0, LABEL)
-        h_value_ambient = create_child(parent, "STATIC", "", 268, 350, 92, 20, 0, LABEL)
-        h_ambient = create_child(parent, "msctls_trackbar32", "", 22, 372, 330, 38, ID_AMBIENT, SLIDER)
-        call configure_slider(h_ambient, 0, 65, 35, 5)
-
-        unused = create_child(parent, "STATIC", "Firing temperature", 24, 424, 160, 20, 0, LABEL)
-        h_value_tit = create_child(parent, "STATIC", "", 268, 424, 92, 20, 0, LABEL)
-        h_tit = create_child(parent, "msctls_trackbar32", "", 22, 446, 330, 38, ID_TIT, SLIDER)
-        call configure_slider(h_tit, 1200, 1600, 1400, 50)
-
-        h_auto_button = create_child(parent, "BUTTON", "Auto Balance: ON", 24, 514, 150, 32, ID_AUTO, BUTTON)
-        unused = create_child(parent, "BUTTON", "Balance Now", 184, 514, 120, 32, ID_BALANCE, BUTTON)
-        unused = create_child(parent, "BUTTON", "Reset", 24, 556, 92, 30, ID_RESET, BUTTON)
+        if (.not. c_associated(parent)) return
+        call log_debug("controls: custom-drawn UI active")
     end subroutine create_controls
-
-    function create_child(parent, class_name, text, x, y, width, height, control_id, style) result(hwnd)
-        type(c_ptr), value :: parent
-        character(len=*), intent(in) :: class_name
-        character(len=*), intent(in) :: text
-        integer, intent(in) :: x, y, width, height, control_id
-        integer(c_int), intent(in) :: style
-        type(c_ptr) :: hwnd
-        character(kind=c_char), allocatable, target :: c_class(:)
-        character(kind=c_char), allocatable, target :: c_text(:)
-
-        call make_c_string(class_name, c_class)
-        call make_c_string(text, c_text)
-        hwnd = CreateWindowExA(0_c_int, c_loc(c_class), c_loc(c_text), style, &
-            int(x, c_int), int(y, c_int), int(width, c_int), int(height, c_int), &
-            parent, int_to_cptr(control_id), h_instance, c_null_ptr)
-        if (.not. c_associated(hwnd)) then
-            call log_debug("control: failed to create " // trim(class_name) // " " // trim(text))
-        else
-            call apply_font(hwnd)
-        end if
-    end function create_child
 
     subroutine init_fonts()
         character(kind=c_char), allocatable, target :: face(:)
@@ -709,35 +661,17 @@ contains
         h_font_title = c_null_ptr
     end subroutine destroy_fonts
 
-    subroutine apply_font(hwnd)
-        type(c_ptr), value :: hwnd
-        integer(c_intptr_t) :: ignored
-
-        if (.not. c_associated(h_font_ui)) return
-        ignored = SendMessageA(hwnd, WM_SETFONT, transfer(h_font_ui, ignored), 1_c_intptr_t)
-    end subroutine apply_font
-
     subroutine invalidate_dashboard(hwnd)
         type(c_ptr), value :: hwnd
         type(Rect), target :: r
         integer(c_int) :: ok
 
-        r%left = 372
-        r%top = 12
-        r%right = 1212
-        r%bottom = 864
+        r%left = 0
+        r%top = 0
+        r%right = 1240
+        r%bottom = 900
         ok = InvalidateRect(hwnd, c_loc(r), 0_c_int)
     end subroutine invalidate_dashboard
-
-    subroutine configure_slider(hwnd, min_value, max_value, position, tick_freq)
-        type(c_ptr), value :: hwnd
-        integer, intent(in) :: min_value, max_value, position, tick_freq
-        integer(c_intptr_t) :: ignored
-
-        ignored = SendMessageA(hwnd, TBM_SETRANGE, 1_c_intptr_t, make_lparam(min_value, max_value))
-        ignored = SendMessageA(hwnd, TBM_SETPOS, 1_c_intptr_t, int(position, c_intptr_t))
-        ignored = SendMessageA(hwnd, TBM_SETTICFREQ, int(tick_freq, c_intptr_t), 0_c_intptr_t)
-    end subroutine configure_slider
 
     subroutine handle_command(control_id)
         integer(c_int), intent(in) :: control_id
@@ -745,26 +679,90 @@ contains
         select case (control_id)
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
-            call update_auto_button()
         case (ID_BALANCE)
             call balance_now()
         case (ID_RESET)
             call reset_controls()
         end select
 
-        call read_controls()
         call refresh_model()
-        call update_control_labels()
     end subroutine handle_command
 
-    subroutine read_controls()
-        grid%demand_MW = real(get_slider_pos(h_demand), dp)
-        grid%renewable_MW = real(get_slider_pos(h_renewable), dp)
-        grid%storage_request_MW = STORAGE_MIN_MW + 0.5_dp * real(get_slider_pos(h_storage), dp)
-        grid%gas_dispatch_pct = real(get_slider_pos(h_gas), dp)
-        grid%ambient_C = -20.0_dp + real(get_slider_pos(h_ambient), dp)
-        grid%TIT_K = real(get_slider_pos(h_tit), dp)
-    end subroutine read_controls
+    subroutine handle_mouse_down(hwnd, x, y)
+        type(c_ptr), value :: hwnd
+        integer, intent(in) :: x, y
+        type(c_ptr) :: previous
+
+        active_control = hit_test_control(x, y)
+        select case (active_control)
+        case (ID_AUTO)
+            grid%auto_balance = .not. grid%auto_balance
+            active_control = ID_NONE
+        case (ID_BALANCE)
+            call balance_now()
+            active_control = ID_NONE
+        case (ID_RESET)
+            call reset_controls()
+            active_control = ID_NONE
+        case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
+            previous = SetCapture(hwnd)
+            call update_active_slider(x)
+        end select
+        call refresh_model()
+    end subroutine handle_mouse_down
+
+    subroutine handle_mouse_up()
+        integer(c_int) :: ok
+
+        if (active_control /= ID_NONE) ok = ReleaseCapture()
+        active_control = ID_NONE
+    end subroutine handle_mouse_up
+
+    subroutine update_active_slider(x)
+        integer, intent(in) :: x
+        real(dp) :: f
+
+        if (active_control == ID_NONE) return
+        f = clamp_real(real(x - 42, dp) / 270.0_dp, 0.0_dp, 1.0_dp)
+        select case (active_control)
+        case (ID_DEMAND)
+            grid%demand_MW = DEMAND_MIN_MW + f * (DEMAND_MAX_MW - DEMAND_MIN_MW)
+        case (ID_RENEWABLE)
+            grid%renewable_MW = f * RENEWABLE_MAX_MW
+        case (ID_STORAGE)
+            grid%storage_request_MW = STORAGE_MIN_MW + f * (STORAGE_MAX_MW - STORAGE_MIN_MW)
+        case (ID_GAS)
+            grid%gas_dispatch_pct = GAS_MIN_PCT + f * (GAS_MAX_PCT - GAS_MIN_PCT)
+            grid%auto_balance = .false.
+        case (ID_AMBIENT)
+            grid%ambient_C = -20.0_dp + f * 65.0_dp
+        case (ID_TIT)
+            grid%TIT_K = 1200.0_dp + f * 400.0_dp
+        end select
+    end subroutine update_active_slider
+
+    function hit_test_control(x, y) result(control_id)
+        integer, intent(in) :: x, y
+        integer(c_int) :: control_id
+
+        control_id = ID_NONE
+        if (point_in_rect(x, y, 30, 84, 324, 146)) control_id = ID_DEMAND
+        if (point_in_rect(x, y, 30, 170, 324, 232)) control_id = ID_RENEWABLE
+        if (point_in_rect(x, y, 30, 256, 324, 318)) control_id = ID_STORAGE
+        if (point_in_rect(x, y, 30, 342, 324, 404)) control_id = ID_GAS
+        if (point_in_rect(x, y, 30, 428, 324, 490)) control_id = ID_AMBIENT
+        if (point_in_rect(x, y, 30, 514, 324, 576)) control_id = ID_TIT
+        if (point_in_rect(x, y, 36, 674, 172, 714)) control_id = ID_AUTO
+        if (point_in_rect(x, y, 186, 674, 316, 714)) control_id = ID_BALANCE
+        if (point_in_rect(x, y, 36, 728, 132, 766)) control_id = ID_RESET
+    end function hit_test_control
+
+    pure function point_in_rect(x, y, left, top, right, bottom) result(inside)
+        integer, intent(in) :: x, y, left, top, right, bottom
+        logical :: inside
+
+        inside = (x >= left .and. x <= right .and. y >= top .and. y <= bottom)
+    end function point_in_rect
 
     subroutine refresh_model()
         type(InputCase) :: ic
@@ -893,8 +891,7 @@ contains
         target_pct = clamp_real(target_pct, GAS_MIN_PCT, GAS_MAX_PCT)
         step_pct = GAS_RAMP_PCT_PER_S * dt_s
         next_pct = grid%gas_dispatch_pct + clamp_real(target_pct - grid%gas_dispatch_pct, -step_pct, step_pct)
-        call set_slider_pos(h_gas, nint(next_pct))
-        grid%gas_dispatch_pct = real(get_slider_pos(h_gas), dp)
+        grid%gas_dispatch_pct = next_pct
     end subroutine tick_auto_balance
 
     subroutine balance_now()
@@ -903,7 +900,7 @@ contains
         if (grid%gas_capacity_MW <= 1.0e-6_dp) return
         needed_gas_MW = grid%demand_MW - grid%renewable_MW - grid%storage_MW
         target_pct = clamp_real(100.0_dp * needed_gas_MW / grid%gas_capacity_MW, GAS_MIN_PCT, GAS_MAX_PCT)
-        call set_slider_pos(h_gas, nint(target_pct))
+        grid%gas_dispatch_pct = target_pct
     end subroutine balance_now
 
     subroutine reset_controls()
@@ -913,49 +910,14 @@ contains
         grid%elapsed_s = 0.0_dp
         grid%history_count = 0
         grid%history_head = 0
-        call set_slider_pos(h_demand, 45)
-        call set_slider_pos(h_renewable, 12)
-        call set_slider_pos(h_storage, 40)
-        call set_slider_pos(h_gas, 82)
-        call set_slider_pos(h_ambient, 35)
-        call set_slider_pos(h_tit, 1400)
-        call update_auto_button()
+        grid%demand_MW = 45.0_dp
+        grid%renewable_MW = 12.0_dp
+        grid%storage_request_MW = 0.0_dp
+        grid%storage_MW = 0.0_dp
+        grid%gas_dispatch_pct = 82.0_dp
+        grid%ambient_C = 15.0_dp
+        grid%TIT_K = 1400.0_dp
     end subroutine reset_controls
-
-    subroutine update_control_labels()
-        call set_text_if_changed(h_value_demand, format_value(grid%demand_MW, " MW", 1), last_demand_label)
-        call set_text_if_changed(h_value_renewable, format_value(grid%renewable_MW, " MW", 1), last_renewable_label)
-        call set_text_if_changed(h_value_storage, format_value(grid%storage_MW, " MW", 1), last_storage_label)
-        call set_text_if_changed(h_value_gas, format_value(grid%gas_dispatch_pct, " %", 0), last_gas_label)
-        call set_text_if_changed(h_value_ambient, format_value(grid%ambient_C, " C", 0), last_ambient_label)
-        call set_text_if_changed(h_value_tit, format_value(grid%TIT_K, " K", 0), last_tit_label)
-        call update_auto_button()
-    end subroutine update_control_labels
-
-    subroutine update_auto_button()
-        if (grid%auto_balance) then
-            call set_text_if_changed(h_auto_button, "Auto Balance: ON", last_auto_label)
-        else
-            call set_text_if_changed(h_auto_button, "Auto Balance: OFF", last_auto_label)
-        end if
-    end subroutine update_auto_button
-
-    function get_slider_pos(hwnd) result(position)
-        type(c_ptr), value :: hwnd
-        integer :: position
-        integer(c_intptr_t) :: raw
-
-        raw = SendMessageA(hwnd, TBM_GETPOS, 0_c_intptr_t, 0_c_intptr_t)
-        position = int(raw)
-    end function get_slider_pos
-
-    subroutine set_slider_pos(hwnd, position)
-        type(c_ptr), value :: hwnd
-        integer, intent(in) :: position
-        integer(c_intptr_t) :: ignored
-
-        ignored = SendMessageA(hwnd, TBM_SETPOS, 1_c_intptr_t, int(position, c_intptr_t))
-    end subroutine set_slider_pos
 
     subroutine draw_dashboard_buffered(hdc)
         type(c_ptr), value :: hdc
@@ -998,11 +960,12 @@ contains
         integer(c_int) :: status_color
 
         call fill_box(hdc, 0, 0, 1240, 900, BG)
+        call draw_control_panel(hdc)
 
-        x0 = 386
-        y0 = 18
-        w = 810
-        h = 830
+        x0 = 360
+        y0 = 24
+        w = 840
+        h = 824
         call fill_box(hdc, x0, y0, x0 + w, y0 + h, PANEL)
         call stroke_box(hdc, x0, y0, x0 + w, y0 + h, BORDER, 1)
 
@@ -1039,6 +1002,102 @@ contains
         call fill_box(hdc, x0 + 24, y0 + 806, x0 + 776, y0 + 832, status_color)
         call draw_text(hdc, x0 + 34, y0 + 812, trim(status), int(Z'00FFFFFF', c_int))
     end subroutine draw_dashboard
+
+    subroutine draw_control_panel(hdc)
+        type(c_ptr), value :: hdc
+        integer(c_int), parameter :: PANEL = int(Z'00FFFFFF', c_int)
+        integer(c_int), parameter :: BORDER = int(Z'00D4D0CA', c_int)
+        integer(c_int), parameter :: INK = int(Z'00211B16', c_int)
+        integer(c_int), parameter :: MUTED = int(Z'007D746C', c_int)
+        integer(c_int), parameter :: BLUE = int(Z'00D87B24', c_int)
+        integer(c_int), parameter :: GREEN = int(Z'0064A05A', c_int)
+        integer(c_int), parameter :: ORANGE = int(Z'0000A5FF', c_int)
+        integer(c_int), parameter :: RED = int(Z'002A48D9', c_int)
+        character(len=40) :: value
+
+        call fill_box(hdc, 24, 24, 330, 848, PANEL)
+        call stroke_box(hdc, 24, 24, 330, 848, BORDER, 1)
+        call draw_title_text(hdc, 42, 48, "Grid Controls", INK)
+        call draw_text(hdc, 42, 78, "Interactive dispatch inputs", MUTED)
+
+        write(value, '(F5.1," MW")') grid%demand_MW
+        call draw_custom_slider(hdc, ID_DEMAND, 42, 116, 270, "Demand", trim(adjustl(value)), &
+            grid%demand_MW, DEMAND_MIN_MW, DEMAND_MAX_MW, RED)
+
+        write(value, '(F5.1," MW")') grid%renewable_MW
+        call draw_custom_slider(hdc, ID_RENEWABLE, 42, 202, 270, "Renewables", trim(adjustl(value)), &
+            grid%renewable_MW, 0.0_dp, RENEWABLE_MAX_MW, GREEN)
+
+        write(value, '(SP,F5.1," MW")') grid%storage_request_MW
+        call draw_custom_slider(hdc, ID_STORAGE, 42, 288, 270, "Storage command", trim(adjustl(value)), &
+            grid%storage_request_MW, STORAGE_MIN_MW, STORAGE_MAX_MW, BLUE)
+
+        write(value, '(F5.0," %")') grid%gas_dispatch_pct
+        call draw_custom_slider(hdc, ID_GAS, 42, 374, 270, "Gas dispatch", trim(adjustl(value)), &
+            grid%gas_dispatch_pct, GAS_MIN_PCT, GAS_MAX_PCT, GREEN)
+
+        write(value, '(F5.0," C")') grid%ambient_C
+        call draw_custom_slider(hdc, ID_AMBIENT, 42, 460, 270, "Ambient", trim(adjustl(value)), &
+            grid%ambient_C, -20.0_dp, 45.0_dp, ORANGE)
+
+        write(value, '(F5.0," K")') grid%TIT_K
+        call draw_custom_slider(hdc, ID_TIT, 42, 546, 270, "Firing temperature", trim(adjustl(value)), &
+            grid%TIT_K, 1200.0_dp, 1600.0_dp, RED)
+
+        if (grid%auto_balance) then
+            call draw_button(hdc, 36, 674, 172, 714, "Auto: ON", GREEN)
+        else
+            call draw_button(hdc, 36, 674, 172, 714, "Auto: OFF", MUTED)
+        end if
+        call draw_button(hdc, 186, 674, 316, 714, "Balance", BLUE)
+        call draw_button(hdc, 36, 728, 132, 766, "Reset", MUTED)
+
+        call draw_text(hdc, 42, 798, "Timer: 250 ms | Solver: in-process", MUTED)
+        call draw_text(hdc, 42, 820, "Units: MW, Hz, MWh, USD/h", MUTED)
+    end subroutine draw_control_panel
+
+    subroutine draw_custom_slider(hdc, control_id, x, y, width, label, value_text, value, lo, hi, color)
+        type(c_ptr), value :: hdc
+        integer(c_int), intent(in) :: control_id
+        integer, intent(in) :: x, y, width
+        character(len=*), intent(in) :: label, value_text
+        real(dp), intent(in) :: value, lo, hi
+        integer(c_int), intent(in) :: color
+        integer(c_int), parameter :: TRACK = int(Z'00E4E7EA', c_int)
+        integer(c_int), parameter :: INK = int(Z'00211B16', c_int)
+        integer(c_int), parameter :: MUTED = int(Z'007D746C', c_int)
+        integer :: knob_x
+        real(dp) :: f
+
+        call draw_text(hdc, x, y - 30, label, INK)
+        call draw_text(hdc, x + width - 82, y - 30, value_text, MUTED)
+        f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
+        knob_x = x + int(f * real(width, dp))
+        call fill_box(hdc, x, y, x + width, y + 6, TRACK)
+        call fill_box(hdc, x, y, knob_x, y + 6, color)
+        call fill_box(hdc, knob_x - 6, y - 8, knob_x + 6, y + 14, int(Z'00FFFFFF', c_int))
+        call stroke_box(hdc, knob_x - 6, y - 8, knob_x + 6, y + 14, color, merge(3, 2, active_control == control_id))
+        call draw_text(hdc, x, y + 18, trim(format_range(lo, hi)), MUTED)
+    end subroutine draw_custom_slider
+
+    subroutine draw_button(hdc, left, top, right, bottom, label, color)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: left, top, right, bottom
+        character(len=*), intent(in) :: label
+        integer(c_int), intent(in) :: color
+
+        call fill_box(hdc, left, top, right, bottom, int(Z'00F8FBFC', c_int))
+        call stroke_box(hdc, left, top, right, bottom, color, 2)
+        call draw_text(hdc, left + 14, top + 11, label, int(Z'00211B16', c_int))
+    end subroutine draw_button
+
+    function format_range(lo, hi) result(text)
+        real(dp), intent(in) :: lo, hi
+        character(len=48) :: text
+
+        write(text, '(F0.0," to ",F0.0)') lo, hi
+        text = adjustl(text)
+    end function format_range
 
     subroutine draw_kpi_tiles(hdc, x, y)
         type(c_ptr), value :: hdc
@@ -1470,28 +1529,6 @@ contains
         if (c_associated(h_font_title)) old_font = SelectObject(hdc, old_font)
     end subroutine draw_title_text
 
-    subroutine set_text(hwnd, text)
-        type(c_ptr), value :: hwnd
-        character(len=*), intent(in) :: text
-        character(kind=c_char), allocatable, target :: c_text(:)
-        integer(c_int) :: ok
-
-        if (.not. c_associated(hwnd)) return
-        call make_c_string(text, c_text)
-        ok = SetWindowTextA(hwnd, c_loc(c_text))
-    end subroutine set_text
-
-    subroutine set_text_if_changed(hwnd, text, cached)
-        type(c_ptr), value :: hwnd
-        character(len=*), intent(in) :: text
-        character(len=*), intent(inout) :: cached
-
-        if (trim(cached) == trim(text)) return
-        call set_text(hwnd, trim(text))
-        cached = ""
-        cached(1:min(len(cached), len_trim(text))) = text(1:min(len(cached), len_trim(text)))
-    end subroutine set_text_if_changed
-
     subroutine reset_debug_log()
         integer :: unit, ios
 
@@ -1536,21 +1573,6 @@ contains
         c_text(n + 1) = c_null_char
     end subroutine make_c_string
 
-    function format_value(value, suffix, decimals) result(text)
-        real(dp), intent(in) :: value
-        character(len=*), intent(in) :: suffix
-        integer, intent(in) :: decimals
-        character(len=32) :: text
-
-        select case (decimals)
-        case (0)
-            write(text, '(F7.0,A)') value, trim(suffix)
-        case default
-            write(text, '(F7.1,A)') value, trim(suffix)
-        end select
-        text = adjustl(text)
-    end function format_value
-
     pure function clamp_real(value, lo, hi) result(clamped)
         real(dp), intent(in) :: value, lo, hi
         real(dp) :: clamped
@@ -1565,13 +1587,27 @@ contains
         word = int(iand(value, int(Z'FFFF', c_intptr_t)), c_int)
     end function loword
 
-    pure function make_lparam(low, high) result(value)
-        integer, intent(in) :: low, high
-        integer(c_intptr_t) :: value
+    pure function mouse_x(value) result(x)
+        integer(c_intptr_t), intent(in) :: value
+        integer :: x
 
-        value = ior(iand(int(low, c_intptr_t), int(Z'FFFF', c_intptr_t)), &
-            ishft(iand(int(high, c_intptr_t), int(Z'FFFF', c_intptr_t)), 16))
-    end function make_lparam
+        x = signed_word(iand(value, int(Z'FFFF', c_intptr_t)))
+    end function mouse_x
+
+    pure function mouse_y(value) result(y)
+        integer(c_intptr_t), intent(in) :: value
+        integer :: y
+
+        y = signed_word(iand(ishft(value, -16), int(Z'FFFF', c_intptr_t)))
+    end function mouse_y
+
+    pure function signed_word(value) result(word)
+        integer(c_intptr_t), intent(in) :: value
+        integer :: word
+
+        word = int(value)
+        if (word >= 32768) word = word - 65536
+    end function signed_word
 
     function int_to_cptr(value) result(ptr)
         integer(c_int), intent(in) :: value

@@ -37,6 +37,8 @@ TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
 EXE := thermotwin
 GUI_EXE := thermotwin-gui.exe
 GUI_DEBUG_EXE := thermotwin-gui-debug.exe
+GUI_ICON := gui/app_icon.ico
+GUI_RES := $(BUILD)/gui_icon.res
 
 .PHONY: all tests check debug run gui gui-debug clean
 .SECONDEXPANSION:
@@ -97,13 +99,19 @@ run: $(EXE)
 
 gui: $(GUI_EXE)
 
-$(GUI_EXE): gui/gui_win32.f90 $(OBJS)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< -o $@ -mwindows -luser32 -lgdi32 -lcomctl32 -lkernel32
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_RES) -o $@ -mwindows -luser32 -lgdi32 -lcomctl32 -lkernel32
 
 gui-debug: $(GUI_DEBUG_EXE)
 
-$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< -o $@ -luser32 -lgdi32 -lcomctl32 -lkernel32
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_RES) -o $@ -luser32 -lgdi32 -lcomctl32 -lkernel32
+
+$(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
+	windres $< -O coff -o $@
+
+$(GUI_ICON): scripts/generate_gui_icon.py
+	python scripts/generate_gui_icon.py $@
 
 clean:
 	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)

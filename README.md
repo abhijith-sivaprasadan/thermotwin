@@ -61,13 +61,13 @@ and a multi-page report at `output/ThermoTwin-F_report.pdf`.
 ### Optional Windows grid-balancing GUI
 
 The repository also includes an early native Windows GUI written in Fortran. It
-uses Win32 controls and GDI drawing through `iso_c_binding`, links directly to
-the simulator modules, and lets you manipulate demand, renewables, storage, gas
-dispatch, ambient temperature, and firing temperature while watching live grid
-balance, battery state of charge, frequency estimates, reserves, and rolling
-time-series traces. The dashboard also includes basic operating economics and
-battery ROI estimates, and uses buffered GDI rendering to keep timer updates
-smooth.
+uses a custom-drawn Win32/GDI dashboard through `iso_c_binding`, links directly
+to the simulator modules, and lets you manipulate demand, renewables, storage,
+gas dispatch, ambient temperature, and firing temperature while watching live
+grid balance, battery state of charge, frequency estimates, reserves, and
+rolling time-series traces. The dashboard also includes basic operating
+economics and battery ROI estimates, uses buffered GDI rendering to keep timer
+updates smooth, and embeds a generated Windows icon for the executable.
 
 ```powershell
 make gui

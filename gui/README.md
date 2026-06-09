@@ -2,7 +2,7 @@
 
 This folder contains the optional native Windows grid-balancing GUI.
 
-The GUI is written in Fortran, creates Win32 controls directly through
+The GUI is written in Fortran, uses custom Win32/GDI drawing through
 `iso_c_binding`, and links to the existing ThermoTwin-F solver modules. It does
 not shell out to `thermotwin.exe`; every timer tick calls `solve_cycle` in the
 GUI process to estimate gas-turbine output from the current controls.
@@ -15,7 +15,8 @@ From the repository root on Windows with MinGW/gfortran:
 make gui
 ```
 
-The Makefile links the GUI against the existing solver object files and the
+The Makefile links the GUI against the existing solver object files, generates
+the application icon, compiles the icon resource with `windres`, and links the
 needed Win32 libraries (`user32`, `gdi32`, `comctl32`, `kernel32`).
 
 Run `thermotwin-gui.exe` from the repository root.
@@ -40,11 +41,14 @@ The GUI also writes a short startup trace to `gui_debug.log`.
 - Auto-balance mode that ramps gas dispatch toward supply/demand balance.
 - Balance, frequency, reserve, battery SOC, power-flow and KPI visuals drawn
   with Win32 GDI.
+- Custom-drawn controls instead of native trackbars, so the full UI paints as
+  one stable instrument panel.
 - Rolling live traces for frequency, demand and gas dispatch.
 - Double-buffered dashboard repainting to avoid timer flicker.
 - ROI/economics panel with revenue, fuel cost, storage cycling cost, imbalance
   penalty, net margin, heat input, fuel flow, heat rate, and a simple battery
   payback estimate.
+- Generated Windows icon embedded into `thermotwin-gui.exe`.
 
 ## Likely next steps
 
