@@ -22,7 +22,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: SW_SHOW = 5_c_int
     integer(c_int), parameter :: WM_CREATE = 1_c_int
     integer(c_int), parameter :: WM_DESTROY = 2_c_int
+    integer(c_int), parameter :: WM_ERASEBKGND = 20_c_int
     integer(c_int), parameter :: WM_PAINT = 15_c_int
+    integer(c_int), parameter :: WM_SETFONT = 48_c_int
     integer(c_int), parameter :: WM_COMMAND = 273_c_int
     integer(c_int), parameter :: WM_TIMER = 275_c_int
     integer(c_int), parameter :: WM_HSCROLL = 276_c_int
@@ -38,6 +40,11 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: IDC_ARROW = 32512_c_int
     integer(c_int), parameter :: TRANSPARENT = 1_c_int
     integer(c_int), parameter :: PS_SOLID = 0_c_int
+    integer(c_int), parameter :: SRCCOPY = int(Z'00CC0020', c_int)
+    integer(c_int), parameter :: FW_NORMAL = 400_c_int
+    integer(c_int), parameter :: FW_SEMIBOLD = 600_c_int
+    integer(c_int), parameter :: DEFAULT_CHARSET = 1_c_int
+    integer(c_int), parameter :: CLEARTYPE_QUALITY = 5_c_int
 
     integer(c_int), parameter :: TBM_GETPOS = WM_USER
     integer(c_int), parameter :: TBM_SETPOS = WM_USER + 5_c_int
@@ -65,6 +72,12 @@ module thermotwin_win32_gui
     real(dp), parameter :: BATTERY_CAPACITY_MWH = 30.0_dp
     real(dp), parameter :: BATTERY_INITIAL_SOC_PCT = 50.0_dp
     real(dp), parameter :: BATTERY_EFFICIENCY = 0.92_dp
+    real(dp), parameter :: POWER_PRICE_USD_MWH = 95.0_dp
+    real(dp), parameter :: FUEL_PRICE_USD_GJ = 7.5_dp
+    real(dp), parameter :: STORAGE_CYCLE_COST_USD_MWH = 8.0_dp
+    real(dp), parameter :: IMBALANCE_PENALTY_USD_MWH = 250.0_dp
+    real(dp), parameter :: BATTERY_CAPEX_USD_MWH = 180000.0_dp
+    real(dp), parameter :: ROI_EQUIVALENT_HOURS_PER_YEAR = 2200.0_dp
     real(dp), parameter :: GAS_MIN_PCT = 20.0_dp
     real(dp), parameter :: GAS_MAX_PCT = 100.0_dp
     real(dp), parameter :: GAS_RAMP_PCT_PER_S = 18.0_dp
@@ -133,6 +146,15 @@ module thermotwin_win32_gui
         real(dp) :: frequency_Hz = 60.0_dp
         real(dp) :: heat_rate_kJ_kWh = 0.0_dp
         real(dp) :: exhaust_K = 0.0_dp
+        real(dp) :: fuel_flow_kg_s = 0.0_dp
+        real(dp) :: heat_input_MW = 0.0_dp
+        real(dp) :: revenue_usd_h = 0.0_dp
+        real(dp) :: fuel_cost_usd_h = 0.0_dp
+        real(dp) :: storage_cost_usd_h = 0.0_dp
+        real(dp) :: imbalance_penalty_usd_h = 0.0_dp
+        real(dp) :: margin_usd_h = 0.0_dp
+        real(dp) :: battery_value_usd_h = 0.0_dp
+        real(dp) :: battery_payback_years = 0.0_dp
         real(dp) :: elapsed_s = 0.0_dp
         integer :: history_count = 0
         integer :: history_head = 0
@@ -321,6 +343,40 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function DeleteObject
 
+        function DeleteDC(hdc) bind(C, name="DeleteDC") result(ok)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hdc
+            integer(c_int) :: ok
+        end function DeleteDC
+
+        function CreateCompatibleDC(hdc) bind(C, name="CreateCompatibleDC") result(memdc)
+            import :: c_ptr
+            type(c_ptr), value :: hdc
+            type(c_ptr) :: memdc
+        end function CreateCompatibleDC
+
+        function CreateCompatibleBitmap(hdc, cx, cy) bind(C, name="CreateCompatibleBitmap") result(bitmap)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hdc
+            integer(c_int), value :: cx
+            integer(c_int), value :: cy
+            type(c_ptr) :: bitmap
+        end function CreateCompatibleBitmap
+
+        function BitBlt(hdc, x, y, cx, cy, hdcSrc, x1, y1, rop) bind(C, name="BitBlt") result(ok)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hdc
+            integer(c_int), value :: x
+            integer(c_int), value :: y
+            integer(c_int), value :: cx
+            integer(c_int), value :: cy
+            type(c_ptr), value :: hdcSrc
+            integer(c_int), value :: x1
+            integer(c_int), value :: y1
+            integer(c_int), value :: rop
+            integer(c_int) :: ok
+        end function BitBlt
+
         function CreatePen(fnPenStyle, nWidth, crColor) bind(C, name="CreatePen") result(hPen)
             import :: c_int, c_ptr
             integer(c_int), value :: fnPenStyle
@@ -376,6 +432,28 @@ module thermotwin_win32_gui
             integer(c_int), value :: cch
             integer(c_int) :: ok
         end function TextOutA
+
+        function CreateFontA(cHeight, cWidth, cEscapement, cOrientation, cWeight, &
+                bItalic, bUnderline, bStrikeOut, iCharSet, iOutPrecision, &
+                iClipPrecision, iQuality, iPitchAndFamily, pszFaceName) &
+                bind(C, name="CreateFontA") result(hFont)
+            import :: c_int, c_ptr
+            integer(c_int), value :: cHeight
+            integer(c_int), value :: cWidth
+            integer(c_int), value :: cEscapement
+            integer(c_int), value :: cOrientation
+            integer(c_int), value :: cWeight
+            integer(c_int), value :: bItalic
+            integer(c_int), value :: bUnderline
+            integer(c_int), value :: bStrikeOut
+            integer(c_int), value :: iCharSet
+            integer(c_int), value :: iOutPrecision
+            integer(c_int), value :: iClipPrecision
+            integer(c_int), value :: iQuality
+            integer(c_int), value :: iPitchAndFamily
+            type(c_ptr), value :: pszFaceName
+            type(c_ptr) :: hFont
+        end function CreateFontA
     end interface
 
     type(c_ptr) :: h_instance = c_null_ptr
@@ -393,6 +471,15 @@ module thermotwin_win32_gui
     type(c_ptr) :: h_value_gas = c_null_ptr
     type(c_ptr) :: h_value_ambient = c_null_ptr
     type(c_ptr) :: h_value_tit = c_null_ptr
+    type(c_ptr) :: h_font_ui = c_null_ptr
+    type(c_ptr) :: h_font_title = c_null_ptr
+    character(len=40) :: last_demand_label = ""
+    character(len=40) :: last_renewable_label = ""
+    character(len=40) :: last_storage_label = ""
+    character(len=40) :: last_gas_label = ""
+    character(len=40) :: last_ambient_label = ""
+    character(len=40) :: last_tit_label = ""
+    character(len=40) :: last_auto_label = ""
     type(GridState) :: grid
 
 contains
@@ -438,7 +525,7 @@ contains
 
         hwnd = CreateWindowExA(0_c_int, c_loc(class_name), c_loc(title), &
             WS_OVERLAPPEDWINDOW + WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, &
-            1180_c_int, 860_c_int, c_null_ptr, c_null_ptr, h_instance, c_null_ptr)
+            1240_c_int, 900_c_int, c_null_ptr, c_null_ptr, h_instance, c_null_ptr)
         if (.not. c_associated(hwnd)) then
             call fatal_gui("Could not create ThermoTwin-F GUI window.")
             stop
@@ -475,6 +562,7 @@ contains
         case (WM_CREATE)
             call log_debug("message: WM_CREATE")
             h_main = hwnd
+            call init_fonts()
             call create_controls(hwnd)
             call read_controls()
             call refresh_model()
@@ -489,13 +577,13 @@ contains
             call read_controls()
             call refresh_model()
             call update_control_labels()
-            ok = InvalidateRect(hwnd, c_null_ptr, 0_c_int)
+            call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
 
         case (WM_COMMAND)
             call handle_command(loword(wParam))
-            ok = InvalidateRect(hwnd, c_null_ptr, 0_c_int)
+            call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
 
@@ -507,13 +595,17 @@ contains
             call refresh_model()
             call append_history()
             call update_control_labels()
-            ok = InvalidateRect(hwnd, c_null_ptr, 0_c_int)
+            call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
+            return
+
+        case (WM_ERASEBKGND)
+            lres = 1_c_intptr_t
             return
 
         case (WM_PAINT)
             hdc = BeginPaint(hwnd, ps)
-            call draw_dashboard(hdc)
+            call draw_dashboard_buffered(hdc)
             ok = EndPaint(hwnd, ps)
             lres = 0_c_intptr_t
             return
@@ -521,6 +613,7 @@ contains
         case (WM_DESTROY)
             call log_debug("message: WM_DESTROY")
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
+            call destroy_fonts()
             call PostQuitMessage(0_c_int)
             lres = 0_c_intptr_t
             return
@@ -590,8 +683,51 @@ contains
             parent, int_to_cptr(control_id), h_instance, c_null_ptr)
         if (.not. c_associated(hwnd)) then
             call log_debug("control: failed to create " // trim(class_name) // " " // trim(text))
+        else
+            call apply_font(hwnd)
         end if
     end function create_child
+
+    subroutine init_fonts()
+        character(kind=c_char), allocatable, target :: face(:)
+
+        call make_c_string("Segoe UI", face)
+        h_font_ui = CreateFontA(-17_c_int, 0_c_int, 0_c_int, 0_c_int, FW_NORMAL, &
+            0_c_int, 0_c_int, 0_c_int, DEFAULT_CHARSET, 0_c_int, 0_c_int, &
+            CLEARTYPE_QUALITY, 0_c_int, c_loc(face))
+        h_font_title = CreateFontA(-22_c_int, 0_c_int, 0_c_int, 0_c_int, FW_SEMIBOLD, &
+            0_c_int, 0_c_int, 0_c_int, DEFAULT_CHARSET, 0_c_int, 0_c_int, &
+            CLEARTYPE_QUALITY, 0_c_int, c_loc(face))
+    end subroutine init_fonts
+
+    subroutine destroy_fonts()
+        integer(c_int) :: ok
+
+        if (c_associated(h_font_ui)) ok = DeleteObject(h_font_ui)
+        if (c_associated(h_font_title)) ok = DeleteObject(h_font_title)
+        h_font_ui = c_null_ptr
+        h_font_title = c_null_ptr
+    end subroutine destroy_fonts
+
+    subroutine apply_font(hwnd)
+        type(c_ptr), value :: hwnd
+        integer(c_intptr_t) :: ignored
+
+        if (.not. c_associated(h_font_ui)) return
+        ignored = SendMessageA(hwnd, WM_SETFONT, transfer(h_font_ui, ignored), 1_c_intptr_t)
+    end subroutine apply_font
+
+    subroutine invalidate_dashboard(hwnd)
+        type(c_ptr), value :: hwnd
+        type(Rect), target :: r
+        integer(c_int) :: ok
+
+        r%left = 372
+        r%top = 12
+        r%right = 1212
+        r%bottom = 864
+        ok = InvalidateRect(hwnd, c_loc(r), 0_c_int)
+    end subroutine invalidate_dashboard
 
     subroutine configure_slider(hwnd, min_value, max_value, position, tick_freq)
         type(c_ptr), value :: hwnd
@@ -650,12 +786,37 @@ contains
         grid%gas_power_MW = max(0.0_dp, res%net_power_MW)
         grid%heat_rate_kJ_kWh = res%heat_rate_kJ_kWh
         grid%exhaust_K = res%exhaust_temperature_K
+        grid%fuel_flow_kg_s = res%fuel_flow_kg_s
+        grid%heat_input_MW = res%heat_input_MW
         grid%storage_MW = limited_storage_power(grid%storage_request_MW)
         grid%supply_MW = grid%gas_power_MW + grid%renewable_MW + grid%storage_MW
         grid%imbalance_MW = grid%supply_MW - grid%demand_MW
         grid%reserve_MW = max(0.0_dp, grid%gas_capacity_MW - grid%gas_power_MW)
         grid%frequency_Hz = clamp_real(60.0_dp + 0.045_dp * grid%imbalance_MW, 58.5_dp, 61.5_dp)
+        call refresh_economics()
     end subroutine refresh_model
+
+    subroutine refresh_economics()
+        real(dp) :: served_MW, battery_capex_usd, annual_value_usd
+
+        served_MW = min(grid%demand_MW, max(0.0_dp, grid%supply_MW))
+        grid%revenue_usd_h = served_MW * POWER_PRICE_USD_MWH
+        grid%fuel_cost_usd_h = grid%heat_input_MW * 3.6_dp * FUEL_PRICE_USD_GJ
+        grid%storage_cost_usd_h = abs(grid%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
+        grid%imbalance_penalty_usd_h = abs(grid%imbalance_MW) * IMBALANCE_PENALTY_USD_MWH
+        grid%margin_usd_h = grid%revenue_usd_h - grid%fuel_cost_usd_h - &
+            grid%storage_cost_usd_h - grid%imbalance_penalty_usd_h
+
+        grid%battery_value_usd_h = max(0.0_dp, abs(grid%storage_MW) * &
+            (IMBALANCE_PENALTY_USD_MWH - STORAGE_CYCLE_COST_USD_MWH))
+        battery_capex_usd = BATTERY_CAPACITY_MWH * BATTERY_CAPEX_USD_MWH
+        annual_value_usd = grid%battery_value_usd_h * ROI_EQUIVALENT_HOURS_PER_YEAR
+        if (annual_value_usd > 1.0e-6_dp) then
+            grid%battery_payback_years = battery_capex_usd / annual_value_usd
+        else
+            grid%battery_payback_years = 99.0_dp
+        end if
+    end subroutine refresh_economics
 
     function limited_storage_power(request_MW) result(actual_MW)
         real(dp), intent(in) :: request_MW
@@ -762,20 +923,20 @@ contains
     end subroutine reset_controls
 
     subroutine update_control_labels()
-        call set_text(h_value_demand, format_value(grid%demand_MW, " MW", 1))
-        call set_text(h_value_renewable, format_value(grid%renewable_MW, " MW", 1))
-        call set_text(h_value_storage, format_value(grid%storage_MW, " MW", 1))
-        call set_text(h_value_gas, format_value(grid%gas_dispatch_pct, " %", 0))
-        call set_text(h_value_ambient, format_value(grid%ambient_C, " C", 0))
-        call set_text(h_value_tit, format_value(grid%TIT_K, " K", 0))
+        call set_text_if_changed(h_value_demand, format_value(grid%demand_MW, " MW", 1), last_demand_label)
+        call set_text_if_changed(h_value_renewable, format_value(grid%renewable_MW, " MW", 1), last_renewable_label)
+        call set_text_if_changed(h_value_storage, format_value(grid%storage_MW, " MW", 1), last_storage_label)
+        call set_text_if_changed(h_value_gas, format_value(grid%gas_dispatch_pct, " %", 0), last_gas_label)
+        call set_text_if_changed(h_value_ambient, format_value(grid%ambient_C, " C", 0), last_ambient_label)
+        call set_text_if_changed(h_value_tit, format_value(grid%TIT_K, " K", 0), last_tit_label)
         call update_auto_button()
     end subroutine update_control_labels
 
     subroutine update_auto_button()
         if (grid%auto_balance) then
-            call set_text(h_auto_button, "Auto Balance: ON")
+            call set_text_if_changed(h_auto_button, "Auto Balance: ON", last_auto_label)
         else
-            call set_text(h_auto_button, "Auto Balance: OFF")
+            call set_text_if_changed(h_auto_button, "Auto Balance: OFF", last_auto_label)
         end if
     end subroutine update_auto_button
 
@@ -796,6 +957,28 @@ contains
         ignored = SendMessageA(hwnd, TBM_SETPOS, 1_c_intptr_t, int(position, c_intptr_t))
     end subroutine set_slider_pos
 
+    subroutine draw_dashboard_buffered(hdc)
+        type(c_ptr), value :: hdc
+        integer(c_int), parameter :: W = 1240_c_int
+        integer(c_int), parameter :: H = 900_c_int
+        type(c_ptr) :: memdc, bitmap, old_bitmap
+        integer(c_int) :: ok
+
+        memdc = CreateCompatibleDC(hdc)
+        bitmap = CreateCompatibleBitmap(hdc, W, H)
+        if (.not. c_associated(memdc) .or. .not. c_associated(bitmap)) then
+            call draw_dashboard(hdc)
+            return
+        end if
+
+        old_bitmap = SelectObject(memdc, bitmap)
+        call draw_dashboard(memdc)
+        ok = BitBlt(hdc, 0_c_int, 0_c_int, W, H, memdc, 0_c_int, 0_c_int, SRCCOPY)
+        old_bitmap = SelectObject(memdc, old_bitmap)
+        ok = DeleteObject(bitmap)
+        ok = DeleteDC(memdc)
+    end subroutine draw_dashboard_buffered
+
     subroutine draw_dashboard(hdc)
         type(c_ptr), value :: hdc
         integer(c_int), parameter :: BG = int(Z'00F7F8FA', c_int)
@@ -814,44 +997,47 @@ contains
         character(len=96) :: status, subtitle
         integer(c_int) :: status_color
 
-        call fill_box(hdc, 0, 0, 1180, 860, BG)
+        call fill_box(hdc, 0, 0, 1240, 900, BG)
 
         x0 = 386
         y0 = 18
-        w = 750
-        h = 790
+        w = 810
+        h = 830
         call fill_box(hdc, x0, y0, x0 + w, y0 + h, PANEL)
         call stroke_box(hdc, x0, y0, x0 + w, y0 + h, BORDER, 1)
 
-        call draw_text(hdc, x0 + 24, y0 + 22, "ThermoTwin-F Live Grid Balancer", INK)
+        call draw_title_text(hdc, x0 + 24, y0 + 22, "ThermoTwin-F Live Grid Balancer", INK)
         write(subtitle, '("Scenario time ",F7.1," s | Auto balance ",A)') &
             grid%elapsed_s, merge("ON ", "OFF", grid%auto_balance)
-        call draw_text(hdc, x0 + 24, y0 + 44, trim(subtitle), MUTED)
+        call draw_text(hdc, x0 + 24, y0 + 50, trim(subtitle), MUTED)
 
         scale_MW = max(max(DEMAND_MAX_MW, grid%demand_MW), max(grid%supply_MW, grid%gas_capacity_MW))
-        call draw_kpi_tiles(hdc, x0 + 24, y0 + 78)
+        call draw_kpi_tiles(hdc, x0 + 24, y0 + 82)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 180, "Power balance")
-        call draw_bar(hdc, x0 + 24, y0 + 210, 680, 24, "Demand", grid%demand_MW, scale_MW, DEMAND)
-        call draw_bar(hdc, x0 + 24, y0 + 248, 680, 24, "Total supply", grid%supply_MW, scale_MW, OK)
-        call draw_stacked_supply(hdc, x0 + 24, y0 + 290, 680, 32, scale_MW, GAS, RENEW, STORAGE, ALERT)
+        call draw_section_title_width(hdc, x0 + 24, y0 + 178, "Power balance", 752)
+        call draw_bar(hdc, x0 + 24, y0 + 208, 752, 22, "Demand", grid%demand_MW, scale_MW, DEMAND)
+        call draw_bar(hdc, x0 + 24, y0 + 242, 752, 22, "Total supply", grid%supply_MW, scale_MW, OK)
+        call draw_stacked_supply(hdc, x0 + 24, y0 + 278, 752, 28, scale_MW, GAS, RENEW, STORAGE, ALERT)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 348, "Battery")
-        call draw_battery_panel(hdc, x0 + 24, y0 + 378, 680, 56)
+        call draw_section_title_width(hdc, x0 + 24, y0 + 330, "Battery", 752)
+        call draw_battery_panel(hdc, x0 + 24, y0 + 360, 752, 56)
 
-        call draw_section_title(hdc, x0 + 24, y0 + 460, "Frequency and reserve")
-        call draw_frequency_meter(hdc, x0 + 24, y0 + 490, 680, 38)
-        call draw_bar(hdc, x0 + 24, y0 + 554, 680, 22, "Gas reserve", grid%reserve_MW, max(1.0_dp, grid%gas_capacity_MW), RENEW)
+        call draw_section_title_width(hdc, x0 + 24, y0 + 434, "Stability and reserve", 752)
+        call draw_frequency_meter(hdc, x0 + 24, y0 + 464, 752, 36)
+        call draw_bar(hdc, x0 + 24, y0 + 526, 752, 20, "Gas reserve", grid%reserve_MW, max(1.0_dp, grid%gas_capacity_MW), RENEW)
 
-        call draw_section_title_width(hdc, x0 + 24, y0 + 608, "Live traces", 360)
-        call draw_history_traces(hdc, x0 + 24, y0 + 638, 360, 120)
+        call draw_section_title_width(hdc, x0 + 24, y0 + 572, "ROI and thermodynamic economics", 752)
+        call draw_roi_panel(hdc, x0 + 24, y0 + 602, 752, 62)
 
-        call draw_section_title_width(hdc, x0 + 418, y0 + 608, "Power flow", 286)
-        call draw_power_flow(hdc, x0 + 420, y0 + 638)
+        call draw_section_title_width(hdc, x0 + 24, y0 + 690, "Live traces", 390)
+        call draw_history_traces(hdc, x0 + 24, y0 + 720, 390, 82)
+
+        call draw_section_title_width(hdc, x0 + 448, y0 + 690, "Power flow", 328)
+        call draw_power_flow(hdc, x0 + 450, y0 + 720)
 
         call grid_status(status, status_color)
-        call fill_box(hdc, x0 + 24, y0 + 762, x0 + 704, y0 + 786, status_color)
-        call draw_text(hdc, x0 + 34, y0 + 767, trim(status), int(Z'00FFFFFF', c_int))
+        call fill_box(hdc, x0 + 24, y0 + 806, x0 + 776, y0 + 832, status_color)
+        call draw_text(hdc, x0 + 34, y0 + 812, trim(status), int(Z'00FFFFFF', c_int))
     end subroutine draw_dashboard
 
     subroutine draw_kpi_tiles(hdc, x, y)
@@ -863,41 +1049,43 @@ contains
         integer(c_int), parameter :: MUTED = int(Z'007D746C', c_int)
         integer(c_int), parameter :: RED = int(Z'002A48D9', c_int)
         integer(c_int), parameter :: GREEN = int(Z'0064A05A', c_int)
+        integer(c_int), parameter :: AMBER = int(Z'0000A5FF', c_int)
         integer :: i, tx, ty
         character(len=64) :: value
 
-        do i = 0, 2
-            tx = x + i * 205
-            call fill_box(hdc, tx, y, tx + 185, y + 82, TILE)
-            call stroke_box(hdc, tx, y, tx + 185, y + 82, BORDER, 1)
+        do i = 0, 3
+            tx = x + i * 190
+            call fill_box(hdc, tx, y, tx + 176, y + 70, TILE)
+            call stroke_box(hdc, tx, y, tx + 176, y + 70, BORDER, 1)
         end do
 
         write(value, '(F6.1," MW")') grid%gas_power_MW
         call draw_text(hdc, x + 12, y + 12, "Gas output", MUTED)
-        call draw_text(hdc, x + 12, y + 38, adjustl(value), INK)
+        call draw_text(hdc, x + 12, y + 36, adjustl(value), INK)
 
         write(value, '(F7.2," Hz")') grid%frequency_Hz
-        call draw_text(hdc, x + 217, y + 12, "Grid frequency", MUTED)
-        call draw_text(hdc, x + 217, y + 38, adjustl(value), frequency_color())
+        call draw_text(hdc, x + 202, y + 12, "Frequency", MUTED)
+        call draw_text(hdc, x + 202, y + 36, adjustl(value), frequency_color())
 
         write(value, '(SP,F6.1," MW")') grid%imbalance_MW
-        ty = y + 38
-        call draw_text(hdc, x + 422, y + 12, "Imbalance", MUTED)
+        ty = y + 36
+        call draw_text(hdc, x + 392, y + 12, "Imbalance", MUTED)
         if (abs(grid%imbalance_MW) <= 0.5_dp) then
-            call draw_text(hdc, x + 422, ty, adjustl(value), GREEN)
+            call draw_text(hdc, x + 392, ty, adjustl(value), GREEN)
         else
-            call draw_text(hdc, x + 422, ty, adjustl(value), RED)
+            call draw_text(hdc, x + 392, ty, adjustl(value), RED)
+        end if
+
+        write(value, '("$",F7.0,"/h")') grid%margin_usd_h
+        call draw_text(hdc, x + 582, y + 12, "Net margin", MUTED)
+        if (grid%margin_usd_h >= 0.0_dp) then
+            call draw_text(hdc, x + 582, y + 36, adjustl(value), GREEN)
+        else if (grid%margin_usd_h > -1000.0_dp) then
+            call draw_text(hdc, x + 582, y + 36, adjustl(value), AMBER)
+        else
+            call draw_text(hdc, x + 582, y + 36, adjustl(value), RED)
         end if
     end subroutine draw_kpi_tiles
-
-    subroutine draw_section_title(hdc, x, y, text)
-        type(c_ptr), value :: hdc
-        integer, intent(in) :: x, y
-        character(len=*), intent(in) :: text
-
-        call draw_text(hdc, x, y, text, int(Z'00211B16', c_int))
-        call draw_line(hdc, x, y + 20, x + 610, y + 20, int(Z'00E5E1DB', c_int), 1)
-    end subroutine draw_section_title
 
     subroutine draw_section_title_width(hdc, x, y, text, width)
         type(c_ptr), value :: hdc
@@ -985,6 +1173,44 @@ contains
             grid%storage_request_MW, grid%storage_MW
         call draw_text(hdc, x, y + 34, adjustl(line2), INK)
     end subroutine draw_battery_panel
+
+    subroutine draw_roi_panel(hdc, x, y, width, height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height
+        integer(c_int), parameter :: BORDER = int(Z'00D4D0CA', c_int)
+        integer(c_int), parameter :: PANEL = int(Z'00F8FBFC', c_int)
+        integer(c_int), parameter :: INK = int(Z'00211B16', c_int)
+        integer(c_int), parameter :: MUTED = int(Z'007D746C', c_int)
+        integer(c_int), parameter :: GREEN = int(Z'0064A05A', c_int)
+        integer(c_int), parameter :: RED = int(Z'002A48D9', c_int)
+        character(len=96) :: line
+
+        if (height < 1) return
+        call fill_box(hdc, x, y, x + width, y + height, PANEL)
+        call stroke_box(hdc, x, y, x + width, y + height, BORDER, 1)
+
+        write(line, '("Revenue $",F7.0,"/h   Fuel $",F7.0,"/h   Penalty $",F7.0,"/h")') &
+            grid%revenue_usd_h, grid%fuel_cost_usd_h, grid%imbalance_penalty_usd_h
+        call draw_text(hdc, x + 10, y + 8, adjustl(line), INK)
+
+        write(line, '("Heat input ",F6.1," MWth   Fuel ",F5.2," kg/s   HR ",F7.0," kJ/kWh")') &
+            grid%heat_input_MW, grid%fuel_flow_kg_s, grid%heat_rate_kJ_kWh
+        call draw_text(hdc, x + 10, y + 30, adjustl(line), MUTED)
+
+        if (grid%battery_payback_years < 98.0_dp) then
+            write(line, '("Battery value $",F6.0,"/h   simple payback ",F5.1," yr @ ",F5.0," h/yr")') &
+                grid%battery_value_usd_h, grid%battery_payback_years, ROI_EQUIVALENT_HOURS_PER_YEAR
+        else
+            write(line, '("Battery value $",F6.0,"/h   simple payback: no active storage value")') &
+                grid%battery_value_usd_h
+        end if
+        if (grid%margin_usd_h >= 0.0_dp) then
+            call draw_text(hdc, x + 420, y + 8, "profitable", GREEN)
+        else
+            call draw_text(hdc, x + 420, y + 8, "loss-making", RED)
+        end if
+        call draw_text(hdc, x + 10, y + 48, adjustl(line), MUTED)
+    end subroutine draw_roi_panel
 
     subroutine draw_history_traces(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
@@ -1210,16 +1436,39 @@ contains
         character(len=*), intent(in) :: text
         integer(c_int), intent(in) :: color
         character(kind=c_char), allocatable, target :: c_text(:)
+        type(c_ptr) :: old_font
         integer(c_int) :: ignored, ok
         integer :: n
 
         n = len_trim(text)
         if (n <= 0) return
         call make_c_string(text(1:n), c_text)
+        if (c_associated(h_font_ui)) old_font = SelectObject(hdc, h_font_ui)
         ignored = SetTextColor(hdc, color)
         ignored = SetBkMode(hdc, TRANSPARENT)
         ok = TextOutA(hdc, int(x, c_int), int(y, c_int), c_loc(c_text), int(n, c_int))
+        if (c_associated(h_font_ui)) old_font = SelectObject(hdc, old_font)
     end subroutine draw_text
+
+    subroutine draw_title_text(hdc, x, y, text, color)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y
+        character(len=*), intent(in) :: text
+        integer(c_int), intent(in) :: color
+        character(kind=c_char), allocatable, target :: c_text(:)
+        type(c_ptr) :: old_font
+        integer(c_int) :: ignored, ok
+        integer :: n
+
+        n = len_trim(text)
+        if (n <= 0) return
+        call make_c_string(text(1:n), c_text)
+        if (c_associated(h_font_title)) old_font = SelectObject(hdc, h_font_title)
+        ignored = SetTextColor(hdc, color)
+        ignored = SetBkMode(hdc, TRANSPARENT)
+        ok = TextOutA(hdc, int(x, c_int), int(y, c_int), c_loc(c_text), int(n, c_int))
+        if (c_associated(h_font_title)) old_font = SelectObject(hdc, old_font)
+    end subroutine draw_title_text
 
     subroutine set_text(hwnd, text)
         type(c_ptr), value :: hwnd
@@ -1231,6 +1480,17 @@ contains
         call make_c_string(text, c_text)
         ok = SetWindowTextA(hwnd, c_loc(c_text))
     end subroutine set_text
+
+    subroutine set_text_if_changed(hwnd, text, cached)
+        type(c_ptr), value :: hwnd
+        character(len=*), intent(in) :: text
+        character(len=*), intent(inout) :: cached
+
+        if (trim(cached) == trim(text)) return
+        call set_text(hwnd, trim(text))
+        cached = ""
+        cached(1:min(len(cached), len_trim(text))) = text(1:min(len(cached), len_trim(text)))
+    end subroutine set_text_if_changed
 
     subroutine reset_debug_log()
         integer :: unit, ios

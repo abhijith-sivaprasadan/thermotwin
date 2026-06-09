@@ -65,7 +65,9 @@ uses Win32 controls and GDI drawing through `iso_c_binding`, links directly to
 the simulator modules, and lets you manipulate demand, renewables, storage, gas
 dispatch, ambient temperature, and firing temperature while watching live grid
 balance, battery state of charge, frequency estimates, reserves, and rolling
-time-series traces.
+time-series traces. The dashboard also includes basic operating economics and
+battery ROI estimates, and uses buffered GDI rendering to keep timer updates
+smooth.
 
 ```powershell
 make gui

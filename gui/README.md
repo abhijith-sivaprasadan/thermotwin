@@ -41,6 +41,10 @@ The GUI also writes a short startup trace to `gui_debug.log`.
 - Balance, frequency, reserve, battery SOC, power-flow and KPI visuals drawn
   with Win32 GDI.
 - Rolling live traces for frequency, demand and gas dispatch.
+- Double-buffered dashboard repainting to avoid timer flicker.
+- ROI/economics panel with revenue, fuel cost, storage cycling cost, imbalance
+  penalty, net margin, heat input, fuel flow, heat rate, and a simple battery
+  payback estimate.
 
 ## Likely next steps
 
