@@ -95,8 +95,8 @@ run: $(EXE)
 
 gui: $(GUI_EXE)
 
-$(GUI_EXE): gui/gui_win32.f90 $(EXE)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $< -o $@ -mwindows -luser32 -lkernel32
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< -o $@ -mwindows -luser32 -lgdi32 -lcomctl32 -lkernel32
 
 clean:
 	rm -rf $(BUILD) $(EXE) $(GUI_EXE)

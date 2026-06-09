@@ -58,11 +58,13 @@ A `Makefile` is also provided (`make`, `make check`, `make run`, `make debug`).
 This produces all result CSVs in `output/`, six figures in `output/figures/`,
 and a multi-page report at `output/ThermoTwin-F_report.pdf`.
 
-### Optional Windows GUI launcher
+### Optional Windows grid-balancing GUI
 
-The repository also includes an early native Windows GUI launcher written in
-Fortran. It uses Win32 controls through `iso_c_binding`, runs `thermotwin.exe`
-under the hood, and displays the captured output.
+The repository also includes an early native Windows GUI written in Fortran. It
+uses Win32 controls and GDI drawing through `iso_c_binding`, links directly to
+the simulator modules, and lets you manipulate demand, renewables, storage, gas
+dispatch, ambient temperature, and firing temperature while watching live grid
+balance and frequency estimates.
 
 ```powershell
 make gui
