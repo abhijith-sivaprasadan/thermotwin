@@ -21,7 +21,7 @@ contains
 
         served_MW = min(st%demand_MW, max(0.0_dp, st%supply_MW))
         st%revenue_usd_h = served_MW * POWER_PRICE_USD_MWH
-        st%fuel_cost_usd_h = st%heat_input_MW * 3.6_dp * FUEL_PRICE_USD_GJ
+        st%fuel_cost_usd_h = st%heat_input_MW * 3.6_dp * st%fuel_price_usd_gj
         st%storage_cost_usd_h = abs(st%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
         st%imbalance_penalty_usd_h = abs(st%imbalance_MW) * IMBALANCE_PENALTY_USD_MWH
         st%margin_usd_h = st%revenue_usd_h - st%fuel_cost_usd_h - &

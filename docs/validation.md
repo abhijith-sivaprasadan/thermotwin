@@ -41,3 +41,36 @@ Transient check:
 
 The validation is enforced by `test/test_combined_cycle.f90` and the full suite
 passes through `make check`.
+
+## Phase 4: Multi-Unit Fleet Dispatch
+
+Reference target from `docs/REVAMP_PLAN.md`: Phase 4 should behave like a
+plant-level operator dispatch stack, with multiple online units, economic
+dispatch from heat rate and live fuel price, a spinning-reserve holdback, BESS
+economic displacement, and online-unit inertia visible to grid dynamics.
+
+Validation cases:
+
+- Fleet mode: GT1 simple-cycle, GT2 fast-start aero unit, CC1 combined-cycle
+- BESS: 30 MWh, 20 MW discharge/charge limit
+- Reserve requirement: max(5 MW, 10% of demand)
+- Fuel price: live `fuel_price_usd_gj`
+
+| Check | ThermoTwin-F Phase 4 | Acceptance |
+|---|---:|---:|
+| Cheap fuel, 60 MW thermal target | CC1 SP 52.95 MW, GT2 fills ~7.05 MW, GT1 0 MW | Efficient CC1 is base-load unit |
+| Cheap fuel reserve | 38.27 MW reserve at 70 MW load / 10 MW renewables | Above 5 MW requirement |
+| High target reserve binding | 96 MW request limited to ~88.27 MW dispatch | Holds 10 MW reserve |
+| High fuel BESS dispatch | BESS request reaches 8 MW in fleet scenario | Battery offsets expensive thermal MW |
+| Fleet inertia online | 102 MWs | Sum of GT1, GT2, and CC1 inertia |
+| CC1 trip inertia | 32 MWs | CC1 trip removes 70 MWs and worsens ROCOF |
+
+Control interaction check:
+
+| Quantity | ThermoTwin-F Phase 4 | Acceptance |
+|---|---:|---:|
+| High fuel, 60 MW demand, 30 MW renewables, 0.25 s tick | BESS request > 0 MW and thermal target < 30 MW | BESS displaces thermal dispatch before renewable curtailment |
+
+The validation is enforced by `test/test_fleet_dispatch.f90`,
+`cases/scenarios/fleet_dispatch.scn`, and the full suite passes through
+`make check`.

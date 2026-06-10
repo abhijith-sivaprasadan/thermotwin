@@ -32,7 +32,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver off_design hrsg steam_cycle \
-        tag_bus engine_state grid_dynamics dispatch_agc plant_economics engine_core \
+        tag_bus engine_state fleet_dispatch grid_dynamics dispatch_agc plant_economics engine_core \
         scenario_runner
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
@@ -85,6 +85,7 @@ $(BUILD)/sensitivity_driver.o:   $(BUILD)/cycle_solver.o
 $(BUILD)/off_design.o:           $(BUILD)/cycle_solver.o $(BUILD)/ambient.o $(BUILD)/types.o
 $(BUILD)/hrsg.o:                 $(BUILD)/fluid_properties.o
 $(BUILD)/steam_cycle.o:          $(BUILD)/hrsg.o
+$(BUILD)/fleet_dispatch.o:       $(BUILD)/engine_state.o
 $(BUILD)/tag_bus.o:              $(BUILD)/precision_kinds.o
 $(BUILD)/engine_state.o:         $(BUILD)/precision_kinds.o
 $(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o
@@ -95,7 +96,8 @@ $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.
                                   $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
                                   $(BUILD)/types.o $(BUILD)/constants.o \
                                   $(BUILD)/off_design.o $(BUILD)/fluid_properties.o \
-                                  $(BUILD)/hrsg.o $(BUILD)/steam_cycle.o
+                                  $(BUILD)/hrsg.o $(BUILD)/steam_cycle.o \
+                                  $(BUILD)/fleet_dispatch.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
 

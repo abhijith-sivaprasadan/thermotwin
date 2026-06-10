@@ -881,8 +881,7 @@ contains
         case (ID_BALANCE)
             call balance_now(grid)
         case (ID_CC_MODE)
-            grid%combined_cycle = .not. grid%combined_cycle
-            if (.not. grid%combined_cycle) grid%steam_power_MW = 0.0_dp
+            call cycle_plant_mode()
         case (ID_RESET)
             call reset_controls(grid)
         case (ID_ROI_MODE)
@@ -915,8 +914,7 @@ contains
             call balance_now(grid)
             active_control = ID_NONE
         case (ID_CC_MODE)
-            grid%combined_cycle = .not. grid%combined_cycle
-            if (.not. grid%combined_cycle) grid%steam_power_MW = 0.0_dp
+            call cycle_plant_mode()
             active_control = ID_NONE
         case (ID_RESET)
             call reset_controls(grid)
@@ -942,6 +940,21 @@ contains
         end select
         call refresh_model(grid)
     end subroutine handle_mouse_down
+
+    subroutine cycle_plant_mode()
+        if (grid%fleet_mode) then
+            grid%fleet_mode = .false.
+            grid%combined_cycle = .false.
+            grid%fleet_load_target_MW = 0.0_dp
+        else if (grid%combined_cycle) then
+            grid%fleet_mode = .true.
+            grid%combined_cycle = .true.
+            grid%fleet_load_target_MW = 0.0_dp
+        else
+            grid%combined_cycle = .true.
+        end if
+        if (.not. grid%combined_cycle) grid%steam_power_MW = 0.0_dp
+    end subroutine cycle_plant_mode
 
     subroutine handle_mouse_up()
         integer(c_int) :: ok
@@ -1104,7 +1117,9 @@ contains
         else
             reserve_text = "FREE BESS"
         end if
-        if (grid%combined_cycle) then
+        if (grid%fleet_mode) then
+            plant_text = "FLEET"
+        else if (grid%combined_cycle) then
             plant_text = "CC"
         else
             plant_text = "SIMPLE"
@@ -1175,7 +1190,9 @@ contains
 
                 write(vt, '(F7.3," Hz")') grid%frequency_Hz
                 call draw_faceplate(hdc, fp1, fy, fw, 68, "FREQUENCY", trim(adjustl(vt)), frequency_color())
-                if (grid%combined_cycle) then
+                if (grid%fleet_mode) then
+                    write(vt, '(F5.1," MW ST",F4.1)') grid%plant_power_MW, grid%steam_power_MW
+                else if (grid%combined_cycle) then
                     write(vt, '(F5.1," MW ST",F4.1)') grid%plant_power_MW, grid%steam_power_MW
                 else
                     write(vt, '(F6.1," MW  ",F5.0,"%")') grid%plant_power_MW, &
@@ -1304,7 +1321,10 @@ contains
             "BALANCE 1X", COL_PANEL, .false.)
 
         by = layout_button_y + 46
-        if (grid%combined_cycle) then
+        if (grid%fleet_mode) then
+            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+                "FLEET", COL_CYAN, .true.)
+        else if (grid%combined_cycle) then
             call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
                 "COMBINED", COL_CYAN, .true.)
         else
@@ -1333,8 +1353,13 @@ contains
         by = layout_button_y + 138
         call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
             "CLOUD -15", COL_PANEL, .false.)
-        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-            "TURB TRIP", COL_RED, .false.)
+        if (grid%fleet_mode) then
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "CC1 TRIP", COL_RED, .false.)
+        else
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "TURB TRIP", COL_RED, .false.)
+        end if
 
         by = layout_button_y + 184
         call draw_industrial_button(hdc, bx1, by, bx3, by + btn_h, &
@@ -1349,7 +1374,17 @@ contains
             call draw_text(hdc, title_x + 10, panel_top + 10, "Plant telemetry", COL_MUTED)
             write(line, '("Freq  ",F7.3," Hz")') grid%frequency_Hz
             call draw_text(hdc, title_x + 10, panel_top + 34, adjustl(line), frequency_color())
-            if (grid%combined_cycle) then
+            if (grid%fleet_mode) then
+                write(line, '("Fleet ",F5.1,"/",F4.0," MW")') grid%fleet_total_MW, grid%fleet_online_capacity_MW
+                call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), COL_CYAN)
+                write(line, '("Rsv   ",F5.1,"/",F4.1," MW")') grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW
+                call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), &
+                    merge(COL_RED, COL_CYAN, grid%fleet_reserve_binding))
+                write(line, '("LMP   $",F5.0,"/MWh")') grid%fleet_lmp_usd_MWh
+                call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), COL_GREEN)
+                write(line, '("Inert ",F5.0," MWs  MU",I1)') grid%fleet_inertia_MWs, grid%fleet_marginal_unit
+                call draw_text(hdc, title_x + 10, panel_top + 34 + 4 * row_gap, adjustl(line), COL_MUTED)
+            else if (grid%combined_cycle) then
                 write(line, '("ST    ",F5.1,"/",F4.1," MW")') grid%steam_power_MW, grid%steam_capacity_MW
                 call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), COL_CYAN)
                 write(line, '("HRSG  ",F5.1," MW rec")') grid%hrsg_recovered_heat_MW
@@ -1937,6 +1972,34 @@ contains
         character(len=128) :: text
 
         call fill_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
+        if (grid%fleet_mode) then
+            cursor = x
+            seg_w = scaled_width(grid%fleet_unit_actual_MW(FLEET_GT1), maximum, width)
+            call fill_box(hdc, cursor, y, cursor + seg_w, y + height, gas_color)
+            cursor = cursor + seg_w
+            seg_w = scaled_width(grid%fleet_unit_actual_MW(FLEET_GT2), maximum, width)
+            call fill_box(hdc, cursor, y, cursor + seg_w, y + height, COL_AMBER)
+            cursor = cursor + seg_w
+            seg_w = scaled_width(grid%fleet_unit_actual_MW(FLEET_CC1), maximum, width)
+            call fill_box(hdc, cursor, y, cursor + seg_w, y + height, COL_CYAN)
+            cursor = cursor + seg_w
+            seg_w = scaled_width(effective_renewable_MW(grid), maximum, width)
+            call fill_box(hdc, cursor, y, cursor + seg_w, y + height, renewable_color)
+            cursor = cursor + seg_w
+            if (grid%storage_MW >= 0.0_dp) then
+                seg_w = scaled_width(grid%storage_MW, maximum, width)
+                call fill_box(hdc, cursor, y, cursor + seg_w, y + height, storage_color)
+            else
+                seg_w = scaled_width(abs(grid%storage_MW), maximum, width)
+                call fill_box(hdc, x + width - seg_w, y, x + width, y + height, sink_color)
+            end if
+            call stroke_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
+            write(text, '("GT1 ",F4.1,"  GT2 ",F4.1,"  CC1 ",F4.1,"  RES ",F4.1,"  BESS ",SP,F4.1)') &
+                grid%fleet_unit_actual_MW(FLEET_GT1), grid%fleet_unit_actual_MW(FLEET_GT2), &
+                grid%fleet_unit_actual_MW(FLEET_CC1), effective_renewable_MW(grid), grid%storage_MW
+            call draw_text(hdc, x + 10, y + 8, adjustl(text), COL_PANEL_DEEP)
+            return
+        end if
         cursor = x
         seg_w = scaled_width(grid%gas_power_MW, maximum, width)
         call fill_box(hdc, cursor, y, cursor + seg_w, y + height, gas_color)
@@ -2044,7 +2107,12 @@ contains
         write(line, '(F7.0," kJ/kWh")') grid%heat_rate_kJ_kWh
         call draw_text(hdc, x + 3 * width / 4 + 12, y + 34, adjustl(line), COL_INK)
 
-        if (grid%combined_cycle) then
+        if (grid%fleet_mode) then
+            write(line, '("GT1 ",F4.1,"/",F4.1,"  GT2 ",F4.1,"/",F4.1,"  CC1 ",F4.1,"/",F4.1," MW")') &
+                grid%fleet_unit_actual_MW(FLEET_GT1), grid%fleet_unit_setpoint_MW(FLEET_GT1), &
+                grid%fleet_unit_actual_MW(FLEET_GT2), grid%fleet_unit_setpoint_MW(FLEET_GT2), &
+                grid%fleet_unit_actual_MW(FLEET_CC1), grid%fleet_unit_setpoint_MW(FLEET_CC1)
+        else if (grid%combined_cycle) then
             write(line, '("Fuel heat ",F5.1," MWth  GT HR ",F7.0,"  plant eta ",F5.1,"%  load ",F5.1,"%")') &
                 grid%heat_input_MW, grid%gt_heat_rate_kJ_kWh, grid%plant_efficiency * 100.0_dp, capacity_pct
         else
@@ -2053,13 +2121,25 @@ contains
         end if
         call draw_text(hdc, x + 12, y + 60, adjustl(line), COL_MUTED)
 
-        write(line, '("BESS stack $",F5.0,"/h  balance ",F5.0,"  FCR ",F4.0,"  arb ",F4.0,"  deg ",F4.0)') &
-            grid%battery_value_usd_h, grid%bess_imbalance_value_usd_h, &
-            grid%bess_fcr_value_usd_h, grid%bess_arbitrage_value_usd_h, &
-            grid%bess_degradation_cost_usd_h
+        if (grid%fleet_mode) then
+            write(line, '("Cost $/MWh GT1 ",F5.0,"  GT2 ",F5.0,"  CC1 ",F5.0,"  LMP ",F5.0)') &
+                grid%fleet_unit_cost_usd_MWh(FLEET_GT1), grid%fleet_unit_cost_usd_MWh(FLEET_GT2), &
+                grid%fleet_unit_cost_usd_MWh(FLEET_CC1), grid%fleet_lmp_usd_MWh
+        else
+            write(line, '("BESS stack $",F5.0,"/h  balance ",F5.0,"  FCR ",F4.0,"  arb ",F4.0,"  deg ",F4.0)') &
+                grid%battery_value_usd_h, grid%bess_imbalance_value_usd_h, &
+                grid%bess_fcr_value_usd_h, grid%bess_arbitrage_value_usd_h, &
+                grid%bess_degradation_cost_usd_h
+        end if
         call draw_text(hdc, x + 408, y + 60, adjustl(line), COL_MUTED)
 
-        if (grid%imbalance_MW < -0.5_dp) then
+        if (grid%fleet_mode .and. grid%fleet_reserve_binding) then
+            line = "ED action: reserve constraint is binding; raise supply, restore unit, or lower demand"
+        else if (grid%fleet_mode .and. grid%fuel_price_usd_gj > 12.0_dp) then
+            line = "ED action: high fuel price prioritizes RES/BESS before thermal MW"
+        else if (grid%fleet_mode) then
+            line = "ED action: cheapest online unit carries base load, AGC follows ramp limits"
+        else if (grid%imbalance_MW < -0.5_dp) then
             line = "ROI action: restore RES headroom, discharge BESS, then raise turbine"
         else if (grid%imbalance_MW > 0.5_dp) then
             line = "ROI action: charge BESS, trim residual RES, then lower turbine"
@@ -2072,7 +2152,11 @@ contains
         end if
         call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_CYAN)
 
-        if (grid%combined_cycle) then
+        if (grid%fleet_mode) then
+            write(line, '("Reserve ",F4.1,"/",F4.1," MW  fuel $",F4.1,"/GJ  inertia ",F5.0," MWs  bind ",I1)') &
+                grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW, grid%fuel_price_usd_gj, &
+                grid%fleet_inertia_MWs, merge(1, 0, grid%fleet_reserve_binding)
+        else if (grid%combined_cycle) then
             write(line, '("ST ",F4.1," MW  HRSG ",F5.1," MW  stack ",F5.0," K  pinch ",F4.1," K  cond ",F4.1," kPa")') &
                 grid%steam_power_MW, grid%hrsg_recovered_heat_MW, grid%hrsg_stack_T_K, &
                 grid%hrsg_pinch_K, grid%condenser_pressure_kPa
@@ -2217,7 +2301,9 @@ contains
         load_x = x + width - node_w
         center_y = grid_y + grid_h / 2
 
-        if (grid%combined_cycle) then
+        if (grid%fleet_mode) then
+            call draw_node(hdc, x, row1, node_w, node_h, "Fleet", grid%fleet_total_MW, COL_CYAN)
+        else if (grid%combined_cycle) then
             call draw_node(hdc, x, row1, node_w, node_h, "GT+ST", grid%plant_power_MW, COL_CYAN)
         else
             call draw_node(hdc, x, row1, node_w, node_h, "GT", grid%plant_power_MW, COL_LIME)
@@ -2241,7 +2327,7 @@ contains
 
         call draw_node(hdc, load_x, row2, node_w, node_h, "Load", grid%demand_MW, COL_RED)
         call draw_line(hdc, x + node_w, row1 + node_h / 2, grid_x, grid_y + 14, &
-            merge(COL_CYAN, COL_LIME, grid%combined_cycle), 2)
+            merge(COL_CYAN, COL_LIME, grid%combined_cycle .or. grid%fleet_mode), 2)
         call draw_line(hdc, x + node_w, row2 + node_h / 2, grid_x, center_y, COL_GREEN, 2)
         call draw_line(hdc, x + node_w, row3 + node_h / 2, grid_x, grid_y + grid_h - 14, COL_BLUE, 2)
         call draw_line(hdc, grid_x + grid_w, center_y, load_x, row2 + node_h / 2, COL_RED, 2)

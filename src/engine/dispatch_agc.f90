@@ -50,6 +50,11 @@ contains
             if (abs(bess_target_MW) < 0.5_dp .and. st%battery_soc_pct > 55.0_dp) &
                 bess_target_MW = 2.0_dp
         end if
+        if (st%fleet_mode .and. st%roi_dispatch .and. st%fuel_price_usd_gj > 12.0_dp .and. &
+                st%battery_soc_pct > 45.0_dp) then
+            bess_target_MW = max(bess_target_MW, &
+                min(8.0_dp, max(0.0_dp, st%demand_MW - eff_renew)))
+        end if
         if (bess_target_MW > 0.0_dp .and. st%battery_soc_pct < 5.0_dp) &
             bess_target_MW = 0.0_dp   ! no discharge when nearly empty
         if (bess_target_MW < 0.0_dp .and. st%battery_soc_pct > 95.0_dp) &
@@ -61,7 +66,8 @@ contains
         ! Stage 3: if BESS cannot absorb surplus fast enough, trim renewable injection.
         gap_MW = st%demand_MW - eff_renew - thermal_generation_MW(st) &
                  - limited_storage_power(st, st%storage_request_MW)
-        if (gap_MW < -0.50_dp .and. should_curtail_renewables(st)) then
+        if (gap_MW < -0.50_dp .and. should_curtail_renewables(st) .and. &
+                .not. fleet_bess_displacing_thermal(st)) then
             surplus_MW = -gap_MW
             target_curtail_MW = min(st%renewable_MW, st%renewable_curtail_MW + surplus_MW)
             call ramp_renewable_curtailment_to(st, target_curtail_MW, dt_s)
@@ -72,6 +78,11 @@ contains
 
         ! Stage 4: turbine follows the remaining steady dispatch requirement.
         eff_renew = effective_renewable_MW(st)
+        if (st%fleet_mode) then
+            st%fleet_load_target_MW = clamp_real(st%demand_MW - eff_renew - &
+                limited_storage_power(st, st%storage_request_MW), 0.0_dp, st%fleet_online_capacity_MW)
+            return
+        end if
         needed_gas_MW = st%demand_MW - eff_renew - bottoming_power_MW(st) &
                         - limited_storage_power(st, st%storage_request_MW)
         if (st%gas_capacity_MW > 1.0e-6_dp) then
@@ -90,6 +101,20 @@ contains
     subroutine balance_now(st)
         type(GridState), intent(inout) :: st
         real(dp) :: bess_snap_MW, needed_gas_MW
+
+        if (st%fleet_mode) then
+            st%renewable_curtail_MW = 0.0_dp
+            bess_snap_MW = clamp_real(st%demand_MW - st%renewable_MW - thermal_generation_MW(st), &
+                                      STORAGE_MIN_MW, STORAGE_MAX_MW)
+            if (st%fuel_price_usd_gj > 12.0_dp .and. st%battery_soc_pct > 45.0_dp) &
+                bess_snap_MW = max(bess_snap_MW, min(8.0_dp, st%demand_MW - st%renewable_MW))
+            if (bess_snap_MW > 0.0_dp .and. st%battery_soc_pct < 5.0_dp)  bess_snap_MW = 0.0_dp
+            if (bess_snap_MW < 0.0_dp .and. st%battery_soc_pct > 95.0_dp) bess_snap_MW = 0.0_dp
+            st%storage_request_MW = bess_snap_MW
+            st%fleet_load_target_MW = clamp_real(st%demand_MW - st%renewable_MW - &
+                limited_storage_power(st, st%storage_request_MW), 0.0_dp, st%fleet_online_capacity_MW)
+            return
+        end if
 
         if (st%gas_capacity_MW <= 1.0e-6_dp) return
         st%renewable_curtail_MW = 0.0_dp
@@ -136,6 +161,17 @@ contains
         end if
     end function should_curtail_renewables
 
+    !> In fleet ROI mode, profitable BESS discharge should back down
+    !> thermal dispatch before spilling zero-fuel renewable injection.
+    function fleet_bess_displacing_thermal(st) result(displacing)
+        type(GridState), intent(in) :: st
+        logical :: displacing
+
+        displacing = st%fleet_mode .and. st%roi_dispatch .and. &
+            st%fuel_price_usd_gj > 12.0_dp .and. st%storage_request_MW > 0.25_dp .and. &
+            st%battery_soc_pct > 45.0_dp
+    end function fleet_bess_displacing_thermal
+
     ! --- Scenario event commands (operator buttons today, scripts in P1) ---
 
     subroutine apply_load_step(st)
@@ -153,8 +189,15 @@ contains
 
     subroutine apply_turbine_trip(st)
         type(GridState), intent(inout) :: st
-        st%gas_dispatch_pct = GAS_MIN_PCT
-        st%storage_request_MW = min(st%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
+        if (st%fleet_mode) then
+            st%fleet_unit_online(FLEET_CC1) = .false.
+            st%fleet_unit_setpoint_MW(FLEET_CC1) = 0.0_dp
+            st%fleet_unit_actual_MW(FLEET_CC1) = 0.0_dp
+            st%storage_request_MW = min(st%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
+        else
+            st%gas_dispatch_pct = GAS_MIN_PCT
+            st%storage_request_MW = min(st%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
+        end if
         st%auto_balance = .true.
     end subroutine apply_turbine_trip
 
@@ -212,6 +255,30 @@ contains
         st%hrsg_effectiveness = 0.0_dp
         st%condenser_pressure_kPa = 0.0_dp
         st%alarm_hrsg_pinch = .false.
+        st%fleet_mode = .false.
+        st%fuel_price_usd_gj = FUEL_PRICE_USD_GJ
+        st%fleet_load_target_MW = 0.0_dp
+        st%fleet_unit_online = [.true., .true., .true.]
+        st%fleet_unit_capacity_MW = [30.0_dp, 15.0_dp, 45.0_dp]
+        st%fleet_unit_setpoint_MW = 0.0_dp
+        st%fleet_unit_actual_MW = 0.0_dp
+        st%fleet_unit_ramp_MW_s = [3.5_dp, 8.0_dp, 0.25_dp]
+        st%fleet_unit_heat_rate_kJ_kWh = [11750.0_dp, 9800.0_dp, 6880.0_dp]
+        st%fleet_unit_var_om_usd_MWh = [5.0_dp, 7.0_dp, 3.0_dp]
+        st%fleet_unit_cost_usd_MWh = 0.0_dp
+        st%fleet_unit_participation = 0.0_dp
+        st%fleet_unit_inertia_MWs = [24.0_dp, 8.0_dp, 70.0_dp]
+        st%fleet_total_MW = 0.0_dp
+        st%fleet_capacity_MW = sum(st%fleet_unit_capacity_MW)
+        st%fleet_online_capacity_MW = st%fleet_capacity_MW
+        st%fleet_reserve_MW = 0.0_dp
+        st%fleet_reserve_requirement_MW = 5.0_dp
+        st%fleet_unserved_dispatch_MW = 0.0_dp
+        st%fleet_inertia_MWs = sum(st%fleet_unit_inertia_MWs)
+        st%fleet_lmp_usd_MWh = 0.0_dp
+        st%fleet_agc_error_MW = 0.0_dp
+        st%fleet_marginal_unit = 0
+        st%fleet_reserve_binding = .false.
         st%alarm_surge = .false.
         st%alarm_underfreq = .false.
         st%alarm_overfreq  = .false.

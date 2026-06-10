@@ -11,6 +11,7 @@ module engine_state
     private
 
     public :: GridState, clamp_real
+    public :: FLEET_N, FLEET_GT1, FLEET_GT2, FLEET_CC1, FLEET_UNIT_NAME
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: bottoming_power_MW, thermal_generation_MW
     public :: limited_storage_power, append_history, history_index
@@ -65,6 +66,12 @@ module engine_state
 
     real(dp), parameter, public :: PI_DP = 3.14159265358979323846_dp
     integer,  parameter, public :: HISTORY_N = 240
+    integer,  parameter :: FLEET_N = 3
+    integer,  parameter :: FLEET_GT1 = 1
+    integer,  parameter :: FLEET_GT2 = 2
+    integer,  parameter :: FLEET_CC1 = 3
+    character(len=4), parameter :: FLEET_UNIT_NAME(FLEET_N) = &
+        [character(len=4) :: "GT1 ", "GT2 ", "CC1 "]
 
     !> Complete live state of the plant + grid sandbox. One instance is the
     !> whole simulation; tests may hold several independent instances.
@@ -146,6 +153,31 @@ module engine_state
         real(dp) :: hrsg_effectiveness = 0.0_dp
         real(dp) :: condenser_pressure_kPa = 0.0_dp
         logical  :: alarm_hrsg_pinch = .false.
+        ! Phase 4 multi-unit dispatch state
+        logical  :: fleet_mode = .false.
+        real(dp) :: fuel_price_usd_gj = FUEL_PRICE_USD_GJ
+        real(dp) :: fleet_load_target_MW = 0.0_dp
+        real(dp) :: fleet_total_MW = 0.0_dp
+        real(dp) :: fleet_capacity_MW = 0.0_dp
+        real(dp) :: fleet_online_capacity_MW = 0.0_dp
+        real(dp) :: fleet_reserve_MW = 0.0_dp
+        real(dp) :: fleet_reserve_requirement_MW = 5.0_dp
+        real(dp) :: fleet_unserved_dispatch_MW = 0.0_dp
+        real(dp) :: fleet_inertia_MWs = INERTIA_MWs
+        real(dp) :: fleet_lmp_usd_MWh = 0.0_dp
+        real(dp) :: fleet_agc_error_MW = 0.0_dp
+        integer  :: fleet_marginal_unit = 0
+        logical  :: fleet_reserve_binding = .false.
+        logical  :: fleet_unit_online(FLEET_N) = [.true., .true., .true.]
+        real(dp) :: fleet_unit_capacity_MW(FLEET_N) = [30.0_dp, 15.0_dp, 45.0_dp]
+        real(dp) :: fleet_unit_setpoint_MW(FLEET_N) = 0.0_dp
+        real(dp) :: fleet_unit_actual_MW(FLEET_N) = 0.0_dp
+        real(dp) :: fleet_unit_ramp_MW_s(FLEET_N) = [3.5_dp, 8.0_dp, 0.25_dp]
+        real(dp) :: fleet_unit_heat_rate_kJ_kWh(FLEET_N) = [11750.0_dp, 9800.0_dp, 6880.0_dp]
+        real(dp) :: fleet_unit_var_om_usd_MWh(FLEET_N) = [5.0_dp, 7.0_dp, 3.0_dp]
+        real(dp) :: fleet_unit_cost_usd_MWh(FLEET_N) = 0.0_dp
+        real(dp) :: fleet_unit_participation(FLEET_N) = 0.0_dp
+        real(dp) :: fleet_unit_inertia_MWs(FLEET_N) = [24.0_dp, 8.0_dp, 70.0_dp]
         logical  :: alarm_surge = .false.
         ! Alarm state flags (drives annunciator tiles)
         logical  :: alarm_underfreq    = .false.
@@ -197,7 +229,11 @@ contains
     pure function thermal_generation_MW(st) result(mw)
         type(GridState), intent(in) :: st
         real(dp) :: mw
-        mw = st%gas_power_MW + bottoming_power_MW(st)
+        if (st%fleet_mode) then
+            mw = st%fleet_total_MW
+        else
+            mw = st%gas_power_MW + bottoming_power_MW(st)
+        end if
     end function thermal_generation_MW
 
     !> BESS power actually deliverable for a request, honouring energy limits.

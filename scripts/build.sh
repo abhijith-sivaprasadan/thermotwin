@@ -69,6 +69,7 @@ MODULES=(
     steam_cycle
     tag_bus
     engine_state
+    fleet_dispatch
     grid_dynamics
     dispatch_agc
     plant_economics

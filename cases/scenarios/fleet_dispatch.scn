@@ -1,0 +1,25 @@
+# Phase 4 fleet dispatch smoke test.
+name     fleet_dispatch
+duration 8
+dt       0.25
+
+at 0.0 set fleet_mode 1
+at 0.0 set combined_cycle 1
+at 0.0 set auto_balance 0
+at 0.0 set demand_MW 70
+at 0.0 set renewable_MW 10
+at 0.0 set fuel_price_usd_gj 6
+at 0.0 set fleet_load_target_MW 60
+
+at 1.0 assert_above cc1_sp_MW 45
+at 1.0 assert_below gt1_sp_MW 1
+at 1.0 assert_above fleet_reserve_MW 5
+
+at 2.0 set fuel_price_usd_gj 18
+at 2.0 set auto_balance 1
+at 2.0 set battery_soc_pct 70
+at 4.0 assert_above storage_request_MW 0.5
+
+at 5.0 command trip_cc1
+at 5.5 assert_below cc1_online 0.5
+at 6.0 assert_below fleet_inertia_MWs 50

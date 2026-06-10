@@ -383,6 +383,20 @@ contains
         case ("load_step");     call apply_load_step(st)
         case ("cloud_ramp");    call apply_cloud_ramp(st)
         case ("turbine_trip");  call apply_turbine_trip(st)
+        case ("trip_gt1")
+            st%fleet_unit_online(FLEET_GT1) = .false.
+            st%fleet_unit_setpoint_MW(FLEET_GT1) = 0.0_dp
+            st%fleet_unit_actual_MW(FLEET_GT1) = 0.0_dp
+        case ("trip_gt2")
+            st%fleet_unit_online(FLEET_GT2) = .false.
+            st%fleet_unit_setpoint_MW(FLEET_GT2) = 0.0_dp
+            st%fleet_unit_actual_MW(FLEET_GT2) = 0.0_dp
+        case ("trip_cc1")
+            st%fleet_unit_online(FLEET_CC1) = .false.
+            st%fleet_unit_setpoint_MW(FLEET_CC1) = 0.0_dp
+            st%fleet_unit_actual_MW(FLEET_CC1) = 0.0_dp
+        case ("restore_fleet")
+            st%fleet_unit_online = [.true., .true., .true.]
         case default
             ok = .false.
         end select
@@ -412,6 +426,14 @@ contains
         case ("fcr_hold");             st%fcr_hold = value > 0.5_dp
         case ("roi_dispatch");         st%roi_dispatch = value > 0.5_dp
         case ("combined_cycle");       st%combined_cycle = value > 0.5_dp
+        case ("fleet_mode")
+            st%fleet_mode = value > 0.5_dp
+            if (st%fleet_mode) st%combined_cycle = .true.
+        case ("fuel_price_usd_gj");    st%fuel_price_usd_gj = value
+        case ("fleet_load_target_MW"); st%fleet_load_target_MW = value
+        case ("gt1_online");           st%fleet_unit_online(FLEET_GT1) = value > 0.5_dp
+        case ("gt2_online");           st%fleet_unit_online(FLEET_GT2) = value > 0.5_dp
+        case ("cc1_online");           st%fleet_unit_online(FLEET_CC1) = value > 0.5_dp
         case default
             ok = .false.
         end select
@@ -443,6 +465,32 @@ contains
         case ("plant_efficiency");      value = st%plant_efficiency
         case ("plant_heat_rate_kJ_kWh"); value = st%heat_rate_kJ_kWh
         case ("gt_heat_rate_kJ_kWh");   value = st%gt_heat_rate_kJ_kWh
+        case ("fleet_mode");            value = merge(1.0_dp, 0.0_dp, st%fleet_mode)
+        case ("fuel_price_usd_gj");     value = st%fuel_price_usd_gj
+        case ("fleet_total_MW");        value = st%fleet_total_MW
+        case ("fleet_target_MW");       value = st%fleet_load_target_MW
+        case ("fleet_reserve_MW");      value = st%fleet_reserve_MW
+        case ("fleet_reserve_req_MW");  value = st%fleet_reserve_requirement_MW
+        case ("fleet_reserve_binding"); value = merge(1.0_dp, 0.0_dp, st%fleet_reserve_binding)
+        case ("fleet_unserved_MW");     value = st%fleet_unserved_dispatch_MW
+        case ("fleet_inertia_MWs");     value = st%fleet_inertia_MWs
+        case ("fleet_lmp_usd_MWh");     value = st%fleet_lmp_usd_MWh
+        case ("fleet_marginal_unit");   value = real(st%fleet_marginal_unit, dp)
+        case ("gt1_MW");                value = st%fleet_unit_actual_MW(FLEET_GT1)
+        case ("gt1_sp_MW");             value = st%fleet_unit_setpoint_MW(FLEET_GT1)
+        case ("gt1_cost_usd_MWh");      value = st%fleet_unit_cost_usd_MWh(FLEET_GT1)
+        case ("gt1_participation");     value = st%fleet_unit_participation(FLEET_GT1)
+        case ("gt1_online");            value = merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_GT1))
+        case ("gt2_MW");                value = st%fleet_unit_actual_MW(FLEET_GT2)
+        case ("gt2_sp_MW");             value = st%fleet_unit_setpoint_MW(FLEET_GT2)
+        case ("gt2_cost_usd_MWh");      value = st%fleet_unit_cost_usd_MWh(FLEET_GT2)
+        case ("gt2_participation");     value = st%fleet_unit_participation(FLEET_GT2)
+        case ("gt2_online");            value = merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_GT2))
+        case ("cc1_MW");                value = st%fleet_unit_actual_MW(FLEET_CC1)
+        case ("cc1_sp_MW");             value = st%fleet_unit_setpoint_MW(FLEET_CC1)
+        case ("cc1_cost_usd_MWh");      value = st%fleet_unit_cost_usd_MWh(FLEET_CC1)
+        case ("cc1_participation");     value = st%fleet_unit_participation(FLEET_CC1)
+        case ("cc1_online");            value = merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_CC1))
         case ("steam_power_MW");        value = st%steam_power_MW
         case ("steam_target_MW");       value = st%steam_power_target_MW
         case ("hrsg_pinch_K");          value = st%hrsg_pinch_K

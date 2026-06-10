@@ -18,6 +18,7 @@ module engine_core
     use engine_state
     use hrsg, only: HrsgResult, solve_hrsg
     use steam_cycle, only: SteamCycleResult, solve_steam_cycle, ramp_limited, STEAM_RAMP_MW_PER_S
+    use fleet_dispatch, only: refresh_fleet_dispatch, trip_fleet_unit, restore_fleet_units
     use grid_dynamics, only: tick_frequency_dynamics
     use dispatch_agc, only: tick_auto_balance, balance_now, reset_controls, &
         ramp_renewable_curtailment_to, should_curtail_renewables, &
@@ -40,6 +41,7 @@ module engine_core
     public :: tick_auto_balance, balance_now, reset_controls
     public :: ramp_renewable_curtailment_to, should_curtail_renewables
     public :: apply_load_step, apply_cloud_ramp, apply_turbine_trip
+    public :: trip_fleet_unit, restore_fleet_units
     public :: refresh_economics
 
     ! Re-exported parameters used by front-ends
@@ -48,6 +50,7 @@ module engine_core
     public :: BATTERY_CAPACITY_MWH, BATTERY_INITIAL_SOC_PCT, BATTERY_EFFICIENCY
     public :: GAS_MIN_PCT, GAS_MAX_PCT, GAS_RAMP_PCT_PER_S
     public :: BESS_RAMP_MW_PER_S, CURTAIL_RAMP_MW_PER_S
+    public :: FLEET_N, FLEET_GT1, FLEET_GT2, FLEET_CC1, FLEET_UNIT_NAME
     public :: FREQ_NOMINAL_HZ, INERTIA_MWs, GOVERNOR_DROOP_R
     public :: BESS_PRIMARY_GAIN, BESS_PRIMARY_DB
     public :: UFLS_THRESH_1, UFLS_THRESH_2, UFLS_THRESH_3, UFLS_RESET, UFLS_SHED_PCT
@@ -107,7 +110,7 @@ contains
         type(OffDesignPoint) :: od_cap, od
         type(HrsgResult) :: hrsg_cap, hrsg_live
         type(SteamCycleResult) :: steam_cap, steam_live
-        real(dp) :: load_fraction
+        real(dp) :: load_fraction, cc_capacity_MW, cc_heat_rate_kJ_kWh
         real(dp) :: step_s
 
         ic = baseline_case()
@@ -125,6 +128,12 @@ contains
         call solve_hrsg(od_cap%cyc%exhaust_temperature_K, od_cap%cyc%mdot_gas_kg_s, &
             ic%ambient_T_K, hrsg_cap)
         call solve_steam_cycle(hrsg_cap, ic%ambient_T_K, steam_cap)
+        cc_capacity_MW = st%gas_capacity_MW + steam_cap%net_power_MW
+        if (cc_capacity_MW > 1.0e-9_dp) then
+            cc_heat_rate_kJ_kWh = 3600.0_dp * od_cap%cyc%heat_input_MW / cc_capacity_MW
+        else
+            cc_heat_rate_kJ_kWh = 6880.0_dp
+        end if
         st%steam_capacity_MW = merge(steam_cap%net_power_MW, 0.0_dp, st%combined_cycle)
         st%plant_capacity_MW = st%gas_capacity_MW + st%steam_capacity_MW
 
@@ -186,9 +195,13 @@ contains
             st%plant_efficiency = 0.0_dp
             st%heat_rate_kJ_kWh = huge(1.0_dp)
         end if
-        st%supply_MW = st%plant_power_MW + effective_renewable_MW(st) + st%storage_MW
+        if (st%fleet_mode) then
+            call refresh_fleet_dispatch(st, step_s, st%gas_capacity_MW, st%gt_heat_rate_kJ_kWh, &
+                cc_capacity_MW, cc_heat_rate_kJ_kWh)
+        end if
+        st%supply_MW = thermal_generation_MW(st) + effective_renewable_MW(st) + st%storage_MW
         st%imbalance_MW = st%supply_MW - st%demand_MW
-        st%reserve_MW = max(0.0_dp, st%plant_capacity_MW - st%plant_power_MW)
+        if (.not. st%fleet_mode) st%reserve_MW = max(0.0_dp, st%plant_capacity_MW - st%plant_power_MW)
         ! frequency_Hz is integrated by tick_frequency_dynamics; not recomputed here
         call refresh_economics(st)
     end subroutine refresh_model
@@ -245,6 +258,8 @@ contains
         call tag_set("GRID.SUPPLY_MW",        st%supply_MW,           "MW",     t)
         call tag_set("GRID.IMBALANCE_MW",     st%imbalance_MW,        "MW",     t)
         call tag_set("GRID.UFLS_STAGE",       real(st%UFLS_stage, dp), "-",     t)
+        call tag_set("GRID.INERTIA_MWS",      merge(st%fleet_inertia_MWs, INERTIA_MWs, &
+            st%fleet_mode), "MWs", t)
         call tag_set("GT1.POWER_MW",          st%gas_power_MW,        "MW",     t)
         call tag_set("GT1.CAPACITY_MW",       st%gas_capacity_MW,     "MW",     t)
         call tag_set("GT1.DISPATCH_PCT",      st%gas_dispatch_pct,    "%",      t)
@@ -271,6 +286,16 @@ contains
         call tag_set("HRSG.STACK_K",          st%hrsg_stack_T_K,      "K",      t)
         call tag_set("HRSG.PINCH_K",          st%hrsg_pinch_K,        "K",      t)
         call tag_set("HRSG.STEAM_KG_S",       st%hrsg_steam_flow_kg_s, "kg/s",  t)
+        call tag_set("FLEET.MODE",            merge(1.0_dp, 0.0_dp, st%fleet_mode), "-", t)
+        call tag_set("FLEET.TARGET_MW",       st%fleet_load_target_MW, "MW",    t)
+        call tag_set("FLEET.RESERVE_MW",      st%fleet_reserve_MW,    "MW",     t)
+        call tag_set("FLEET.RESERVE_REQ_MW",  st%fleet_reserve_requirement_MW, "MW", t)
+        call tag_set("FLEET.LMP_USD_MWH",     st%fleet_lmp_usd_MWh,   "USD/MWh", t)
+        call tag_set("FLEET.FUEL_USD_GJ",     st%fuel_price_usd_gj,   "USD/GJ", t)
+        call tag_set("FLEET.BINDING",         merge(1.0_dp, 0.0_dp, st%fleet_reserve_binding), "-", t)
+        call tag_set("FLEET.UNSERVED_MW",     st%fleet_unserved_dispatch_MW, "MW", t)
+        call tag_set("FLEET.MARGINAL_UNIT",   real(st%fleet_marginal_unit, dp), "-", t)
+        call publish_unit_tags(st, t)
         call tag_set("REN.AVAILABLE_MW",      st%renewable_MW,        "MW",     t)
         call tag_set("REN.ACTUAL_MW",         effective_renewable_MW(st), "MW", t)
         call tag_set("REN.CURTAIL_MW",        st%renewable_curtail_MW, "MW",    t)
@@ -288,5 +313,28 @@ contains
         call tag_set("EMIS.CO2_G_KWH",        st%CO2_intensity_g_kWh, "g/kWh",  t)
         call tag_set("EMIS.CO2_TOTAL_T",      st%CO2_cumulative_t,    "t",      t)
     end subroutine publish_tags
+
+    subroutine publish_unit_tags(st, t)
+        type(GridState), intent(in) :: st
+        real(dp), intent(in) :: t
+
+        call tag_set("FLEET.GT1.MW",      st%fleet_unit_actual_MW(FLEET_GT1), "MW", t)
+        call tag_set("FLEET.GT1.SP_MW",   st%fleet_unit_setpoint_MW(FLEET_GT1), "MW", t)
+        call tag_set("FLEET.GT1.ONLINE",  merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_GT1)), "-", t)
+        call tag_set("FLEET.GT1.COST",    st%fleet_unit_cost_usd_MWh(FLEET_GT1), "USD/MWh", t)
+        call tag_set("FLEET.GT1.PART",    st%fleet_unit_participation(FLEET_GT1), "-", t)
+
+        call tag_set("FLEET.GT2.MW",      st%fleet_unit_actual_MW(FLEET_GT2), "MW", t)
+        call tag_set("FLEET.GT2.SP_MW",   st%fleet_unit_setpoint_MW(FLEET_GT2), "MW", t)
+        call tag_set("FLEET.GT2.ONLINE",  merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_GT2)), "-", t)
+        call tag_set("FLEET.GT2.COST",    st%fleet_unit_cost_usd_MWh(FLEET_GT2), "USD/MWh", t)
+        call tag_set("FLEET.GT2.PART",    st%fleet_unit_participation(FLEET_GT2), "-", t)
+
+        call tag_set("FLEET.CC1.MW",      st%fleet_unit_actual_MW(FLEET_CC1), "MW", t)
+        call tag_set("FLEET.CC1.SP_MW",   st%fleet_unit_setpoint_MW(FLEET_CC1), "MW", t)
+        call tag_set("FLEET.CC1.ONLINE",  merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_CC1)), "-", t)
+        call tag_set("FLEET.CC1.COST",    st%fleet_unit_cost_usd_MWh(FLEET_CC1), "USD/MWh", t)
+        call tag_set("FLEET.CC1.PART",    st%fleet_unit_participation(FLEET_CC1), "-", t)
+    end subroutine publish_unit_tags
 
 end module engine_core
