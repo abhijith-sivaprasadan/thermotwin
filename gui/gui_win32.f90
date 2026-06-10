@@ -240,8 +240,8 @@ module thermotwin_win32_gui
         real(dp) :: BESS_primary_MW = 0.0_dp
         real(dp) :: UFLS_shed_fraction = 0.0_dp
         integer  :: UFLS_stage = 0
-        ! Renewable dispatch: slider sets the AVAILABLE (weather) ceiling;
-        ! AGC may curtail below it, LFSM-O trims it during over-frequency
+        ! Renewable dispatch: resource availability is the ceiling; the visible
+        ! HMI row shows actual injection, which AGC may curtail below the ceiling.
         real(dp) :: renewable_curtail_MW = 0.0_dp
         real(dp) :: renewable_lfsmo_MW = 0.0_dp
         logical  :: roi_dispatch = .true.
@@ -1085,6 +1085,7 @@ contains
             grid%demand_MW = DEMAND_MIN_MW + f * (DEMAND_MAX_MW - DEMAND_MIN_MW)
         case (ID_RENEWABLE)
             grid%renewable_MW = f * RENEWABLE_MAX_MW
+            grid%renewable_curtail_MW = 0.0_dp
         case (ID_STORAGE)
             grid%storage_request_MW = STORAGE_MIN_MW + f * (STORAGE_MAX_MW - STORAGE_MIN_MW)
         case (ID_GAS)
@@ -1258,6 +1259,8 @@ contains
 
         if (.not. grid%roi_dispatch) then
             allow = .true.
+        else if (grid%fcr_hold) then
+            allow = .true.
         else if (grid%frequency_Hz > FREQ_NOMINAL_HZ + 0.08_dp) then
             allow = .true.
         else if (grid%storage_request_MW <= STORAGE_MIN_MW + 0.25_dp) then
@@ -1358,6 +1361,7 @@ contains
         bess_target_MW = clamp_real(grid%demand_MW - eff_renew - grid%gas_power_MW, &
                                     STORAGE_MIN_MW, STORAGE_MAX_MW)
         if (grid%fcr_hold) then
+            if (bess_target_MW < -0.5_dp) bess_target_MW = max(bess_target_MW, 0.65_dp * bess_target_MW)
             bess_target_MW = clamp_real(bess_target_MW, STORAGE_MIN_MW + 5.0_dp, STORAGE_MAX_MW - 5.0_dp)
             if (abs(bess_target_MW) < 0.5_dp .and. grid%battery_soc_pct < 45.0_dp) &
                 bess_target_MW = -2.0_dp
@@ -1742,14 +1746,10 @@ contains
             "Load demand", trim(adjustl(value)), &
             grid%demand_MW, DEMAND_MIN_MW, DEMAND_MAX_MW, COL_RED)
 
-        if (grid%renewable_curtail_MW > 0.05_dp) then
-            write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(), grid%renewable_MW
-        else
-            write(value, '(F5.1," MW")') grid%renewable_MW
-        end if
+        write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(), grid%renewable_MW
         call draw_custom_slider(hdc, ID_RENEWABLE, layout_slider_x, layout_slider_y(2), layout_slider_w, &
-            "Renewable available", trim(adjustl(value)), &
-            grid%renewable_MW, 0.0_dp, RENEWABLE_MAX_MW, &
+            "Renewable dispatch", trim(adjustl(value)), &
+            effective_renewable_MW(), 0.0_dp, RENEWABLE_MAX_MW, &
             merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
         write(value, '(SP,F5.1," MW")') grid%storage_request_MW
