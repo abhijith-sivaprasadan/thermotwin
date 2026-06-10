@@ -118,6 +118,10 @@ module thermotwin_win32_gui
     real(dp), parameter :: FUEL_PRICE_USD_GJ = 7.5_dp
     real(dp), parameter :: STORAGE_CYCLE_COST_USD_MWH = 8.0_dp
     real(dp), parameter :: IMBALANCE_PENALTY_USD_MWH = 250.0_dp
+    real(dp), parameter :: BESS_DEGRADATION_USD_MWH = 6.0_dp
+    real(dp), parameter :: FCR_RESERVE_PRICE_USD_MW_H = 18.0_dp
+    real(dp), parameter :: BESS_ARBITRAGE_SPREAD_USD_MWH = 38.0_dp
+    real(dp), parameter :: RENEWABLE_RESERVE_PRICE_USD_MW_H = 12.0_dp
     real(dp), parameter :: BATTERY_CAPEX_USD_MWH = 180000.0_dp
     real(dp), parameter :: ROI_EQUIVALENT_HOURS_PER_YEAR = 2200.0_dp
     real(dp), parameter :: CO2_KG_PER_KG_FUEL = 2.75_dp
@@ -214,6 +218,13 @@ module thermotwin_win32_gui
         real(dp) :: margin_usd_h = 0.0_dp
         real(dp) :: battery_value_usd_h = 0.0_dp
         real(dp) :: battery_payback_years = 0.0_dp
+        real(dp) :: bess_imbalance_value_usd_h = 0.0_dp
+        real(dp) :: bess_fcr_value_usd_h = 0.0_dp
+        real(dp) :: bess_arbitrage_value_usd_h = 0.0_dp
+        real(dp) :: bess_degradation_cost_usd_h = 0.0_dp
+        real(dp) :: renewable_reserve_value_usd_h = 0.0_dp
+        real(dp) :: renewable_curtail_cost_usd_h = 0.0_dp
+        real(dp) :: value_stack_usd_h = 0.0_dp
         real(dp) :: elapsed_s = 0.0_dp
         real(dp) :: CO2_rate_kg_s = 0.0_dp
         real(dp) :: CO2_intensity_g_kWh = 0.0_dp
@@ -1101,6 +1112,9 @@ contains
 
     subroutine refresh_economics()
         real(dp) :: served_MW, battery_capex_usd, annual_value_usd
+        real(dp) :: imbalance_without_bess_MW, avoided_imbalance_MW
+        real(dp) :: bess_up_reserve_MW, bess_down_reserve_MW, bess_fcr_reserve_MW
+        real(dp) :: surplus_without_bess_MW, captured_surplus_MW
 
         served_MW = min(grid%demand_MW, max(0.0_dp, grid%supply_MW))
         grid%revenue_usd_h = served_MW * POWER_PRICE_USD_MWH
@@ -1110,8 +1124,34 @@ contains
         grid%margin_usd_h = grid%revenue_usd_h - grid%fuel_cost_usd_h - &
             grid%storage_cost_usd_h - grid%imbalance_penalty_usd_h
 
-        grid%battery_value_usd_h = max(0.0_dp, abs(grid%storage_MW) * &
-            (IMBALANCE_PENALTY_USD_MWH - STORAGE_CYCLE_COST_USD_MWH))
+        imbalance_without_bess_MW = grid%gas_power_MW + effective_renewable_MW() - grid%demand_MW
+        avoided_imbalance_MW = max(0.0_dp, abs(imbalance_without_bess_MW) - abs(grid%imbalance_MW))
+        grid%bess_imbalance_value_usd_h = avoided_imbalance_MW * IMBALANCE_PENALTY_USD_MWH
+
+        bess_up_reserve_MW = max(0.0_dp, STORAGE_MAX_MW - max(0.0_dp, grid%storage_MW))
+        bess_down_reserve_MW = max(0.0_dp, abs(STORAGE_MIN_MW) - max(0.0_dp, -grid%storage_MW))
+        if (grid%battery_soc_pct < 20.0_dp) bess_up_reserve_MW = 0.0_dp
+        if (grid%battery_soc_pct > 80.0_dp) bess_down_reserve_MW = 0.0_dp
+        bess_fcr_reserve_MW = min(5.0_dp, min(bess_up_reserve_MW, bess_down_reserve_MW))
+        grid%bess_fcr_value_usd_h = bess_fcr_reserve_MW * FCR_RESERVE_PRICE_USD_MW_H
+
+        surplus_without_bess_MW = max(0.0_dp, imbalance_without_bess_MW)
+        captured_surplus_MW = min(max(0.0_dp, -grid%storage_MW), surplus_without_bess_MW)
+        grid%bess_arbitrage_value_usd_h = &
+            captured_surplus_MW * BESS_ARBITRAGE_SPREAD_USD_MWH + &
+            max(0.0_dp, grid%storage_MW) * BESS_ARBITRAGE_SPREAD_USD_MWH * 0.35_dp
+        grid%bess_degradation_cost_usd_h = abs(grid%storage_MW) * BESS_DEGRADATION_USD_MWH
+
+        grid%renewable_reserve_value_usd_h = renewable_headroom_MW() * RENEWABLE_RESERVE_PRICE_USD_MW_H
+        grid%renewable_curtail_cost_usd_h = renewable_headroom_MW() * POWER_PRICE_USD_MWH
+        grid%value_stack_usd_h = grid%bess_imbalance_value_usd_h + grid%bess_fcr_value_usd_h + &
+            grid%bess_arbitrage_value_usd_h + grid%renewable_reserve_value_usd_h - &
+            grid%storage_cost_usd_h - grid%bess_degradation_cost_usd_h - &
+            grid%renewable_curtail_cost_usd_h
+
+        grid%battery_value_usd_h = max(0.0_dp, grid%bess_imbalance_value_usd_h + &
+            grid%bess_fcr_value_usd_h + grid%bess_arbitrage_value_usd_h - &
+            grid%storage_cost_usd_h - grid%bess_degradation_cost_usd_h)
         battery_capex_usd = BATTERY_CAPACITY_MWH * BATTERY_CAPEX_USD_MWH
         annual_value_usd = grid%battery_value_usd_h * ROI_EQUIVALENT_HOURS_PER_YEAR
         if (annual_value_usd > 1.0e-6_dp) then
@@ -1133,6 +1173,21 @@ contains
         real(dp) :: mw
         mw = max(0.0_dp, grid%renewable_MW - grid%renewable_curtail_MW)
     end function effective_renewable_MW
+
+    function renewable_headroom_MW() result(mw)
+        real(dp) :: mw
+        mw = clamp_real(grid%renewable_curtail_MW, 0.0_dp, grid%renewable_MW)
+    end function renewable_headroom_MW
+
+    subroutine ramp_renewable_curtailment_to(target_MW, dt_s)
+        real(dp), intent(in) :: target_MW, dt_s
+        real(dp) :: target, step_MW
+
+        target = clamp_real(target_MW, 0.0_dp, grid%renewable_MW)
+        step_MW = CURTAIL_RAMP_MW_PER_S * dt_s
+        grid%renewable_curtail_MW = grid%renewable_curtail_MW + &
+            clamp_real(target - grid%renewable_curtail_MW, -step_MW, step_MW)
+    end subroutine ramp_renewable_curtailment_to
 
     function limited_storage_power(request_MW) result(actual_MW)
         real(dp), intent(in) :: request_MW
@@ -1195,33 +1250,31 @@ contains
     end function baseline_case
 
     subroutine tick_auto_balance(dt_s)
-        ! Secondary AGC with real merit order (sign convention:
-        ! storage_MW > 0 = discharge, adds to supply).
-        !   Shortage: restore curtailment (free) -> BESS discharge -> gas up
-        !   Surplus:  BESS charge -> gas down to min -> curtail renewables (last)
+        ! Secondary EMS/AGC with inverter-aware dispatch.
+        ! Sign convention: storage_MW > 0 = discharge, adds to supply.
+        !   Shortage: restore renewable headroom -> BESS discharge -> turbine up.
+        !   Surplus:  BESS charge -> residual renewable trim -> turbine down.
         real(dp), intent(in) :: dt_s
-        real(dp) :: eff_renew, gap_MW, bess_target_MW, bess_step_MW
+        real(dp) :: eff_renew, gap_MW, surplus_MW, target_curtail_MW
+        real(dp) :: bess_target_MW, bess_step_MW
         real(dp) :: needed_gas_MW, gas_target_pct, gas_step_pct
-        real(dp) :: gas_min_MW, surplus_MW, curtail_step_MW
 
         if (.not. grid%auto_balance) return
 
-        curtail_step_MW = CURTAIL_RAMP_MW_PER_S * dt_s
-        ! Curtailment can never exceed the available resource
         grid%renewable_curtail_MW = clamp_real(grid%renewable_curtail_MW, 0.0_dp, grid%renewable_MW)
 
-        ! --- Stage 1 (shortage only): restore curtailed renewables first ---
+        ! Stage 1: renewable inverter active-power setpoint. It cannot exceed
+        ! weather availability, but any curtailed headroom is restored first in a shortage.
         eff_renew = effective_renewable_MW()
         gap_MW = grid%demand_MW - eff_renew - grid%gas_power_MW &
                  - limited_storage_power(grid%storage_request_MW)
-        if (gap_MW > 0.0_dp .and. grid%renewable_curtail_MW > 0.0_dp) then
-            grid%renewable_curtail_MW = max(0.0_dp, &
-                grid%renewable_curtail_MW - min(curtail_step_MW, gap_MW))
-            eff_renew = effective_renewable_MW()
+        if (gap_MW > 0.10_dp .and. grid%renewable_curtail_MW > 0.0_dp) then
+            target_curtail_MW = max(0.0_dp, grid%renewable_curtail_MW - gap_MW)
+            call ramp_renewable_curtailment_to(target_curtail_MW, dt_s)
         end if
 
-        ! --- Stage 2: BESS covers the residual (fast, +-4 MW/s) ---
-        ! residual > 0 -> shortage -> discharge (positive)
+        ! Stage 2: BESS covers the residual quickly while respecting SOC limits.
+        eff_renew = effective_renewable_MW()
         bess_target_MW = clamp_real(grid%demand_MW - eff_renew - grid%gas_power_MW, &
                                     STORAGE_MIN_MW, STORAGE_MAX_MW)
         if (bess_target_MW > 0.0_dp .and. grid%battery_soc_pct < 5.0_dp) &
@@ -1232,7 +1285,20 @@ contains
         grid%storage_request_MW = grid%storage_request_MW + &
             clamp_real(bess_target_MW - grid%storage_request_MW, -bess_step_MW, bess_step_MW)
 
-        ! --- Stage 3: turbine covers what BESS cannot (slow, 18 %/s) ---
+        ! Stage 3: if BESS cannot absorb surplus fast enough, trim renewable injection.
+        gap_MW = grid%demand_MW - eff_renew - grid%gas_power_MW &
+                 - limited_storage_power(grid%storage_request_MW)
+        if (gap_MW < -0.50_dp) then
+            surplus_MW = -gap_MW
+            target_curtail_MW = min(grid%renewable_MW, grid%renewable_curtail_MW + surplus_MW)
+            call ramp_renewable_curtailment_to(target_curtail_MW, dt_s)
+        else if (abs(gap_MW) <= 0.50_dp .and. grid%renewable_curtail_MW > 0.0_dp .and. &
+                 grid%renewable_reserve_value_usd_h < grid%renewable_curtail_cost_usd_h) then
+            call ramp_renewable_curtailment_to(0.0_dp, dt_s)
+        end if
+
+        ! Stage 4: turbine follows the remaining steady dispatch requirement.
+        eff_renew = effective_renewable_MW()
         needed_gas_MW = grid%demand_MW - eff_renew &
                         - limited_storage_power(grid%storage_request_MW)
         if (grid%gas_capacity_MW > 1.0e-6_dp) then
@@ -1244,21 +1310,6 @@ contains
         gas_step_pct = GAS_RAMP_PCT_PER_S * dt_s
         grid%gas_dispatch_pct = grid%gas_dispatch_pct + &
             clamp_real(gas_target_pct - grid%gas_dispatch_pct, -gas_step_pct, gas_step_pct)
-
-        ! --- Stage 4 (surplus only): curtail renewables as last resort ---
-        ! Only when gas is already at minimum stable load and BESS charge
-        ! is saturated does spilling zero-cost energy make sense.
-        gas_min_MW = grid%gas_capacity_MW * GAS_MIN_PCT / 100.0_dp
-        surplus_MW = grid%gas_power_MW + eff_renew &
-                     + limited_storage_power(grid%storage_request_MW) - grid%demand_MW
-        if (surplus_MW > 0.5_dp .and. &
-            grid%gas_dispatch_pct <= GAS_MIN_PCT + 0.5_dp .and. &
-            (grid%storage_request_MW <= STORAGE_MIN_MW + 0.1_dp .or. &
-             grid%battery_soc_pct > 95.0_dp)) then
-            grid%renewable_curtail_MW = clamp_real( &
-                grid%renewable_curtail_MW + min(curtail_step_MW, surplus_MW), &
-                0.0_dp, grid%renewable_MW)
-        end if
     end subroutine tick_auto_balance
 
     subroutine balance_now()
@@ -1524,15 +1575,12 @@ contains
                     grid%battery_soc_pct, grid%battery_energy_MWh, BATTERY_CAPACITY_MWH
                 call draw_faceplate(hdc, fp5, fy, fw, 68, "BESS SOC", trim(adjustl(vt)), &
                     merge(COL_RED, COL_BLUE, grid%alarm_low_soc))
-                ! 6th tile: Governor + BESS primary response
-                write(vt, '("G",SP,F5.1," B",SP,F4.1)') &
-                    grid%governor_delta_MW, grid%BESS_primary_MW
-                call draw_faceplate(hdc, fp6, fy, fw, 68, "GOV / BESS", trim(adjustl(vt)), &
-                    merge(COL_CYAN, COL_DIM, &
-                    abs(grid%governor_delta_MW) > 0.05_dp .or. abs(grid%BESS_primary_MW) > 0.05_dp))
+                write(vt, '(F5.1,"/",F4.0," MW")') effective_renewable_MW(), grid%renewable_MW
+                call draw_faceplate(hdc, fp6, fy, fw, 68, "RES INJECTION", trim(adjustl(vt)), &
+                    merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
                 ! --- ROI panel ---
-                call draw_section_title_width(hdc, inner_x, fy + 80, "Economics", inner_w)
+                call draw_section_title_width(hdc, inner_x, fy + 80, "ROI and thermodynamic economics", inner_w)
                 call draw_roi_panel(hdc, inner_x, fy + 102, inner_w, 108)
 
                 ! --- Live traces + power flow ---
@@ -1637,20 +1685,23 @@ contains
         panel_top = layout_button_y + 124
         panel_bottom = layout_footer_y - 28
         if (panel_bottom - panel_top > 118) then
-            row_gap = max(24, (panel_bottom - panel_top - 44) / 4)
+            row_gap = max(21, (panel_bottom - panel_top - 50) / 5)
             call fill_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_PANEL_ALT)
             call stroke_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_BORDER_SOFT, 1)
             call draw_text(hdc, title_x + 10, panel_top + 10, "Plant telemetry", COL_MUTED)
             write(line, '("Freq  ",F7.3," Hz")') grid%frequency_Hz
             call draw_text(hdc, title_x + 10, panel_top + 34, adjustl(line), frequency_color())
+            write(line, '("RES   ",F5.1,"/",F4.0," MW")') effective_renewable_MW(), grid%renewable_MW
+            call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), &
+                merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
             write(line, '("ROCOF ",SP,F5.3," Hz/s")') grid%ROCOF_Hz_s
-            call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), COL_MUTED)
+            call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), COL_MUTED)
             write(line, '("Rsv  ",F6.1," MW  S",I1)') grid%reserve_MW, grid%UFLS_stage
-            call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), &
+            call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), &
                 merge(COL_RED, COL_CYAN, grid%alarm_ufls_active))
             write(line, '("SOC  ",F5.1,"%  Gov",SP,F5.1)') &
                 grid%battery_soc_pct, grid%governor_delta_MW
-            call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), COL_BLUE)
+            call draw_text(hdc, title_x + 10, panel_top + 34 + 4 * row_gap, adjustl(line), COL_BLUE)
         end if
 
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
@@ -2231,8 +2282,14 @@ contains
             call fill_box(hdc, x + width - seg_w, y, x + width, y + height, sink_color)
         end if
         call stroke_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
-        write(text, '("Gas ",F5.1,"  Renew ",F5.1,"  BESS ",SP,F5.1," MW")') &
-            grid%gas_power_MW, effective_renewable_MW(), grid%storage_MW
+        if (grid%renewable_curtail_MW > 0.05_dp) then
+            write(text, '("Gas ",F5.1,"  RES ",F5.1,"/",F4.0,"  Curt ",F4.1,"  BESS ",SP,F5.1)') &
+                grid%gas_power_MW, effective_renewable_MW(), grid%renewable_MW, &
+                grid%renewable_curtail_MW, grid%storage_MW
+        else
+            write(text, '("Gas ",F5.1,"  RES ",F5.1,"  BESS ",SP,F5.1," MW")') &
+                grid%gas_power_MW, effective_renewable_MW(), grid%storage_MW
+        end if
         call draw_text(hdc, x + 10, y + 8, adjustl(text), COL_PANEL_DEEP)
     end subroutine draw_stacked_supply
 
@@ -2267,14 +2324,14 @@ contains
     subroutine draw_roi_panel(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
-        character(len=96) :: line
+        character(len=160) :: line
         real(dp) :: net_usd_mwh, capacity_pct
         integer(c_int) :: margin_color
 
         if (height < 1) return
-        net_usd_mwh = grid%margin_usd_h / max(grid%demand_MW, 1.0_dp)
+        net_usd_mwh = grid%value_stack_usd_h / max(grid%demand_MW, 1.0_dp)
         capacity_pct = 100.0_dp * grid%gas_power_MW / max(grid%gas_capacity_MW, 1.0e-9_dp)
-        margin_color = merge(COL_GREEN, COL_RED, grid%margin_usd_h >= 0.0_dp)
+        margin_color = merge(COL_GREEN, COL_RED, grid%value_stack_usd_h >= 0.0_dp)
 
         call fill_soft_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
         call stroke_soft_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
@@ -2290,7 +2347,7 @@ contains
         write(line, '("$",F7.0,"/h")') grid%fuel_cost_usd_h + grid%imbalance_penalty_usd_h
         call draw_text(hdc, x + width / 4 + 12, y + 34, adjustl(line), COL_AMBER)
 
-        call draw_text(hdc, x + width / 2 + 12, y + 10, "Net value", COL_MUTED)
+        call draw_text(hdc, x + width / 2 + 12, y + 10, "Value stack", COL_MUTED)
         write(line, '("$",F6.1,"/MWh")') net_usd_mwh
         call draw_text(hdc, x + width / 2 + 12, y + 34, adjustl(line), margin_color)
 
@@ -2302,18 +2359,27 @@ contains
             grid%heat_input_MW, grid%fuel_flow_kg_s, capacity_pct
         call draw_text(hdc, x + 12, y + 60, adjustl(line), COL_MUTED)
 
-        if (grid%battery_payback_years < 98.0_dp) then
-            write(line, '("BESS value $",F5.0,"/h   payback ",F4.1," yr @ ",F4.0," h/yr")') &
-                grid%battery_value_usd_h, grid%battery_payback_years, ROI_EQUIVALENT_HOURS_PER_YEAR
-        else
-            write(line, '("BESS value $",F5.0,"/h   payback: standby/no arbitrage")') &
-                grid%battery_value_usd_h
-        end if
+        write(line, '("BESS stack $",F5.0,"/h  balance ",F5.0,"  FCR ",F4.0,"  arb ",F4.0,"  deg ",F4.0)') &
+            grid%battery_value_usd_h, grid%bess_imbalance_value_usd_h, &
+            grid%bess_fcr_value_usd_h, grid%bess_arbitrage_value_usd_h, &
+            grid%bess_degradation_cost_usd_h
         call draw_text(hdc, x + 408, y + 60, adjustl(line), COL_MUTED)
 
-        write(line, '("CO2  ",F5.2," kg/s   ",F6.1," g/kWh   ",F7.3," t session")') &
-            grid%CO2_rate_kg_s, grid%CO2_intensity_g_kWh, grid%CO2_cumulative_t
-        call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_MUTED)
+        if (grid%imbalance_MW < -0.5_dp) then
+            line = "ROI action: restore RES headroom, discharge BESS, then raise turbine"
+        else if (grid%imbalance_MW > 0.5_dp) then
+            line = "ROI action: charge BESS, trim residual RES, then lower turbine"
+        else if (grid%bess_fcr_value_usd_h >= grid%bess_arbitrage_value_usd_h) then
+            line = "ROI action: hold BESS mid-SOC for FCR and imbalance value"
+        else
+            line = "ROI action: capture surplus energy while keeping BESS reserve"
+        end if
+        call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_CYAN)
+
+        write(line, '("RES headroom ",F4.1," MW  reserve $",F4.0,"/h  curtail opp $",F5.0,"/h   CO2 ",F5.2," kg/s")') &
+            renewable_headroom_MW(), grid%renewable_reserve_value_usd_h, &
+            grid%renewable_curtail_cost_usd_h, grid%CO2_rate_kg_s
+        call draw_text(hdc, x + 598, y + 84, adjustl(line), COL_MUTED)
     end subroutine draw_roi_panel
 
     subroutine draw_history_traces(hdc, x, y, width, height)
@@ -2513,10 +2579,10 @@ contains
             text = "Grid balanced | supply matches demand within 0.5 MW"
             color = COL_GREEN
         else if (grid%imbalance_MW < 0.0_dp) then
-            text = "Grid shortage | raise turbine, discharge BESS, add renewables, or lower demand"
+            text = "Grid shortage | restore RES headroom, discharge BESS, raise turbine, or lower demand"
             color = COL_RED
         else
-            text = "Grid surplus | lower turbine, charge BESS, curtail renewables, or raise demand"
+            text = "Grid surplus | trim RES injection, charge BESS, lower turbine, or raise demand"
             color = COL_AMBER
         end if
     end subroutine grid_status
