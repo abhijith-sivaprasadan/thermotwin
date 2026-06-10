@@ -30,5 +30,6 @@ Thumbs.db
 # output/*.pdf
 output/gui_last_run.txt
 output/results_gui_run.csv
+output/gui_*.png
 gui_debug.log
 gui/app_icon.ico

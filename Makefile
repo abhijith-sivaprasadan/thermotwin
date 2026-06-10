@@ -14,6 +14,7 @@
 # ===========================================================================
 
 FC      = gfortran
+CXX     = g++
 BUILD   := build
 SRC     := src
 APP     := app
@@ -23,6 +24,8 @@ FFLAGS_COMMON := -J $(BUILD) -I $(BUILD) -ffree-line-length-none -std=f2008
 FFLAGS_REL    := -O2
 FFLAGS_DBG    := -O0 -g -fcheck=all -fbacktrace -Wall -Wextra -fimplicit-none
 FFLAGS        := $(FFLAGS_COMMON) $(FFLAGS_REL)
+CXXFLAGS_REL  := -O2 -std=c++17 -Wall -Wextra
+CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 
 # Modules in strict dependency order.
 MODS := precision_kinds constants types utilities fluid_properties ambient \
@@ -39,6 +42,7 @@ GUI_EXE := thermotwin-gui.exe
 GUI_DEBUG_EXE := thermotwin-gui-debug.exe
 GUI_ICON := gui/app_icon.ico
 GUI_RES := $(BUILD)/gui_icon.res
+GUI_NATIVE_OBJ := $(BUILD)/hmi_native_draw.o
 
 .PHONY: all tests check debug run gui gui-debug clean
 .SECONDEXPANSION:
@@ -99,13 +103,16 @@ run: $(EXE)
 
 gui: $(GUI_EXE)
 
-$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_RES) -o $@ -mwindows -luser32 -lgdi32 -lcomctl32 -lkernel32
+$(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
+
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_NATIVE_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32
 
 gui-debug: $(GUI_DEBUG_EXE)
 
-$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_RES) -o $@ -luser32 -lgdi32 -lcomctl32 -lkernel32
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_NATIVE_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32
 
 $(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
 	windres $< -O coff -o $@
