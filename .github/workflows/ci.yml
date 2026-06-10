@@ -14,28 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up gfortran
-        uses: fortran-lang/setup-fortran@v1
-        with:
-          compiler: gcc
-          version: 13
+      - name: Install gfortran and g++
+        run: sudo apt-get install -y gfortran g++
 
-      - name: Set up fpm
-        uses: fortran-lang/setup-fpm@v5
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build engine + CLI
+        run: make -j$(nproc)
 
-      - name: Build
-        run: fpm build --profile release
+      - name: Build unit tests
+        run: make tests -j$(nproc)
 
-      - name: Run unit tests
-        run: fpm test --profile release
-
-      - name: Physics self-test
-        run: fpm run --profile release -- selftest
+      - name: Run unit tests and physics selftest
+        run: python3 scripts/run_tests.py
 
       - name: Scenario regression suite
         run: |
           for scn in cases/scenarios/*.scn; do
-            fpm run --profile release -- scenario run "$scn"
+            echo "--- $scn"
+            ./thermotwin scenario run "$scn"
           done
