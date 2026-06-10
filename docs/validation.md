@@ -74,3 +74,36 @@ Control interaction check:
 The validation is enforced by `test/test_fleet_dispatch.f90`,
 `cases/scenarios/fleet_dispatch.scn`, and the full suite passes through
 `make check`.
+
+## Phase 5: Market, Location, Weather, and Replay Inputs
+
+Reference target from `docs/REVAMP_PLAN.md`: location selection should change
+market prices, gas hub assumptions, ambient/weather conditions, and 50/60 Hz
+grid standards live. Market and weather values should land on the tag bus and
+be consumed by dispatch/economics without making the native executable depend
+on a browser.
+
+Implemented data boundary:
+
+- Bundled offline profiles: Stockholm SE3, Germany DE-LU, Texas ERCOT,
+  Louisiana Henry Hub
+- External API alignment: EIA-style price cache fields, Open-Meteo-style
+  weather variables (`temperature_2m`, wind speed, shortwave radiation)
+- Weather fallback: deterministic wind/PV model from profile latitude,
+  wind resource, irradiance, and installed capacity
+- Replay fallback: deterministic 24-hour load/price shape compressed into a
+  configurable scenario duration
+
+| Check | ThermoTwin-F Phase 5 | Acceptance |
+|---|---:|---:|
+| Texas ERCOT profile | Nominal frequency 60.0 Hz | Location can switch grid standard |
+| ERCOT fuel profile | 3.8 USD/GJ | Live fuel price below default TTF-style gas |
+| Germany midday replay | Solar irradiance > 500 W/m2, PV > 10 MW | Weather drives renewable ceiling |
+| Stockholm replay | Evening load exceeds night load by > 12 MW | Diurnal demand replay is active |
+| Live power price | Revenue = demand served x `power_price_usd_mwh` | Economics consumes market tags |
+| Live carbon price | Carbon cost = CO2 t/h x `carbon_price_usd_t` | Carbon price enters margin |
+| Scenario replay | ERCOT reaches 60 Hz, >750 W/m2 solar, >70 MW evening demand | Full-day replay drives the engine |
+
+The validation is enforced by `test/test_market_data.f90`,
+`cases/scenarios/market_replay.scn`, and the full suite passes through
+`make check`.

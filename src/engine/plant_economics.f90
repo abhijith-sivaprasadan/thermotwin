@@ -20,12 +20,14 @@ contains
         real(dp) :: surplus_without_bess_MW, captured_surplus_MW
 
         served_MW = min(st%demand_MW, max(0.0_dp, st%supply_MW))
-        st%revenue_usd_h = served_MW * POWER_PRICE_USD_MWH
+        st%revenue_usd_h = served_MW * st%power_price_usd_mwh
         st%fuel_cost_usd_h = st%heat_input_MW * 3.6_dp * st%fuel_price_usd_gj
         st%storage_cost_usd_h = abs(st%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
         st%imbalance_penalty_usd_h = abs(st%imbalance_MW) * IMBALANCE_PENALTY_USD_MWH
+        st%CO2_rate_kg_s = st%fuel_flow_kg_s * CO2_KG_PER_KG_FUEL
+        st%co2_cost_usd_h = st%CO2_rate_kg_s * 3.6_dp * st%carbon_price_usd_t
         st%margin_usd_h = st%revenue_usd_h - st%fuel_cost_usd_h - &
-            st%storage_cost_usd_h - st%imbalance_penalty_usd_h
+            st%storage_cost_usd_h - st%imbalance_penalty_usd_h - st%co2_cost_usd_h
 
         imbalance_without_bess_MW = st%plant_power_MW + effective_renewable_MW(st) - st%demand_MW
         avoided_imbalance_MW = max(0.0_dp, abs(imbalance_without_bess_MW) - abs(st%imbalance_MW))
@@ -37,17 +39,17 @@ contains
         if (st%battery_soc_pct > 80.0_dp) bess_down_reserve_MW = 0.0_dp
         bess_fcr_reserve_MW = min(5.0_dp, min(bess_up_reserve_MW, bess_down_reserve_MW))
         if (.not. st%fcr_hold) bess_fcr_reserve_MW = 0.0_dp
-        st%bess_fcr_value_usd_h = bess_fcr_reserve_MW * FCR_RESERVE_PRICE_USD_MW_H
+        st%bess_fcr_value_usd_h = bess_fcr_reserve_MW * st%fcr_reserve_price_usd_mw_h
 
         surplus_without_bess_MW = max(0.0_dp, imbalance_without_bess_MW)
         captured_surplus_MW = min(max(0.0_dp, -st%storage_MW), surplus_without_bess_MW)
         st%bess_arbitrage_value_usd_h = &
-            captured_surplus_MW * BESS_ARBITRAGE_SPREAD_USD_MWH + &
-            max(0.0_dp, st%storage_MW) * BESS_ARBITRAGE_SPREAD_USD_MWH * 0.35_dp
+            captured_surplus_MW * st%bess_arbitrage_spread_usd_mwh + &
+            max(0.0_dp, st%storage_MW) * st%bess_arbitrage_spread_usd_mwh * 0.35_dp
         st%bess_degradation_cost_usd_h = abs(st%storage_MW) * BESS_DEGRADATION_USD_MWH
 
-        st%renewable_reserve_value_usd_h = renewable_headroom_MW(st) * RENEWABLE_RESERVE_PRICE_USD_MW_H
-        st%renewable_curtail_cost_usd_h = renewable_headroom_MW(st) * POWER_PRICE_USD_MWH
+        st%renewable_reserve_value_usd_h = renewable_headroom_MW(st) * st%renewable_reserve_price_usd_mw_h
+        st%renewable_curtail_cost_usd_h = renewable_headroom_MW(st) * st%power_price_usd_mwh
         st%value_stack_usd_h = st%bess_imbalance_value_usd_h + st%bess_fcr_value_usd_h + &
             st%bess_arbitrage_value_usd_h + st%renewable_reserve_value_usd_h - &
             st%storage_cost_usd_h - st%bess_degradation_cost_usd_h - &
@@ -64,7 +66,6 @@ contains
             st%battery_payback_years = 99.0_dp
         end if
 
-        st%CO2_rate_kg_s = st%fuel_flow_kg_s * CO2_KG_PER_KG_FUEL
         if (st%plant_power_MW > 0.1_dp) then
             st%CO2_intensity_g_kWh = st%CO2_rate_kg_s * 3600.0_dp / st%plant_power_MW
         else

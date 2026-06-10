@@ -73,6 +73,8 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_CLOUD_RAMP = 207_c_int
     integer(c_int), parameter :: ID_TURBINE_TRIP = 208_c_int
     integer(c_int), parameter :: ID_CC_MODE = 209_c_int
+    integer(c_int), parameter :: ID_MARKET_PROFILE = 210_c_int
+    integer(c_int), parameter :: ID_MARKET_REPLAY = 211_c_int
     integer(c_int), parameter :: ID_NONE = 0_c_int
     integer(c_int), parameter :: TIMER_ID = 1_c_int
     integer(c_int), parameter :: TIMER_MS = 250_c_int
@@ -894,6 +896,10 @@ contains
             call apply_cloud_ramp(grid)
         case (ID_TURBINE_TRIP)
             call apply_turbine_trip(grid)
+        case (ID_MARKET_PROFILE)
+            call cycle_market_profile(grid)
+        case (ID_MARKET_REPLAY)
+            call toggle_market_replay()
         end select
 
         call refresh_model(grid)
@@ -934,6 +940,12 @@ contains
         case (ID_TURBINE_TRIP)
             call apply_turbine_trip(grid)
             active_control = ID_NONE
+        case (ID_MARKET_PROFILE)
+            call cycle_market_profile(grid)
+            active_control = ID_NONE
+        case (ID_MARKET_REPLAY)
+            call toggle_market_replay()
+            active_control = ID_NONE
         case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
             call update_active_slider(x)
@@ -956,6 +968,12 @@ contains
         if (.not. grid%combined_cycle) grid%steam_power_MW = 0.0_dp
     end subroutine cycle_plant_mode
 
+    subroutine toggle_market_replay()
+        grid%market_load_replay_enabled = .not. grid%market_load_replay_enabled
+        if (grid%market_load_replay_enabled) grid%market_weather_enabled = .true.
+        call refresh_market_data(grid, 0.0_dp)
+    end subroutine toggle_market_replay
+
     subroutine handle_mouse_up()
         integer(c_int) :: ok
 
@@ -972,9 +990,11 @@ contains
         select case (active_control)
         case (ID_DEMAND)
             grid%demand_MW = DEMAND_MIN_MW + f * (DEMAND_MAX_MW - DEMAND_MIN_MW)
+            grid%market_load_replay_enabled = .false.
         case (ID_RENEWABLE)
             grid%renewable_MW = f * RENEWABLE_MAX_MW
             grid%renewable_curtail_MW = 0.0_dp
+            grid%market_weather_enabled = .false.
         case (ID_STORAGE)
             grid%storage_request_MW = STORAGE_MIN_MW + f * (STORAGE_MAX_MW - STORAGE_MIN_MW)
         case (ID_GAS)
@@ -982,6 +1002,7 @@ contains
             grid%auto_balance = .false.
         case (ID_AMBIENT)
             grid%ambient_C = -20.0_dp + f * 65.0_dp
+            grid%market_weather_enabled = .false.
         case (ID_TIT)
             grid%TIT_K = 1200.0_dp + f * 400.0_dp
         end select
@@ -1025,6 +1046,9 @@ contains
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_CLOUD_RAMP
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_TURBINE_TRIP
         by = layout_button_y + 184
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_MARKET_PROFILE
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_MARKET_REPLAY
+        by = layout_button_y + 230
         if (point_in_rect(x, y, bx1, by, bx3, by + bh)) control_id = ID_RESET
     end function hit_test_control
 
@@ -1074,7 +1098,7 @@ contains
         integer :: x0, y0, w, h
         integer :: inner_x, inner_w
         real(dp) :: scale_MW
-        character(len=96) :: status, subtitle
+        character(len=96) :: status, subtitle, title
         character(len=12) :: auto_text, dispatch_text, reserve_text, plant_text
         integer(c_int) :: status_color
         integer :: gx, gy
@@ -1100,8 +1124,9 @@ contains
         call fill_box(hdc, x0, y0, x0 + w, y0 + 44, COL_PANEL_DEEP)
         call fill_box(hdc, x0, y0, x0 + 5, y0 + 44, COL_CYAN)
         call draw_line(hdc, x0, y0 + 44, x0 + w, y0 + 44, COL_BORDER, 1)
-        call draw_title_text(hdc, inner_x + 8, y0 + 10, &
-            "ThermoTwin-F  |  Plant Control Console  |  50 Hz ENTSO-E", COL_INK)
+        write(title, '("ThermoTwin-F | Plant Control Console | ",F4.0," Hz ",A)') &
+            grid%nominal_frequency_Hz, trim(grid%market_power_zone)
+        call draw_title_text(hdc, inner_x + 8, y0 + 10, trim(title), COL_INK)
         if (grid%auto_balance) then
             auto_text = "AUTO"
         else
@@ -1244,7 +1269,7 @@ contains
     subroutine draw_control_panel(hdc)
         type(c_ptr), value :: hdc
         character(len=40) :: value
-        character(len=64) :: line
+        character(len=64) :: line, button_text
         integer :: left, top, right, bottom, title_x, panel_top, panel_bottom, row_gap
         integer :: bx1, bx2, bx3, by, btn_w, btn_h, btn_gap
 
@@ -1362,10 +1387,22 @@ contains
         end if
 
         by = layout_button_y + 184
+        button_text = "LOC "//trim(grid%market_power_zone)
+        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+            trim(button_text), COL_CYAN, grid%market_weather_enabled)
+        if (grid%market_load_replay_enabled) then
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "REPLAY ON", COL_GREEN, .true.)
+        else
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "REPLAY", COL_PANEL_ALT, .false.)
+        end if
+
+        by = layout_button_y + 230
         call draw_industrial_button(hdc, bx1, by, bx3, by + btn_h, &
             "RESET", COL_PANEL, .false.)
 
-        panel_top = layout_button_y + 244
+        panel_top = layout_button_y + 290
         panel_bottom = layout_footer_y - 28
         if (panel_bottom - panel_top > 118) then
             row_gap = max(21, (panel_bottom - panel_top - 50) / 5)
@@ -1411,8 +1448,11 @@ contains
         end if
 
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
-        call draw_text(hdc, title_x, layout_footer_y, "Loop 250 ms | Fortran solver", COL_MUTED)
-        call draw_text(hdc, title_x, layout_footer_y + 20, "MW  Hz  MWh  USD/h", COL_DIM)
+        write(line, '("Loop 250 ms | ",A)') trim(grid%market_profile_name)
+        call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)
+        write(line, '("P$",F4.0,"/MWh  Gas$",F4.1,"/GJ  CO2$",F4.0,"/t")') &
+            grid%power_price_usd_mwh, grid%fuel_price_usd_gj, grid%carbon_price_usd_t
+        call draw_text(hdc, title_x, layout_footer_y + 20, trim(adjustl(line)), COL_DIM)
     end subroutine draw_control_panel
 
     subroutine draw_custom_slider(hdc, control_id, x, y, width, label, value_text, value, lo, hi, color)
@@ -2095,8 +2135,8 @@ contains
         write(line, '("$",F7.0,"/h")') grid%revenue_usd_h
         call draw_text(hdc, x + 12, y + 34, adjustl(line), COL_INK)
 
-        call draw_text(hdc, x + width / 4 + 12, y + 10, "Fuel + penalty", COL_MUTED)
-        write(line, '("$",F7.0,"/h")') grid%fuel_cost_usd_h + grid%imbalance_penalty_usd_h
+        call draw_text(hdc, x + width / 4 + 12, y + 10, "Fuel + carbon", COL_MUTED)
+        write(line, '("$",F7.0,"/h")') grid%fuel_cost_usd_h + grid%imbalance_penalty_usd_h + grid%co2_cost_usd_h
         call draw_text(hdc, x + width / 4 + 12, y + 34, adjustl(line), COL_AMBER)
 
         call draw_text(hdc, x + width / 2 + 12, y + 10, "Value stack", COL_MUTED)
@@ -2126,10 +2166,8 @@ contains
                 grid%fleet_unit_cost_usd_MWh(FLEET_GT1), grid%fleet_unit_cost_usd_MWh(FLEET_GT2), &
                 grid%fleet_unit_cost_usd_MWh(FLEET_CC1), grid%fleet_lmp_usd_MWh
         else
-            write(line, '("BESS stack $",F5.0,"/h  balance ",F5.0,"  FCR ",F4.0,"  arb ",F4.0,"  deg ",F4.0)') &
-                grid%battery_value_usd_h, grid%bess_imbalance_value_usd_h, &
-                grid%bess_fcr_value_usd_h, grid%bess_arbitrage_value_usd_h, &
-                grid%bess_degradation_cost_usd_h
+            write(line, '("Market P$",F4.0,"/MWh gas$",F4.1,"/GJ  BESS $",F5.0,"/h")') &
+                grid%power_price_usd_mwh, grid%fuel_price_usd_gj, grid%battery_value_usd_h
         end if
         call draw_text(hdc, x + 408, y + 60, adjustl(line), COL_MUTED)
 
@@ -2153,9 +2191,9 @@ contains
         call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_CYAN)
 
         if (grid%fleet_mode) then
-            write(line, '("Reserve ",F4.1,"/",F4.1," MW  fuel $",F4.1,"/GJ  inertia ",F5.0," MWs  bind ",I1)') &
-                grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW, grid%fuel_price_usd_gj, &
-                grid%fleet_inertia_MWs, merge(1, 0, grid%fleet_reserve_binding)
+            write(line, '("Reserve ",F4.1,"/",F4.1," MW  P$",F4.0," gas$",F4.1,"  inertia ",F5.0," MWs")') &
+                grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW, grid%power_price_usd_mwh, &
+                grid%fuel_price_usd_gj, grid%fleet_inertia_MWs
         else if (grid%combined_cycle) then
             write(line, '("ST ",F4.1," MW  HRSG ",F5.1," MW  stack ",F5.0," K  pinch ",F4.1," K  cond ",F4.1," kPa")') &
                 grid%steam_power_MW, grid%hrsg_recovered_heat_MW, grid%hrsg_stack_T_K, &

@@ -24,7 +24,7 @@ contains
         real(dp) :: delta_f, P_gen_eff, P_load_eff, df_dt
         real(dp) :: gov_capacity_MW, gov_power_MW, gov_min_MW, gov_max_up, gov_max_dn, m_eff_MWs
 
-        delta_f = st%frequency_Hz - FREQ_NOMINAL_HZ
+        delta_f = st%frequency_Hz - st%nominal_frequency_Hz
         if (st%fleet_mode) then
             gov_capacity_MW = st%fleet_online_capacity_MW
             gov_power_MW = st%fleet_total_MW
@@ -38,7 +38,7 @@ contains
         end if
 
         ! Governor primary droop: dP_gov = -(df/f0)/R * P_rated (clamped to headroom)
-        st%governor_delta_MW = -(delta_f / FREQ_NOMINAL_HZ) / GOVERNOR_DROOP_R * gov_capacity_MW
+        st%governor_delta_MW = -(delta_f / st%nominal_frequency_Hz) / GOVERNOR_DROOP_R * gov_capacity_MW
         gov_max_up = gov_capacity_MW - gov_power_MW
         gov_max_dn = gov_power_MW - gov_min_MW
         st%governor_delta_MW = clamp_real(st%governor_delta_MW, -gov_max_dn, gov_max_up)
@@ -56,25 +56,25 @@ contains
         end if
 
         ! UFLS (ENTSO-E): latching stages, reset above 49.5 Hz
-        if (st%frequency_Hz >= UFLS_RESET) then
+        if (st%frequency_Hz >= st%ufls_reset_Hz) then
             st%UFLS_stage = 0
             st%UFLS_shed_fraction = 0.0_dp
-        else if (st%frequency_Hz < UFLS_THRESH_3 .and. st%UFLS_stage < 3) then
+        else if (st%frequency_Hz < st%ufls_thresh_3_Hz .and. st%UFLS_stage < 3) then
             st%UFLS_stage = 3
             st%UFLS_shed_fraction = 3.0_dp * UFLS_SHED_PCT
-        else if (st%frequency_Hz < UFLS_THRESH_2 .and. st%UFLS_stage < 2) then
+        else if (st%frequency_Hz < st%ufls_thresh_2_Hz .and. st%UFLS_stage < 2) then
             st%UFLS_stage = 2
             st%UFLS_shed_fraction = 2.0_dp * UFLS_SHED_PCT
-        else if (st%frequency_Hz < UFLS_THRESH_1 .and. st%UFLS_stage < 1) then
+        else if (st%frequency_Hz < st%ufls_thresh_1_Hz .and. st%UFLS_stage < 1) then
             st%UFLS_stage = 1
             st%UFLS_shed_fraction = UFLS_SHED_PCT
         end if
 
         ! LFSM-O (ENTSO-E RfG): above 50.2 Hz renewables shed output with 5% droop
-        if (st%frequency_Hz > LFSM_O_THRESH_HZ) then
+        if (st%frequency_Hz > st%lfsm_o_thresh_Hz) then
             st%renewable_lfsmo_MW = min(effective_renewable_MW(st), &
-                effective_renewable_MW(st) * (st%frequency_Hz - LFSM_O_THRESH_HZ) / &
-                FREQ_NOMINAL_HZ / LFSM_O_DROOP)
+                effective_renewable_MW(st) * (st%frequency_Hz - st%lfsm_o_thresh_Hz) / &
+                st%nominal_frequency_Hz / LFSM_O_DROOP)
         else
             st%renewable_lfsmo_MW = 0.0_dp
         end if
@@ -86,11 +86,12 @@ contains
         P_load_eff = st%demand_MW * (1.0_dp - st%UFLS_shed_fraction)
         df_dt = (P_gen_eff - P_load_eff) / m_eff_MWs
         st%ROCOF_Hz_s = df_dt
-        st%frequency_Hz = clamp_real(st%frequency_Hz + df_dt * dt_s, 47.0_dp, 53.0_dp)
+        st%frequency_Hz = clamp_real(st%frequency_Hz + df_dt * dt_s, &
+            st%nominal_frequency_Hz - 3.0_dp, st%nominal_frequency_Hz + 3.0_dp)
 
         ! Update alarm flags
-        st%alarm_underfreq   = st%frequency_Hz < (FREQ_NOMINAL_HZ - 0.5_dp)
-        st%alarm_overfreq    = st%frequency_Hz > (FREQ_NOMINAL_HZ + 0.5_dp)
+        st%alarm_underfreq   = st%frequency_Hz < (st%nominal_frequency_Hz - 0.5_dp)
+        st%alarm_overfreq    = st%frequency_Hz > (st%nominal_frequency_Hz + 0.5_dp)
         st%alarm_low_reserve = merge(st%reserve_MW < st%fleet_reserve_requirement_MW, &
             st%reserve_MW < 2.0_dp, st%fleet_mode)
         st%alarm_low_soc     = st%battery_soc_pct < 15.0_dp

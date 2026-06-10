@@ -19,6 +19,9 @@ module engine_core
     use hrsg, only: HrsgResult, solve_hrsg
     use steam_cycle, only: SteamCycleResult, solve_steam_cycle, ramp_limited, STEAM_RAMP_MW_PER_S
     use fleet_dispatch, only: refresh_fleet_dispatch, trip_fleet_unit, restore_fleet_units
+    use market_data, only: apply_market_profile, cycle_market_profile, refresh_market_data, &
+        market_profile_name, MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU, &
+        MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     use grid_dynamics, only: tick_frequency_dynamics
     use dispatch_agc, only: tick_auto_balance, balance_now, reset_controls, &
         ramp_renewable_curtailment_to, should_curtail_renewables, &
@@ -42,6 +45,7 @@ module engine_core
     public :: ramp_renewable_curtailment_to, should_curtail_renewables
     public :: apply_load_step, apply_cloud_ramp, apply_turbine_trip
     public :: trip_fleet_unit, restore_fleet_units
+    public :: apply_market_profile, cycle_market_profile, refresh_market_data, market_profile_name
     public :: refresh_economics
 
     ! Re-exported parameters used by front-ends
@@ -51,6 +55,8 @@ module engine_core
     public :: GAS_MIN_PCT, GAS_MAX_PCT, GAS_RAMP_PCT_PER_S
     public :: BESS_RAMP_MW_PER_S, CURTAIL_RAMP_MW_PER_S
     public :: FLEET_N, FLEET_GT1, FLEET_GT2, FLEET_CC1, FLEET_UNIT_NAME
+    public :: MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU
+    public :: MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     public :: FREQ_NOMINAL_HZ, INERTIA_MWs, GOVERNOR_DROOP_R
     public :: BESS_PRIMARY_GAIN, BESS_PRIMARY_DB
     public :: UFLS_THRESH_1, UFLS_THRESH_2, UFLS_THRESH_3, UFLS_RESET, UFLS_SHED_PCT
@@ -85,6 +91,7 @@ contains
         real(dp), intent(in) :: dt_s
 
         st%elapsed_s = st%elapsed_s + dt_s
+        call refresh_market_data(st, dt_s)      ! location weather, prices, and replayed load
         call tick_auto_balance(st, dt_s)        ! AGC secondary ramp
         ! Dispatch slew rate over this tick (slider moves + AGC combined);
         ! upward ramps drive the transient surge-margin excursion.
@@ -253,6 +260,7 @@ contains
 
         t = st%elapsed_s
         call tag_set("GRID.FREQ_HZ",          st%frequency_Hz,        "Hz",     t)
+        call tag_set("GRID.NOMINAL_HZ",       st%nominal_frequency_Hz, "Hz",    t)
         call tag_set("GRID.ROCOF_HZ_S",       st%ROCOF_Hz_s,          "Hz/s",   t)
         call tag_set("GRID.DEMAND_MW",        st%demand_MW,           "MW",     t)
         call tag_set("GRID.SUPPLY_MW",        st%supply_MW,           "MW",     t)
@@ -305,9 +313,21 @@ contains
         call tag_set("BESS.PRIMARY_MW",       st%BESS_primary_MW,     "MW",     t)
         call tag_set("BESS.SOC_PCT",          st%battery_soc_pct,     "%",      t)
         call tag_set("BESS.ENERGY_MWH",       st%battery_energy_MWh,  "MWh",    t)
+        call tag_set("MARKET.PROFILE",        real(st%market_profile_id, dp), "-", t)
+        call tag_set("MARKET.POWER_USD_MWH",  st%power_price_usd_mwh, "USD/MWh", t)
+        call tag_set("MARKET.FUEL_USD_GJ",    st%fuel_price_usd_gj,   "USD/GJ", t)
+        call tag_set("MARKET.CARBON_USD_T",   st%carbon_price_usd_t,  "USD/t",  t)
+        call tag_set("MARKET.FCR_USD_MW_H",   st%fcr_reserve_price_usd_mw_h, "USD/MW-h", t)
+        call tag_set("MARKET.HOUR",           st%market_hour,         "h",      t)
+        call tag_set("MARKET.SOURCE",         real(st%market_source_code, dp), "-", t)
+        call tag_set("WX.WIND_M_S",           st%market_wind_speed_m_s, "m/s",  t)
+        call tag_set("WX.SOLAR_W_M2",         st%market_solar_W_m2,   "W/m2",   t)
+        call tag_set("WX.WIND_MW",            st%market_wind_power_MW, "MW",    t)
+        call tag_set("WX.PV_MW",              st%market_pv_power_MW,  "MW",     t)
         call tag_set("ECON.MARGIN_USD_H",     st%margin_usd_h,        "USD/h",  t)
         call tag_set("ECON.REVENUE_USD_H",    st%revenue_usd_h,       "USD/h",  t)
         call tag_set("ECON.FUEL_USD_H",       st%fuel_cost_usd_h,     "USD/h",  t)
+        call tag_set("ECON.CO2_USD_H",        st%co2_cost_usd_h,      "USD/h",  t)
         call tag_set("ECON.VALUE_STACK_USD_H", st%value_stack_usd_h,  "USD/h",  t)
         call tag_set("EMIS.CO2_KG_S",         st%CO2_rate_kg_s,       "kg/s",   t)
         call tag_set("EMIS.CO2_G_KWH",        st%CO2_intensity_g_kWh, "g/kWh",  t)

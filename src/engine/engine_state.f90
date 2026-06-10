@@ -107,7 +107,13 @@ module engine_state
         real(dp) :: fuel_cost_usd_h = 0.0_dp
         real(dp) :: storage_cost_usd_h = 0.0_dp
         real(dp) :: imbalance_penalty_usd_h = 0.0_dp
+        real(dp) :: co2_cost_usd_h = 0.0_dp
         real(dp) :: margin_usd_h = 0.0_dp
+        real(dp) :: power_price_usd_mwh = POWER_PRICE_USD_MWH
+        real(dp) :: fcr_reserve_price_usd_mw_h = FCR_RESERVE_PRICE_USD_MW_H
+        real(dp) :: bess_arbitrage_spread_usd_mwh = BESS_ARBITRAGE_SPREAD_USD_MWH
+        real(dp) :: renewable_reserve_price_usd_mw_h = RENEWABLE_RESERVE_PRICE_USD_MW_H
+        real(dp) :: carbon_price_usd_t = 0.0_dp
         real(dp) :: battery_value_usd_h = 0.0_dp
         real(dp) :: battery_payback_years = 0.0_dp
         real(dp) :: bess_imbalance_value_usd_h = 0.0_dp
@@ -123,9 +129,15 @@ module engine_state
         real(dp) :: CO2_cumulative_t = 0.0_dp
         ! Dynamic frequency model fields
         real(dp) :: ROCOF_Hz_s = 0.0_dp
+        real(dp) :: nominal_frequency_Hz = FREQ_NOMINAL_HZ
         real(dp) :: governor_delta_MW = 0.0_dp
         real(dp) :: BESS_primary_MW = 0.0_dp
         real(dp) :: UFLS_shed_fraction = 0.0_dp
+        real(dp) :: ufls_thresh_1_Hz = UFLS_THRESH_1
+        real(dp) :: ufls_thresh_2_Hz = UFLS_THRESH_2
+        real(dp) :: ufls_thresh_3_Hz = UFLS_THRESH_3
+        real(dp) :: ufls_reset_Hz = UFLS_RESET
+        real(dp) :: lfsm_o_thresh_Hz = LFSM_O_THRESH_HZ
         integer  :: UFLS_stage = 0
         ! Renewable dispatch: resource availability is the ceiling; the visible
         ! HMI row shows actual injection, which AGC may curtail below the ceiling.
@@ -178,6 +190,29 @@ module engine_state
         real(dp) :: fleet_unit_cost_usd_MWh(FLEET_N) = 0.0_dp
         real(dp) :: fleet_unit_participation(FLEET_N) = 0.0_dp
         real(dp) :: fleet_unit_inertia_MWs(FLEET_N) = [24.0_dp, 8.0_dp, 70.0_dp]
+        ! Phase 5 market/weather/location state
+        integer  :: market_profile_id = 1
+        character(len=24) :: market_profile_name = "Default SE3"
+        character(len=16) :: market_power_zone = "SE3"
+        character(len=16) :: market_gas_hub = "TTF"
+        integer  :: market_source_code = 0
+        logical  :: market_weather_enabled = .false.
+        logical  :: market_load_replay_enabled = .false.
+        real(dp) :: market_latitude_deg = 59.33_dp
+        real(dp) :: market_longitude_deg = 18.07_dp
+        real(dp) :: market_replay_day_s = 300.0_dp
+        real(dp) :: market_hour = 12.0_dp
+        real(dp) :: market_last_update_s = 0.0_dp
+        real(dp) :: market_data_age_s = 0.0_dp
+        real(dp) :: renewable_scale_pct = 100.0_dp
+        real(dp) :: market_wind_capacity_MW = 28.0_dp
+        real(dp) :: market_pv_capacity_MW = 18.0_dp
+        real(dp) :: market_wind_speed_m_s = 0.0_dp
+        real(dp) :: market_solar_W_m2 = 0.0_dp
+        real(dp) :: market_wind_power_MW = 0.0_dp
+        real(dp) :: market_pv_power_MW = 0.0_dp
+        real(dp) :: market_base_demand_MW = 35.0_dp
+        real(dp) :: market_peak_demand_MW = 72.0_dp
         logical  :: alarm_surge = .false.
         ! Alarm state flags (drives annunciator tiles)
         logical  :: alarm_underfreq    = .false.

@@ -1,0 +1,22 @@
+# Phase 5 market/location/weather replay smoke test.
+name     market_replay
+duration 190
+dt       0.50
+
+at 0.0 set location_profile 3
+at 0.0 set weather_drive_renewables 1
+at 0.0 set load_replay 1
+at 0.0 set market_replay_day_s 240
+at 0.0 set fleet_mode 1
+at 0.0 set auto_balance 1
+
+at 1.0 assert_near  nominal_frequency_Hz 60.0 0.01
+at 1.0 assert_near  frequency_Hz 60.0 0.20
+at 1.0 assert_above wind_speed_m_s 4.0
+at 1.0 assert_above power_price_usd_mwh 50.0
+
+at 120.0 assert_above solar_W_m2 750.0
+at 120.0 assert_above pv_power_MW 20.0
+
+at 185.0 assert_above demand_MW 70.0
+at 185.0 assert_above market_hour 18.0

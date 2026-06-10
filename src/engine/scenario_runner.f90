@@ -24,7 +24,7 @@
 module scenario_runner
     use precision_kinds, only: dp
     use engine_state
-    use engine_core, only: engine_init, engine_step, refresh_model
+    use engine_core, only: engine_init, engine_step, refresh_model, apply_market_profile
     use dispatch_agc, only: balance_now, reset_controls, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
     use tag_bus, only: tag_count, tag_name_at, tag_value_at
@@ -434,6 +434,15 @@ contains
         case ("gt1_online");           st%fleet_unit_online(FLEET_GT1) = value > 0.5_dp
         case ("gt2_online");           st%fleet_unit_online(FLEET_GT2) = value > 0.5_dp
         case ("cc1_online");           st%fleet_unit_online(FLEET_CC1) = value > 0.5_dp
+        case ("location_profile")
+            call apply_market_profile(st, nint(value))
+        case ("weather_drive_renewables"); st%market_weather_enabled = value > 0.5_dp
+        case ("load_replay");          st%market_load_replay_enabled = value > 0.5_dp
+        case ("market_replay_day_s");  st%market_replay_day_s = max(1.0_dp, value)
+        case ("renewable_scale_pct");  st%renewable_scale_pct = clamp_real(value, 0.0_dp, 200.0_dp)
+        case ("power_price_usd_mwh");  st%power_price_usd_mwh = value
+        case ("carbon_price_usd_t");   st%carbon_price_usd_t = max(0.0_dp, value)
+        case ("fcr_price_usd_mw_h");   st%fcr_reserve_price_usd_mw_h = value
         case default
             ok = .false.
         end select
@@ -491,6 +500,18 @@ contains
         case ("cc1_cost_usd_MWh");      value = st%fleet_unit_cost_usd_MWh(FLEET_CC1)
         case ("cc1_participation");     value = st%fleet_unit_participation(FLEET_CC1)
         case ("cc1_online");            value = merge(1.0_dp, 0.0_dp, st%fleet_unit_online(FLEET_CC1))
+        case ("location_profile");      value = real(st%market_profile_id, dp)
+        case ("nominal_frequency_Hz");  value = st%nominal_frequency_Hz
+        case ("power_price_usd_mwh");   value = st%power_price_usd_mwh
+        case ("carbon_price_usd_t");    value = st%carbon_price_usd_t
+        case ("co2_cost_usd_h");        value = st%co2_cost_usd_h
+        case ("market_hour");           value = st%market_hour
+        case ("weather_drive_renewables"); value = merge(1.0_dp, 0.0_dp, st%market_weather_enabled)
+        case ("load_replay");           value = merge(1.0_dp, 0.0_dp, st%market_load_replay_enabled)
+        case ("wind_speed_m_s");        value = st%market_wind_speed_m_s
+        case ("solar_W_m2");            value = st%market_solar_W_m2
+        case ("pv_power_MW");           value = st%market_pv_power_MW
+        case ("wind_power_MW");         value = st%market_wind_power_MW
         case ("steam_power_MW");        value = st%steam_power_MW
         case ("steam_target_MW");       value = st%steam_power_target_MW
         case ("hrsg_pinch_K");          value = st%hrsg_pinch_K
