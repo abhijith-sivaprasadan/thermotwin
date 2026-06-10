@@ -107,3 +107,23 @@ Implemented data boundary:
 The validation is enforced by `test/test_market_data.f90`,
 `cases/scenarios/market_replay.scn`, and the full suite passes through
 `make check`.
+
+## Phase 6: Multi-Screen Native HMI Console
+
+Reference target from `docs/REVAMP_PLAN.md`: the native executable should behave
+like a control-room console, not a browser shell or single crowded dashboard.
+
+Implemented HMI checks:
+
+| Check | ThermoTwin-F Phase 6 | Acceptance |
+|---|---|---|
+| Screen navigation | Overview, Grid Dispatch, Gas Turbine, Combined Cycle, Market, Trends, Alarms | One nav click or F1-F7 |
+| Faceplates | Overview KPI tiles open detailed faceplates | KPI detail available without changing screen |
+| Alarm workflow | UNACK, ACK, RTN, log, shelve/unshelve | Raise -> ack -> return/clear supported |
+| Persistence | `thermotwin.ini` stores screen, location, window mode, units, API placeholders, operating latches | Next launch restores HMI context |
+| Location frequency | Frequency color/meter use `nominal_frequency_Hz` | 50 Hz and 60 Hz profiles render consistently |
+
+Verification run:
+
+- `make gui` builds `thermotwin-gui.exe`
+- `make check` passes 15 unit-test programs plus the application selftest

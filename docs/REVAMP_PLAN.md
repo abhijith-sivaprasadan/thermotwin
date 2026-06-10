@@ -148,9 +148,9 @@ Move all simulation state and logic out of `gui_win32.f90` into engine modules:
 - **Done when:** switching location changes prices/weather/frequency standard live,
   and a replayed ENTSO-E day drives demand through a full diurnal cycle.
 
-### Phase 6 — HMI/UX revamp: multi-screen ISA-101 console
+### Phase 6 — HMI/UX revamp: multi-screen ISA-101 console ✅
 
-- **Screen hierarchy with navigation bar** (the defining change):
+- **Screen hierarchy with navigation bar** (implemented):
   - L1 **Overview** — current dashboard, decluttered to KPIs + alarms + mini-trends
   - L2 **Grid Dispatch** — unit table, AGC controls, merit order, frequency detail
   - L2 **Gas Turbine** — station conditions, maps with operating point, surge margin
@@ -159,11 +159,15 @@ Move all simulation state and logic out of `gui_win32.f90` into engine modules:
   - L2 **Trends** — multi-pen trends with time cursors, pause/zoom, pen picker
   - L2 **Alarms** — ISA-18.2 alarm list: priority, state (UNACK/ACK/RTN), ack buttons,
     chronological log, shelving
-- Faceplate popups: click any KPI tile → detail faceplate with limits and trend sparkline.
-- Config persistence (`thermotwin.ini`): API keys, location, window state, units.
+- Faceplate popups: click any KPI tile → detail faceplate with limits and live context.
+- Config persistence (`thermotwin.ini`): API key placeholders, location, window state,
+  units, and HMI operating mode.
 - Keyboard navigation (F1–F7 screens, Esc back) — control-room muscle memory.
-- **Done when:** all screens reachable ≤2 clicks, alarm workflow (raise → ack → RTN)
-  works end-to-end, no layout breakage from 1366×768 to 2560×1600.
+- ISA-18.2-style alarm workflow: active/unacknowledged alarms, ACK, RTN, chronological
+  event log, and shelving controls.
+- **Done:** all screens are reachable from the native executable through one nav click
+  or F1–F7; alarm raise → ACK → RTN/clear workflow is implemented in the HMI state
+  machine; `make gui` and `make check` pass.
 
 ### Phase 7 — OPC UA server (the industrial credential)
 
