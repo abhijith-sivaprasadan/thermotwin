@@ -69,6 +69,11 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_AUTO = 201_c_int
     integer(c_int), parameter :: ID_BALANCE = 202_c_int
     integer(c_int), parameter :: ID_RESET = 203_c_int
+    integer(c_int), parameter :: ID_ROI_MODE = 204_c_int
+    integer(c_int), parameter :: ID_FCR_HOLD = 205_c_int
+    integer(c_int), parameter :: ID_LOAD_STEP = 206_c_int
+    integer(c_int), parameter :: ID_CLOUD_RAMP = 207_c_int
+    integer(c_int), parameter :: ID_TURBINE_TRIP = 208_c_int
     integer(c_int), parameter :: ID_NONE = 0_c_int
     integer(c_int), parameter :: TIMER_ID = 1_c_int
     integer(c_int), parameter :: TIMER_MS = 250_c_int
@@ -239,6 +244,8 @@ module thermotwin_win32_gui
         ! AGC may curtail below it, LFSM-O trims it during over-frequency
         real(dp) :: renewable_curtail_MW = 0.0_dp
         real(dp) :: renewable_lfsmo_MW = 0.0_dp
+        logical  :: roi_dispatch = .true.
+        logical  :: fcr_hold = .true.
         ! Alarm state flags (drives annunciator tiles)
         logical  :: alarm_underfreq    = .false.
         logical  :: alarm_overfreq     = .false.
@@ -948,7 +955,7 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - 176, layout_slider_y(6) + 88)
+        layout_button_y = min(layout_control_bottom - 286, layout_slider_y(6) + 72)
         layout_footer_y = layout_control_bottom - 58
 
         layout_main_left = layout_control_left + layout_control_w + layout_gap
@@ -989,6 +996,16 @@ contains
             call balance_now()
         case (ID_RESET)
             call reset_controls()
+        case (ID_ROI_MODE)
+            grid%roi_dispatch = .not. grid%roi_dispatch
+        case (ID_FCR_HOLD)
+            grid%fcr_hold = .not. grid%fcr_hold
+        case (ID_LOAD_STEP)
+            call apply_load_step()
+        case (ID_CLOUD_RAMP)
+            call apply_cloud_ramp()
+        case (ID_TURBINE_TRIP)
+            call apply_turbine_trip()
         end select
 
         call refresh_model()
@@ -1011,6 +1028,21 @@ contains
         case (ID_RESET)
             call reset_controls()
             active_control = ID_NONE
+        case (ID_ROI_MODE)
+            grid%roi_dispatch = .not. grid%roi_dispatch
+            active_control = ID_NONE
+        case (ID_FCR_HOLD)
+            grid%fcr_hold = .not. grid%fcr_hold
+            active_control = ID_NONE
+        case (ID_LOAD_STEP)
+            call apply_load_step()
+            active_control = ID_NONE
+        case (ID_CLOUD_RAMP)
+            call apply_cloud_ramp()
+            active_control = ID_NONE
+        case (ID_TURBINE_TRIP)
+            call apply_turbine_trip()
+            active_control = ID_NONE
         case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
             call update_active_slider(x)
@@ -1024,6 +1056,23 @@ contains
         if (active_control /= ID_NONE) ok = ReleaseCapture()
         active_control = ID_NONE
     end subroutine handle_mouse_up
+
+    subroutine apply_load_step()
+        grid%demand_MW = clamp_real(grid%demand_MW + 10.0_dp, DEMAND_MIN_MW, DEMAND_MAX_MW)
+        grid%auto_balance = .true.
+    end subroutine apply_load_step
+
+    subroutine apply_cloud_ramp()
+        grid%renewable_MW = clamp_real(grid%renewable_MW - 15.0_dp, 0.0_dp, RENEWABLE_MAX_MW)
+        grid%renewable_curtail_MW = min(grid%renewable_curtail_MW, grid%renewable_MW)
+        grid%auto_balance = .true.
+    end subroutine apply_cloud_ramp
+
+    subroutine apply_turbine_trip()
+        grid%gas_dispatch_pct = GAS_MIN_PCT
+        grid%storage_request_MW = min(grid%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
+        grid%auto_balance = .true.
+    end subroutine apply_turbine_trip
 
     subroutine update_active_slider(x)
         integer, intent(in) :: x
@@ -1051,6 +1100,7 @@ contains
     function hit_test_control(x, y) result(control_id)
         integer, intent(in) :: x, y
         integer(c_int) :: control_id
+        integer :: bx1, bx2, bx3, by, bw, bh, gap
 
         control_id = ID_NONE
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(1) - 38, &
@@ -1065,12 +1115,25 @@ contains
                 layout_slider_x + layout_slider_w + 14, layout_slider_y(5) + 38)) control_id = ID_AMBIENT
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(6) - 38, &
                 layout_slider_x + layout_slider_w + 14, layout_slider_y(6) + 38)) control_id = ID_TIT
-        if (point_in_rect(x, y, layout_control_left + 16, layout_button_y, &
-                layout_control_left + 158, layout_button_y + 42)) control_id = ID_AUTO
-        if (point_in_rect(x, y, layout_control_left + 172, layout_button_y, &
-                layout_control_left + layout_control_w - 16, layout_button_y + 42)) control_id = ID_BALANCE
-        if (point_in_rect(x, y, layout_control_left + 16, layout_button_y + 56, &
-                layout_control_left + 124, layout_button_y + 98)) control_id = ID_RESET
+
+        gap = 10
+        bh = 36
+        bx1 = layout_control_left + 16
+        bx3 = layout_control_left + layout_control_w - 16
+        bw = (bx3 - bx1 - gap) / 2
+        bx2 = bx1 + bw + gap
+        by = layout_button_y
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_AUTO
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_BALANCE
+        by = layout_button_y + 46
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_ROI_MODE
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_FCR_HOLD
+        by = layout_button_y + 92
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_LOAD_STEP
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_CLOUD_RAMP
+        by = layout_button_y + 138
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_TURBINE_TRIP
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_RESET
     end function hit_test_control
 
     pure function point_in_rect(x, y, left, top, right, bottom) result(inside)
@@ -1133,6 +1196,7 @@ contains
         if (grid%battery_soc_pct < 20.0_dp) bess_up_reserve_MW = 0.0_dp
         if (grid%battery_soc_pct > 80.0_dp) bess_down_reserve_MW = 0.0_dp
         bess_fcr_reserve_MW = min(5.0_dp, min(bess_up_reserve_MW, bess_down_reserve_MW))
+        if (.not. grid%fcr_hold) bess_fcr_reserve_MW = 0.0_dp
         grid%bess_fcr_value_usd_h = bess_fcr_reserve_MW * FCR_RESERVE_PRICE_USD_MW_H
 
         surplus_without_bess_MW = max(0.0_dp, imbalance_without_bess_MW)
@@ -1188,6 +1252,22 @@ contains
         grid%renewable_curtail_MW = grid%renewable_curtail_MW + &
             clamp_real(target - grid%renewable_curtail_MW, -step_MW, step_MW)
     end subroutine ramp_renewable_curtailment_to
+
+    function should_curtail_renewables() result(allow)
+        logical :: allow
+
+        if (.not. grid%roi_dispatch) then
+            allow = .true.
+        else if (grid%frequency_Hz > FREQ_NOMINAL_HZ + 0.08_dp) then
+            allow = .true.
+        else if (grid%storage_request_MW <= STORAGE_MIN_MW + 0.25_dp) then
+            allow = .true.
+        else if (grid%battery_soc_pct > 90.0_dp) then
+            allow = .true.
+        else
+            allow = .false.
+        end if
+    end function should_curtail_renewables
 
     function limited_storage_power(request_MW) result(actual_MW)
         real(dp), intent(in) :: request_MW
@@ -1277,6 +1357,13 @@ contains
         eff_renew = effective_renewable_MW()
         bess_target_MW = clamp_real(grid%demand_MW - eff_renew - grid%gas_power_MW, &
                                     STORAGE_MIN_MW, STORAGE_MAX_MW)
+        if (grid%fcr_hold) then
+            bess_target_MW = clamp_real(bess_target_MW, STORAGE_MIN_MW + 5.0_dp, STORAGE_MAX_MW - 5.0_dp)
+            if (abs(bess_target_MW) < 0.5_dp .and. grid%battery_soc_pct < 45.0_dp) &
+                bess_target_MW = -2.0_dp
+            if (abs(bess_target_MW) < 0.5_dp .and. grid%battery_soc_pct > 55.0_dp) &
+                bess_target_MW = 2.0_dp
+        end if
         if (bess_target_MW > 0.0_dp .and. grid%battery_soc_pct < 5.0_dp) &
             bess_target_MW = 0.0_dp   ! no discharge when nearly empty
         if (bess_target_MW < 0.0_dp .and. grid%battery_soc_pct > 95.0_dp) &
@@ -1288,7 +1375,7 @@ contains
         ! Stage 3: if BESS cannot absorb surplus fast enough, trim renewable injection.
         gap_MW = grid%demand_MW - eff_renew - grid%gas_power_MW &
                  - limited_storage_power(grid%storage_request_MW)
-        if (gap_MW < -0.50_dp) then
+        if (gap_MW < -0.50_dp .and. should_curtail_renewables()) then
             surplus_MW = -gap_MW
             target_curtail_MW = min(grid%renewable_MW, grid%renewable_curtail_MW + surplus_MW)
             call ramp_renewable_curtailment_to(target_curtail_MW, dt_s)
@@ -1313,8 +1400,8 @@ contains
     end subroutine tick_auto_balance
 
     subroutine balance_now()
-        ! GOTO SP: snap BESS and turbine to their balance setpoints instantly;
-        ! drop any curtailment (operator-commanded re-dispatch).
+        ! One-shot balance: snap BESS and turbine to calculated setpoints.
+        ! The AUTO/MANUAL latch is intentionally left unchanged.
         real(dp) :: bess_snap_MW, needed_gas_MW
 
         if (grid%gas_capacity_MW <= 1.0e-6_dp) return
@@ -1328,7 +1415,6 @@ contains
                         - limited_storage_power(grid%storage_request_MW)
         grid%gas_dispatch_pct = clamp_real(100.0_dp * needed_gas_MW / grid%gas_capacity_MW, &
                                            GAS_MIN_PCT, GAS_MAX_PCT)
-        grid%auto_balance = .true.
     end subroutine balance_now
 
     subroutine tick_frequency_dynamics(dt_s)
@@ -1421,6 +1507,8 @@ contains
         grid%UFLS_stage = 0
         grid%renewable_curtail_MW = 0.0_dp
         grid%renewable_lfsmo_MW = 0.0_dp
+        grid%roi_dispatch = .true.
+        grid%fcr_hold = .true.
         grid%alarm_underfreq = .false.
         grid%alarm_overfreq  = .false.
         grid%alarm_low_reserve = .false.
@@ -1469,6 +1557,7 @@ contains
         integer :: inner_x, inner_w
         real(dp) :: scale_MW
         character(len=96) :: status, subtitle
+        character(len=12) :: auto_text, dispatch_text, reserve_text
         integer(c_int) :: status_color
         integer :: gx, gy
 
@@ -1495,9 +1584,24 @@ contains
         call draw_line(hdc, x0, y0 + 44, x0 + w, y0 + 44, COL_BORDER, 1)
         call draw_title_text(hdc, inner_x + 8, y0 + 10, &
             "ThermoTwin-F  |  Plant Control Console  |  50 Hz ENTSO-E", COL_INK)
-        write(subtitle, '("t=",F6.1,"s  Mode: ",A)') &
-            grid%elapsed_s, merge("AUTO   ", "MANUAL ", grid%auto_balance)
-        call draw_text(hdc, x0 + w - 200, y0 + 14, trim(subtitle), &
+        if (grid%auto_balance) then
+            auto_text = "AUTO"
+        else
+            auto_text = "MANUAL"
+        end if
+        if (grid%roi_dispatch) then
+            dispatch_text = "ROI"
+        else
+            dispatch_text = "STABILITY"
+        end if
+        if (grid%fcr_hold) then
+            reserve_text = "FCR HOLD"
+        else
+            reserve_text = "FREE BESS"
+        end if
+        write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A)') &
+            grid%elapsed_s, trim(auto_text), trim(dispatch_text), trim(reserve_text)
+        call draw_text(hdc, x0 + w - 330, y0 + 14, trim(subtitle), &
             merge(COL_LIME, COL_AMBER, grid%auto_balance))
 
         ! --- Status banner ---
@@ -1611,6 +1715,7 @@ contains
         character(len=40) :: value
         character(len=64) :: line
         integer :: left, top, right, bottom, title_x, panel_top, panel_bottom, row_gap
+        integer :: bx1, bx2, bx3, by, btn_w, btn_h, btn_gap
 
         left = layout_control_left
         top = layout_control_top
@@ -1667,22 +1772,56 @@ contains
             "Turbine inlet temp", trim(adjustl(value)), &
             grid%TIT_K, 1200.0_dp, 1600.0_dp, COL_RED)
 
+        btn_gap = 10
+        btn_h = 36
+        bx1 = left + 16
+        bx3 = right - 16
+        btn_w = (bx3 - bx1 - btn_gap) / 2
+        bx2 = bx1 + btn_w + btn_gap
+        by = layout_button_y
+
+        call draw_text(hdc, title_x, by - 20, "Dispatch controls", COL_MUTED)
+
         ! AUTO/MAN latching mode button
         if (grid%auto_balance) then
-            call draw_industrial_button(hdc, left + 16, layout_button_y, left + 158, layout_button_y + 42, &
-                "AUTO  ON", COL_GREEN, .true.)
+            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+                "AUTO ON", COL_GREEN, .true.)
         else
-            call draw_industrial_button(hdc, left + 16, layout_button_y, left + 158, layout_button_y + 42, &
-                "MANUAL  ", COL_PANEL_ALT, .false.)
+            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+                "MANUAL", COL_PANEL_ALT, .false.)
         end if
-        ! GOTO-SP momentary — executes instant balance
-        call draw_industrial_button(hdc, left + 172, layout_button_y, right - 16, layout_button_y + 42, &
-            "GOTO SP ", COL_PANEL, .false.)
-        ! RESET momentary
-        call draw_industrial_button(hdc, left + 16, layout_button_y + 56, left + 124, layout_button_y + 98, &
-            "RESET   ", COL_PANEL, .false.)
+        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+            "BALANCE 1X", COL_PANEL, .false.)
 
-        panel_top = layout_button_y + 124
+        by = layout_button_y + 46
+        if (grid%roi_dispatch) then
+            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+                "ROI MODE", COL_GREEN, .true.)
+        else
+            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+                "STABILITY", COL_AMBER, .true.)
+        end if
+        if (grid%fcr_hold) then
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "FCR HOLD", COL_CYAN, .true.)
+        else
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "FREE BESS", COL_PANEL_ALT, .false.)
+        end if
+
+        by = layout_button_y + 92
+        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+            "LOAD +10", COL_PANEL, .false.)
+        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+            "CLOUD -15", COL_PANEL, .false.)
+
+        by = layout_button_y + 138
+        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+            "TURB TRIP", COL_RED, .false.)
+        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+            "RESET", COL_PANEL, .false.)
+
+        panel_top = layout_button_y + 198
         panel_bottom = layout_footer_y - 28
         if (panel_bottom - panel_top > 118) then
             row_gap = max(21, (panel_bottom - panel_top - 50) / 5)
@@ -2369,8 +2508,10 @@ contains
             line = "ROI action: restore RES headroom, discharge BESS, then raise turbine"
         else if (grid%imbalance_MW > 0.5_dp) then
             line = "ROI action: charge BESS, trim residual RES, then lower turbine"
-        else if (grid%bess_fcr_value_usd_h >= grid%bess_arbitrage_value_usd_h) then
+        else if (grid%fcr_hold .and. grid%bess_fcr_value_usd_h >= grid%bess_arbitrage_value_usd_h) then
             line = "ROI action: hold BESS mid-SOC for FCR and imbalance value"
+        else if (.not. grid%roi_dispatch) then
+            line = "ROI action: stability mode prioritizes Hz correction over curtailment cost"
         else
             line = "ROI action: capture surplus energy while keeping BESS reserve"
         end if
