@@ -31,7 +31,8 @@ CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
-        csv_io sensitivity_driver
+        csv_io sensitivity_driver \
+        tag_bus engine_state grid_dynamics dispatch_agc plant_economics engine_core
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
 TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
@@ -57,6 +58,10 @@ $(BUILD):
 $(BUILD)/%.o: $(SRC)/%.f90 | $(BUILD)
 	$(FC) $(FFLAGS) -c $< -o $@
 
+# Engine modules live one level down in src/engine/.
+$(BUILD)/%.o: $(SRC)/engine/%.f90 | $(BUILD)
+	$(FC) $(FFLAGS) -c $< -o $@
+
 # Explicit inter-module dependencies (so parallel make is still correct).
 $(BUILD)/constants.o:            $(BUILD)/precision_kinds.o
 $(BUILD)/types.o:                $(BUILD)/precision_kinds.o
@@ -76,6 +81,15 @@ $(BUILD)/uncertainty_analysis.o: $(BUILD)/cycle_solver.o $(BUILD)/utilities.o
 $(BUILD)/diagnostics_solver.o:   $(BUILD)/cycle_solver.o $(BUILD)/degradation.o
 $(BUILD)/csv_io.o:               $(BUILD)/types.o $(BUILD)/utilities.o
 $(BUILD)/sensitivity_driver.o:   $(BUILD)/cycle_solver.o
+$(BUILD)/tag_bus.o:              $(BUILD)/precision_kinds.o
+$(BUILD)/engine_state.o:         $(BUILD)/precision_kinds.o
+$(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o
+$(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o
+$(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
+$(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
+                                 $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \
+                                 $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
+                                 $(BUILD)/types.o $(BUILD)/constants.o
 
 $(EXE): $(OBJS) $(BUILD)/main.o
 	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/main.o -o $@

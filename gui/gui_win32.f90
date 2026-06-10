@@ -10,9 +10,7 @@ module thermotwin_win32_gui
         c_funptr, c_int, c_intptr_t, c_loc, c_long, c_null_char, c_null_ptr, &
         c_ptr, c_sizeof
     use precision_kinds, only: dp
-    use constants, only: KELVIN_OFFSET
-    use types, only: InputCase, CycleResult
-    use cycle_solver, only: solve_cycle
+    use engine_core
     implicit none
     private
 
@@ -111,45 +109,8 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: COL_BTN_SH     = int(Z'00000000', c_int) ! bottom-right shadow
     integer(c_int), parameter :: COL_BTN_BODY   = int(Z'000D0D0D', c_int) ! inactive button body
 
-    real(dp), parameter :: DEMAND_MIN_MW = 10.0_dp
-    real(dp), parameter :: DEMAND_MAX_MW = 100.0_dp
-    real(dp), parameter :: RENEWABLE_MAX_MW = 60.0_dp
-    real(dp), parameter :: STORAGE_MIN_MW = -20.0_dp
-    real(dp), parameter :: STORAGE_MAX_MW = 20.0_dp
-    real(dp), parameter :: BATTERY_CAPACITY_MWH = 30.0_dp
-    real(dp), parameter :: BATTERY_INITIAL_SOC_PCT = 50.0_dp
-    real(dp), parameter :: BATTERY_EFFICIENCY = 0.92_dp
-    real(dp), parameter :: POWER_PRICE_USD_MWH = 95.0_dp
-    real(dp), parameter :: FUEL_PRICE_USD_GJ = 7.5_dp
-    real(dp), parameter :: STORAGE_CYCLE_COST_USD_MWH = 8.0_dp
-    real(dp), parameter :: IMBALANCE_PENALTY_USD_MWH = 250.0_dp
-    real(dp), parameter :: BESS_DEGRADATION_USD_MWH = 6.0_dp
-    real(dp), parameter :: FCR_RESERVE_PRICE_USD_MW_H = 18.0_dp
-    real(dp), parameter :: BESS_ARBITRAGE_SPREAD_USD_MWH = 38.0_dp
-    real(dp), parameter :: RENEWABLE_RESERVE_PRICE_USD_MW_H = 12.0_dp
-    real(dp), parameter :: BATTERY_CAPEX_USD_MWH = 180000.0_dp
-    real(dp), parameter :: ROI_EQUIVALENT_HOURS_PER_YEAR = 2200.0_dp
-    real(dp), parameter :: CO2_KG_PER_KG_FUEL = 2.75_dp
-    ! Grid frequency physics — ENTSO-E 50 Hz
-    real(dp), parameter :: FREQ_NOMINAL_HZ   = 50.0_dp
-    real(dp), parameter :: INERTIA_MWs       = 25.0_dp   ! swing-equation M_eff
-    real(dp), parameter :: GOVERNOR_DROOP_R  = 0.05_dp   ! 5 % droop
-    real(dp), parameter :: BESS_PRIMARY_GAIN = 5.0_dp    ! MW/Hz primary response
-    real(dp), parameter :: BESS_PRIMARY_DB   = 0.02_dp   ! Hz dead-band
-    real(dp), parameter :: UFLS_THRESH_1     = 49.0_dp   ! ENTSO-E stage 1
-    real(dp), parameter :: UFLS_THRESH_2     = 48.7_dp   ! stage 2
-    real(dp), parameter :: UFLS_THRESH_3     = 48.4_dp   ! stage 3
-    real(dp), parameter :: UFLS_RESET        = 49.5_dp   ! latch reset
-    real(dp), parameter :: UFLS_SHED_PCT     = 0.10_dp   ! 10 % per stage
-    real(dp), parameter :: PI_DP             = 3.14159265358979323846_dp
-    real(dp), parameter :: GAS_MIN_PCT = 20.0_dp
-    real(dp), parameter :: GAS_MAX_PCT = 100.0_dp
-    real(dp), parameter :: GAS_RAMP_PCT_PER_S = 18.0_dp
-    real(dp), parameter :: BESS_RAMP_MW_PER_S = 4.0_dp
-    real(dp), parameter :: CURTAIL_RAMP_MW_PER_S = 10.0_dp  ! inverter-fast
-    real(dp), parameter :: LFSM_O_THRESH_HZ = 50.2_dp       ! ENTSO-E RfG
-    real(dp), parameter :: LFSM_O_DROOP = 0.05_dp
-    integer, parameter :: HISTORY_N = 240
+    ! Physical/economic parameters and the GridState type now live in the
+    ! engine (src/engine/) and arrive via `use engine_core`.
 
     type, bind(C) :: Point
         integer(c_long) :: x
@@ -195,71 +156,6 @@ module thermotwin_win32_gui
         type(c_ptr) :: lpszClassName
         type(c_ptr) :: hIconSm
     end type WndClassExA
-
-    type :: GridState
-        real(dp) :: demand_MW = 35.0_dp
-        real(dp) :: renewable_MW = 12.0_dp
-        real(dp) :: storage_request_MW = 0.0_dp
-        real(dp) :: storage_MW = 0.0_dp
-        real(dp) :: battery_energy_MWh = BATTERY_CAPACITY_MWH * BATTERY_INITIAL_SOC_PCT / 100.0_dp
-        real(dp) :: battery_soc_pct = BATTERY_INITIAL_SOC_PCT
-        real(dp) :: gas_dispatch_pct = 82.0_dp
-        real(dp) :: ambient_C = 15.0_dp
-        real(dp) :: TIT_K = 1400.0_dp
-        real(dp) :: gas_power_MW = 0.0_dp
-        real(dp) :: gas_capacity_MW = 0.0_dp
-        real(dp) :: supply_MW = 0.0_dp
-        real(dp) :: imbalance_MW = 0.0_dp
-        real(dp) :: reserve_MW = 0.0_dp
-        real(dp) :: frequency_Hz = 50.0_dp
-        real(dp) :: heat_rate_kJ_kWh = 0.0_dp
-        real(dp) :: exhaust_K = 0.0_dp
-        real(dp) :: fuel_flow_kg_s = 0.0_dp
-        real(dp) :: heat_input_MW = 0.0_dp
-        real(dp) :: revenue_usd_h = 0.0_dp
-        real(dp) :: fuel_cost_usd_h = 0.0_dp
-        real(dp) :: storage_cost_usd_h = 0.0_dp
-        real(dp) :: imbalance_penalty_usd_h = 0.0_dp
-        real(dp) :: margin_usd_h = 0.0_dp
-        real(dp) :: battery_value_usd_h = 0.0_dp
-        real(dp) :: battery_payback_years = 0.0_dp
-        real(dp) :: bess_imbalance_value_usd_h = 0.0_dp
-        real(dp) :: bess_fcr_value_usd_h = 0.0_dp
-        real(dp) :: bess_arbitrage_value_usd_h = 0.0_dp
-        real(dp) :: bess_degradation_cost_usd_h = 0.0_dp
-        real(dp) :: renewable_reserve_value_usd_h = 0.0_dp
-        real(dp) :: renewable_curtail_cost_usd_h = 0.0_dp
-        real(dp) :: value_stack_usd_h = 0.0_dp
-        real(dp) :: elapsed_s = 0.0_dp
-        real(dp) :: CO2_rate_kg_s = 0.0_dp
-        real(dp) :: CO2_intensity_g_kWh = 0.0_dp
-        real(dp) :: CO2_cumulative_t = 0.0_dp
-        ! Dynamic frequency model fields
-        real(dp) :: ROCOF_Hz_s = 0.0_dp
-        real(dp) :: governor_delta_MW = 0.0_dp
-        real(dp) :: BESS_primary_MW = 0.0_dp
-        real(dp) :: UFLS_shed_fraction = 0.0_dp
-        integer  :: UFLS_stage = 0
-        ! Renewable dispatch: resource availability is the ceiling; the visible
-        ! HMI row shows actual injection, which AGC may curtail below the ceiling.
-        real(dp) :: renewable_curtail_MW = 0.0_dp
-        real(dp) :: renewable_lfsmo_MW = 0.0_dp
-        logical  :: roi_dispatch = .true.
-        logical  :: fcr_hold = .true.
-        ! Alarm state flags (drives annunciator tiles)
-        logical  :: alarm_underfreq    = .false.
-        logical  :: alarm_overfreq     = .false.
-        logical  :: alarm_low_reserve  = .false.
-        logical  :: alarm_low_soc      = .false.
-        logical  :: alarm_ufls_active  = .false.
-        logical  :: alarm_turbine_max  = .false.
-        integer :: history_count = 0
-        integer :: history_head = 0
-        real(dp) :: hist_frequency_Hz(HISTORY_N) = 50.0_dp
-        real(dp) :: hist_demand_MW(HISTORY_N) = 35.0_dp
-        real(dp) :: hist_gas_dispatch_pct(HISTORY_N) = 82.0_dp
-        logical :: auto_balance = .true.
-    end type GridState
 
     interface
         subroutine InitCommonControls() bind(C, name="InitCommonControls")
@@ -813,15 +709,15 @@ contains
             h_main = hwnd
             call init_fonts()
             call create_controls(hwnd)
-            call refresh_model()
-            call append_history()
+            call engine_init(grid)
+            call append_history(grid)
             lres = SetTimer(hwnd, int(TIMER_ID, c_intptr_t), TIMER_MS, c_null_ptr)
             call log_debug("message: WM_CREATE complete")
             lres = 0_c_intptr_t
             return
 
         case (WM_HSCROLL)
-            call refresh_model()
+            call refresh_model(grid)
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -833,19 +729,8 @@ contains
             return
 
         case (WM_TIMER)
-            block
-                real(dp) :: dt_s
-                dt_s = real(TIMER_MS, dp) / 1000.0_dp
-                grid%elapsed_s = grid%elapsed_s + dt_s
-                call tick_auto_balance(dt_s)         ! AGC secondary ramp
-                call refresh_model()                  ! recompute gas power, imbalance, economics
-                call update_battery_soc(dt_s)         ! SOC tracking
-                call tick_frequency_dynamics(dt_s)    ! swing eq + governor + BESS primary + UFLS
-                grid%CO2_cumulative_t = grid%CO2_cumulative_t + &
-                    grid%CO2_rate_kg_s * dt_s / 1000.0_dp
-                call append_history()
-                call invalidate_dashboard(hwnd)
-            end block
+            call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
+            call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
 
@@ -858,7 +743,7 @@ contains
         case (WM_MOUSEMOVE)
             if (active_control /= ID_NONE) then
                 call update_active_slider(mouse_x(lParam))
-                call refresh_model()
+                call refresh_model(grid)
                 call invalidate_dashboard(hwnd)
             end if
             lres = 0_c_intptr_t
@@ -993,22 +878,22 @@ contains
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
         case (ID_BALANCE)
-            call balance_now()
+            call balance_now(grid)
         case (ID_RESET)
-            call reset_controls()
+            call reset_controls(grid)
         case (ID_ROI_MODE)
             grid%roi_dispatch = .not. grid%roi_dispatch
         case (ID_FCR_HOLD)
             grid%fcr_hold = .not. grid%fcr_hold
         case (ID_LOAD_STEP)
-            call apply_load_step()
+            call apply_load_step(grid)
         case (ID_CLOUD_RAMP)
-            call apply_cloud_ramp()
+            call apply_cloud_ramp(grid)
         case (ID_TURBINE_TRIP)
-            call apply_turbine_trip()
+            call apply_turbine_trip(grid)
         end select
 
-        call refresh_model()
+        call refresh_model(grid)
     end subroutine handle_command
 
     subroutine handle_mouse_down(hwnd, x, y)
@@ -1023,10 +908,10 @@ contains
             grid%auto_balance = .not. grid%auto_balance
             active_control = ID_NONE
         case (ID_BALANCE)
-            call balance_now()
+            call balance_now(grid)
             active_control = ID_NONE
         case (ID_RESET)
-            call reset_controls()
+            call reset_controls(grid)
             active_control = ID_NONE
         case (ID_ROI_MODE)
             grid%roi_dispatch = .not. grid%roi_dispatch
@@ -1035,19 +920,19 @@ contains
             grid%fcr_hold = .not. grid%fcr_hold
             active_control = ID_NONE
         case (ID_LOAD_STEP)
-            call apply_load_step()
+            call apply_load_step(grid)
             active_control = ID_NONE
         case (ID_CLOUD_RAMP)
-            call apply_cloud_ramp()
+            call apply_cloud_ramp(grid)
             active_control = ID_NONE
         case (ID_TURBINE_TRIP)
-            call apply_turbine_trip()
+            call apply_turbine_trip(grid)
             active_control = ID_NONE
         case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
             call update_active_slider(x)
         end select
-        call refresh_model()
+        call refresh_model(grid)
     end subroutine handle_mouse_down
 
     subroutine handle_mouse_up()
@@ -1056,23 +941,6 @@ contains
         if (active_control /= ID_NONE) ok = ReleaseCapture()
         active_control = ID_NONE
     end subroutine handle_mouse_up
-
-    subroutine apply_load_step()
-        grid%demand_MW = clamp_real(grid%demand_MW + 10.0_dp, DEMAND_MIN_MW, DEMAND_MAX_MW)
-        grid%auto_balance = .true.
-    end subroutine apply_load_step
-
-    subroutine apply_cloud_ramp()
-        grid%renewable_MW = clamp_real(grid%renewable_MW - 15.0_dp, 0.0_dp, RENEWABLE_MAX_MW)
-        grid%renewable_curtail_MW = min(grid%renewable_curtail_MW, grid%renewable_MW)
-        grid%auto_balance = .true.
-    end subroutine apply_cloud_ramp
-
-    subroutine apply_turbine_trip()
-        grid%gas_dispatch_pct = GAS_MIN_PCT
-        grid%storage_request_MW = min(grid%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
-        grid%auto_balance = .true.
-    end subroutine apply_turbine_trip
 
     subroutine update_active_slider(x)
         integer, intent(in) :: x
@@ -1143,383 +1011,6 @@ contains
 
         inside = (x >= left .and. x <= right .and. y >= top .and. y <= bottom)
     end function point_in_rect
-
-    subroutine refresh_model()
-        type(InputCase) :: ic
-        type(CycleResult) :: res
-        real(dp) :: load_fraction
-
-        ic = baseline_case()
-        ic%ambient_T_K = grid%ambient_C + KELVIN_OFFSET
-        ic%T_turbine_inlet_K = grid%TIT_K
-
-        ic%mdot_air_kg_s = 100.0_dp
-        res = solve_cycle(ic)
-        grid%gas_capacity_MW = max(0.0_dp, res%net_power_MW)
-
-        load_fraction = clamp_real(grid%gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
-        ic%mdot_air_kg_s = 100.0_dp * load_fraction
-        res = solve_cycle(ic)
-
-        grid%gas_power_MW = max(0.0_dp, res%net_power_MW)
-        grid%heat_rate_kJ_kWh = res%heat_rate_kJ_kWh
-        grid%exhaust_K = res%exhaust_temperature_K
-        grid%fuel_flow_kg_s = res%fuel_flow_kg_s
-        grid%heat_input_MW = res%heat_input_MW
-        grid%storage_MW = limited_storage_power(grid%storage_request_MW)
-        grid%supply_MW = grid%gas_power_MW + effective_renewable_MW() + grid%storage_MW
-        grid%imbalance_MW = grid%supply_MW - grid%demand_MW
-        grid%reserve_MW = max(0.0_dp, grid%gas_capacity_MW - grid%gas_power_MW)
-        ! frequency_Hz is integrated dynamically by tick_frequency_dynamics; not recomputed here
-        call refresh_economics()
-    end subroutine refresh_model
-
-    subroutine refresh_economics()
-        real(dp) :: served_MW, battery_capex_usd, annual_value_usd
-        real(dp) :: imbalance_without_bess_MW, avoided_imbalance_MW
-        real(dp) :: bess_up_reserve_MW, bess_down_reserve_MW, bess_fcr_reserve_MW
-        real(dp) :: surplus_without_bess_MW, captured_surplus_MW
-
-        served_MW = min(grid%demand_MW, max(0.0_dp, grid%supply_MW))
-        grid%revenue_usd_h = served_MW * POWER_PRICE_USD_MWH
-        grid%fuel_cost_usd_h = grid%heat_input_MW * 3.6_dp * FUEL_PRICE_USD_GJ
-        grid%storage_cost_usd_h = abs(grid%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
-        grid%imbalance_penalty_usd_h = abs(grid%imbalance_MW) * IMBALANCE_PENALTY_USD_MWH
-        grid%margin_usd_h = grid%revenue_usd_h - grid%fuel_cost_usd_h - &
-            grid%storage_cost_usd_h - grid%imbalance_penalty_usd_h
-
-        imbalance_without_bess_MW = grid%gas_power_MW + effective_renewable_MW() - grid%demand_MW
-        avoided_imbalance_MW = max(0.0_dp, abs(imbalance_without_bess_MW) - abs(grid%imbalance_MW))
-        grid%bess_imbalance_value_usd_h = avoided_imbalance_MW * IMBALANCE_PENALTY_USD_MWH
-
-        bess_up_reserve_MW = max(0.0_dp, STORAGE_MAX_MW - max(0.0_dp, grid%storage_MW))
-        bess_down_reserve_MW = max(0.0_dp, abs(STORAGE_MIN_MW) - max(0.0_dp, -grid%storage_MW))
-        if (grid%battery_soc_pct < 20.0_dp) bess_up_reserve_MW = 0.0_dp
-        if (grid%battery_soc_pct > 80.0_dp) bess_down_reserve_MW = 0.0_dp
-        bess_fcr_reserve_MW = min(5.0_dp, min(bess_up_reserve_MW, bess_down_reserve_MW))
-        if (.not. grid%fcr_hold) bess_fcr_reserve_MW = 0.0_dp
-        grid%bess_fcr_value_usd_h = bess_fcr_reserve_MW * FCR_RESERVE_PRICE_USD_MW_H
-
-        surplus_without_bess_MW = max(0.0_dp, imbalance_without_bess_MW)
-        captured_surplus_MW = min(max(0.0_dp, -grid%storage_MW), surplus_without_bess_MW)
-        grid%bess_arbitrage_value_usd_h = &
-            captured_surplus_MW * BESS_ARBITRAGE_SPREAD_USD_MWH + &
-            max(0.0_dp, grid%storage_MW) * BESS_ARBITRAGE_SPREAD_USD_MWH * 0.35_dp
-        grid%bess_degradation_cost_usd_h = abs(grid%storage_MW) * BESS_DEGRADATION_USD_MWH
-
-        grid%renewable_reserve_value_usd_h = renewable_headroom_MW() * RENEWABLE_RESERVE_PRICE_USD_MW_H
-        grid%renewable_curtail_cost_usd_h = renewable_headroom_MW() * POWER_PRICE_USD_MWH
-        grid%value_stack_usd_h = grid%bess_imbalance_value_usd_h + grid%bess_fcr_value_usd_h + &
-            grid%bess_arbitrage_value_usd_h + grid%renewable_reserve_value_usd_h - &
-            grid%storage_cost_usd_h - grid%bess_degradation_cost_usd_h - &
-            grid%renewable_curtail_cost_usd_h
-
-        grid%battery_value_usd_h = max(0.0_dp, grid%bess_imbalance_value_usd_h + &
-            grid%bess_fcr_value_usd_h + grid%bess_arbitrage_value_usd_h - &
-            grid%storage_cost_usd_h - grid%bess_degradation_cost_usd_h)
-        battery_capex_usd = BATTERY_CAPACITY_MWH * BATTERY_CAPEX_USD_MWH
-        annual_value_usd = grid%battery_value_usd_h * ROI_EQUIVALENT_HOURS_PER_YEAR
-        if (annual_value_usd > 1.0e-6_dp) then
-            grid%battery_payback_years = battery_capex_usd / annual_value_usd
-        else
-            grid%battery_payback_years = 99.0_dp
-        end if
-
-        grid%CO2_rate_kg_s = grid%fuel_flow_kg_s * CO2_KG_PER_KG_FUEL
-        if (grid%gas_power_MW > 0.1_dp) then
-            grid%CO2_intensity_g_kWh = grid%CO2_rate_kg_s * 3600.0_dp / grid%gas_power_MW
-        else
-            grid%CO2_intensity_g_kWh = 0.0_dp
-        end if
-    end subroutine refresh_economics
-
-    function effective_renewable_MW() result(mw)
-        ! Actual grid injection = available (slider) minus AGC curtailment
-        real(dp) :: mw
-        mw = max(0.0_dp, grid%renewable_MW - grid%renewable_curtail_MW)
-    end function effective_renewable_MW
-
-    function renewable_headroom_MW() result(mw)
-        real(dp) :: mw
-        mw = clamp_real(grid%renewable_curtail_MW, 0.0_dp, grid%renewable_MW)
-    end function renewable_headroom_MW
-
-    subroutine ramp_renewable_curtailment_to(target_MW, dt_s)
-        real(dp), intent(in) :: target_MW, dt_s
-        real(dp) :: target, step_MW
-
-        target = clamp_real(target_MW, 0.0_dp, grid%renewable_MW)
-        step_MW = CURTAIL_RAMP_MW_PER_S * dt_s
-        grid%renewable_curtail_MW = grid%renewable_curtail_MW + &
-            clamp_real(target - grid%renewable_curtail_MW, -step_MW, step_MW)
-    end subroutine ramp_renewable_curtailment_to
-
-    function should_curtail_renewables() result(allow)
-        logical :: allow
-
-        if (.not. grid%roi_dispatch) then
-            allow = .true.
-        else if (grid%fcr_hold) then
-            allow = .true.
-        else if (grid%frequency_Hz > FREQ_NOMINAL_HZ + 0.08_dp) then
-            allow = .true.
-        else if (grid%storage_request_MW <= STORAGE_MIN_MW + 0.25_dp) then
-            allow = .true.
-        else if (grid%battery_soc_pct > 90.0_dp) then
-            allow = .true.
-        else
-            allow = .false.
-        end if
-    end function should_curtail_renewables
-
-    function limited_storage_power(request_MW) result(actual_MW)
-        real(dp), intent(in) :: request_MW
-        real(dp) :: actual_MW
-
-        actual_MW = clamp_real(request_MW, STORAGE_MIN_MW, STORAGE_MAX_MW)
-        if (actual_MW > 0.0_dp .and. grid%battery_energy_MWh <= 1.0e-6_dp) then
-            actual_MW = 0.0_dp
-        else if (actual_MW < 0.0_dp .and. grid%battery_energy_MWh >= BATTERY_CAPACITY_MWH - 1.0e-6_dp) then
-            actual_MW = 0.0_dp
-        end if
-    end function limited_storage_power
-
-    subroutine update_battery_soc(dt_s)
-        real(dp), intent(in) :: dt_s
-        real(dp) :: delta_MWh
-
-        if (grid%storage_MW > 0.0_dp) then
-            delta_MWh = -grid%storage_MW * dt_s / 3600.0_dp / BATTERY_EFFICIENCY
-        else
-            delta_MWh = -grid%storage_MW * dt_s / 3600.0_dp * BATTERY_EFFICIENCY
-        end if
-
-        grid%battery_energy_MWh = clamp_real(grid%battery_energy_MWh + delta_MWh, 0.0_dp, BATTERY_CAPACITY_MWH)
-        grid%battery_soc_pct = 100.0_dp * grid%battery_energy_MWh / BATTERY_CAPACITY_MWH
-    end subroutine update_battery_soc
-
-    subroutine append_history()
-        integer :: idx
-
-        idx = mod(grid%history_head, HISTORY_N) + 1
-        grid%hist_frequency_Hz(idx) = grid%frequency_Hz
-        grid%hist_demand_MW(idx) = grid%demand_MW
-        grid%hist_gas_dispatch_pct(idx) = grid%gas_dispatch_pct
-        grid%history_head = idx
-        grid%history_count = min(grid%history_count + 1, HISTORY_N)
-    end subroutine append_history
-
-    function baseline_case() result(ic)
-        type(InputCase) :: ic
-
-        ic%case_name = "gui_live_case"
-        ic%ambient_T_K = 288.15_dp
-        ic%ambient_P_Pa = 101325.0_dp
-        ic%relative_humidity = 0.60_dp
-        ic%inlet_pressure_loss = 0.010_dp
-        ic%mdot_air_kg_s = 100.0_dp
-        ic%pressure_ratio = 15.0_dp
-        ic%eta_compressor = 0.86_dp
-        ic%T_turbine_inlet_K = 1400.0_dp
-        ic%eta_combustor = 0.98_dp
-        ic%combustor_pressure_loss = 0.030_dp
-        ic%LHV_J_kg = 50.0e6_dp
-        ic%eta_turbine = 0.89_dp
-        ic%exhaust_pressure_loss = 0.020_dp
-        ic%eta_mechanical = 0.990_dp
-        ic%eta_generator = 0.985_dp
-        ic%auxiliary_load_fraction = 0.020_dp
-        ic%degradation_mode = "clean"
-    end function baseline_case
-
-    subroutine tick_auto_balance(dt_s)
-        ! Secondary EMS/AGC with inverter-aware dispatch.
-        ! Sign convention: storage_MW > 0 = discharge, adds to supply.
-        !   Shortage: restore renewable headroom -> BESS discharge -> turbine up.
-        !   Surplus:  BESS charge -> residual renewable trim -> turbine down.
-        real(dp), intent(in) :: dt_s
-        real(dp) :: eff_renew, gap_MW, surplus_MW, target_curtail_MW
-        real(dp) :: bess_target_MW, bess_step_MW
-        real(dp) :: needed_gas_MW, gas_target_pct, gas_step_pct
-
-        if (.not. grid%auto_balance) return
-
-        grid%renewable_curtail_MW = clamp_real(grid%renewable_curtail_MW, 0.0_dp, grid%renewable_MW)
-
-        ! Stage 1: renewable inverter active-power setpoint. It cannot exceed
-        ! weather availability, but any curtailed headroom is restored first in a shortage.
-        eff_renew = effective_renewable_MW()
-        gap_MW = grid%demand_MW - eff_renew - grid%gas_power_MW &
-                 - limited_storage_power(grid%storage_request_MW)
-        if (gap_MW > 0.10_dp .and. grid%renewable_curtail_MW > 0.0_dp) then
-            target_curtail_MW = max(0.0_dp, grid%renewable_curtail_MW - gap_MW)
-            call ramp_renewable_curtailment_to(target_curtail_MW, dt_s)
-        end if
-
-        ! Stage 2: BESS covers the residual quickly while respecting SOC limits.
-        eff_renew = effective_renewable_MW()
-        bess_target_MW = clamp_real(grid%demand_MW - eff_renew - grid%gas_power_MW, &
-                                    STORAGE_MIN_MW, STORAGE_MAX_MW)
-        if (grid%fcr_hold) then
-            if (bess_target_MW < -0.5_dp) bess_target_MW = max(bess_target_MW, 0.65_dp * bess_target_MW)
-            bess_target_MW = clamp_real(bess_target_MW, STORAGE_MIN_MW + 5.0_dp, STORAGE_MAX_MW - 5.0_dp)
-            if (abs(bess_target_MW) < 0.5_dp .and. grid%battery_soc_pct < 45.0_dp) &
-                bess_target_MW = -2.0_dp
-            if (abs(bess_target_MW) < 0.5_dp .and. grid%battery_soc_pct > 55.0_dp) &
-                bess_target_MW = 2.0_dp
-        end if
-        if (bess_target_MW > 0.0_dp .and. grid%battery_soc_pct < 5.0_dp) &
-            bess_target_MW = 0.0_dp   ! no discharge when nearly empty
-        if (bess_target_MW < 0.0_dp .and. grid%battery_soc_pct > 95.0_dp) &
-            bess_target_MW = 0.0_dp   ! no charge when nearly full
-        bess_step_MW = BESS_RAMP_MW_PER_S * dt_s
-        grid%storage_request_MW = grid%storage_request_MW + &
-            clamp_real(bess_target_MW - grid%storage_request_MW, -bess_step_MW, bess_step_MW)
-
-        ! Stage 3: if BESS cannot absorb surplus fast enough, trim renewable injection.
-        gap_MW = grid%demand_MW - eff_renew - grid%gas_power_MW &
-                 - limited_storage_power(grid%storage_request_MW)
-        if (gap_MW < -0.50_dp .and. should_curtail_renewables()) then
-            surplus_MW = -gap_MW
-            target_curtail_MW = min(grid%renewable_MW, grid%renewable_curtail_MW + surplus_MW)
-            call ramp_renewable_curtailment_to(target_curtail_MW, dt_s)
-        else if (abs(gap_MW) <= 0.50_dp .and. grid%renewable_curtail_MW > 0.0_dp .and. &
-                 grid%renewable_reserve_value_usd_h < grid%renewable_curtail_cost_usd_h) then
-            call ramp_renewable_curtailment_to(0.0_dp, dt_s)
-        end if
-
-        ! Stage 4: turbine follows the remaining steady dispatch requirement.
-        eff_renew = effective_renewable_MW()
-        needed_gas_MW = grid%demand_MW - eff_renew &
-                        - limited_storage_power(grid%storage_request_MW)
-        if (grid%gas_capacity_MW > 1.0e-6_dp) then
-            gas_target_pct = 100.0_dp * needed_gas_MW / grid%gas_capacity_MW
-        else
-            gas_target_pct = GAS_MAX_PCT
-        end if
-        gas_target_pct = clamp_real(gas_target_pct, GAS_MIN_PCT, GAS_MAX_PCT)
-        gas_step_pct = GAS_RAMP_PCT_PER_S * dt_s
-        grid%gas_dispatch_pct = grid%gas_dispatch_pct + &
-            clamp_real(gas_target_pct - grid%gas_dispatch_pct, -gas_step_pct, gas_step_pct)
-    end subroutine tick_auto_balance
-
-    subroutine balance_now()
-        ! One-shot balance: snap BESS and turbine to calculated setpoints.
-        ! The AUTO/MANUAL latch is intentionally left unchanged.
-        real(dp) :: bess_snap_MW, needed_gas_MW
-
-        if (grid%gas_capacity_MW <= 1.0e-6_dp) return
-        grid%renewable_curtail_MW = 0.0_dp
-        bess_snap_MW = clamp_real(grid%demand_MW - grid%renewable_MW - grid%gas_power_MW, &
-                                  STORAGE_MIN_MW, STORAGE_MAX_MW)
-        if (bess_snap_MW > 0.0_dp .and. grid%battery_soc_pct < 5.0_dp)  bess_snap_MW = 0.0_dp
-        if (bess_snap_MW < 0.0_dp .and. grid%battery_soc_pct > 95.0_dp) bess_snap_MW = 0.0_dp
-        grid%storage_request_MW = bess_snap_MW
-        needed_gas_MW = grid%demand_MW - grid%renewable_MW &
-                        - limited_storage_power(grid%storage_request_MW)
-        grid%gas_dispatch_pct = clamp_real(100.0_dp * needed_gas_MW / grid%gas_capacity_MW, &
-                                           GAS_MIN_PCT, GAS_MAX_PCT)
-    end subroutine balance_now
-
-    subroutine tick_frequency_dynamics(dt_s)
-        real(dp), intent(in) :: dt_s
-        real(dp) :: delta_f, P_gen_eff, P_load_eff, df_dt
-        real(dp) :: gov_max_up, gov_max_dn
-
-        delta_f = grid%frequency_Hz - FREQ_NOMINAL_HZ
-
-        ! Governor primary droop: ΔP_gov = -(Δf/f0)/R * P_rated (clamped to available headroom)
-        grid%governor_delta_MW = -(delta_f / FREQ_NOMINAL_HZ) / GOVERNOR_DROOP_R * grid%gas_capacity_MW
-        gov_max_up = grid%gas_capacity_MW - grid%gas_power_MW
-        gov_max_dn = grid%gas_power_MW - grid%gas_capacity_MW * (GAS_MIN_PCT / 100.0_dp)
-        grid%governor_delta_MW = clamp_real(grid%governor_delta_MW, -gov_max_dn, gov_max_up)
-
-        ! BESS primary frequency response (dead-band 0.02 Hz)
-        if (abs(delta_f) > BESS_PRIMARY_DB) then
-            grid%BESS_primary_MW = clamp_real(-delta_f * BESS_PRIMARY_GAIN, -5.0_dp, 5.0_dp)
-            if (grid%BESS_primary_MW > 0.0_dp .and. grid%battery_energy_MWh <= 1.0e-6_dp) &
-                grid%BESS_primary_MW = 0.0_dp
-            if (grid%BESS_primary_MW < 0.0_dp .and. &
-                    grid%battery_energy_MWh >= BATTERY_CAPACITY_MWH - 1.0e-6_dp) &
-                grid%BESS_primary_MW = 0.0_dp
-        else
-            grid%BESS_primary_MW = 0.0_dp
-        end if
-
-        ! UFLS (ENTSO-E): latching stages, reset above 49.5 Hz
-        if (grid%frequency_Hz >= UFLS_RESET) then
-            grid%UFLS_stage = 0
-            grid%UFLS_shed_fraction = 0.0_dp
-        else if (grid%frequency_Hz < UFLS_THRESH_3 .and. grid%UFLS_stage < 3) then
-            grid%UFLS_stage = 3
-            grid%UFLS_shed_fraction = 3.0_dp * UFLS_SHED_PCT
-        else if (grid%frequency_Hz < UFLS_THRESH_2 .and. grid%UFLS_stage < 2) then
-            grid%UFLS_stage = 2
-            grid%UFLS_shed_fraction = 2.0_dp * UFLS_SHED_PCT
-        else if (grid%frequency_Hz < UFLS_THRESH_1 .and. grid%UFLS_stage < 1) then
-            grid%UFLS_stage = 1
-            grid%UFLS_shed_fraction = UFLS_SHED_PCT
-        end if
-
-        ! LFSM-O (ENTSO-E RfG): above 50.2 Hz renewables shed output with 5% droop
-        if (grid%frequency_Hz > LFSM_O_THRESH_HZ) then
-            grid%renewable_lfsmo_MW = min(effective_renewable_MW(), &
-                effective_renewable_MW() * (grid%frequency_Hz - LFSM_O_THRESH_HZ) / &
-                FREQ_NOMINAL_HZ / LFSM_O_DROOP)
-        else
-            grid%renewable_lfsmo_MW = 0.0_dp
-        end if
-
-        ! Swing equation: df/dt = (P_gen - P_load) / M_eff
-        P_gen_eff  = grid%gas_power_MW + grid%governor_delta_MW + &
-                     effective_renewable_MW() - grid%renewable_lfsmo_MW + &
-                     grid%storage_MW + grid%BESS_primary_MW
-        P_load_eff = grid%demand_MW * (1.0_dp - grid%UFLS_shed_fraction)
-        df_dt = (P_gen_eff - P_load_eff) / INERTIA_MWs
-        grid%ROCOF_Hz_s = df_dt
-        grid%frequency_Hz = clamp_real(grid%frequency_Hz + df_dt * dt_s, 47.0_dp, 53.0_dp)
-
-        ! Update alarm flags
-        grid%alarm_underfreq   = grid%frequency_Hz < (FREQ_NOMINAL_HZ - 0.5_dp)
-        grid%alarm_overfreq    = grid%frequency_Hz > (FREQ_NOMINAL_HZ + 0.5_dp)
-        grid%alarm_low_reserve = grid%reserve_MW < 2.0_dp
-        grid%alarm_low_soc     = grid%battery_soc_pct < 15.0_dp
-        grid%alarm_ufls_active = grid%UFLS_stage > 0
-        grid%alarm_turbine_max = grid%gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
-    end subroutine tick_frequency_dynamics
-
-    subroutine reset_controls()
-        grid%auto_balance = .true.
-        grid%battery_energy_MWh = BATTERY_CAPACITY_MWH * BATTERY_INITIAL_SOC_PCT / 100.0_dp
-        grid%battery_soc_pct = BATTERY_INITIAL_SOC_PCT
-        grid%elapsed_s = 0.0_dp
-        grid%CO2_cumulative_t = 0.0_dp
-        grid%history_count = 0
-        grid%history_head = 0
-        grid%demand_MW = 35.0_dp
-        grid%renewable_MW = 12.0_dp
-        grid%storage_request_MW = 0.0_dp
-        grid%storage_MW = 0.0_dp
-        grid%gas_dispatch_pct = 82.0_dp
-        grid%ambient_C = 15.0_dp
-        grid%TIT_K = 1400.0_dp
-        grid%frequency_Hz = FREQ_NOMINAL_HZ
-        grid%ROCOF_Hz_s = 0.0_dp
-        grid%governor_delta_MW = 0.0_dp
-        grid%BESS_primary_MW = 0.0_dp
-        grid%UFLS_shed_fraction = 0.0_dp
-        grid%UFLS_stage = 0
-        grid%renewable_curtail_MW = 0.0_dp
-        grid%renewable_lfsmo_MW = 0.0_dp
-        grid%roi_dispatch = .true.
-        grid%fcr_hold = .true.
-        grid%alarm_underfreq = .false.
-        grid%alarm_overfreq  = .false.
-        grid%alarm_low_reserve = .false.
-        grid%alarm_low_soc = .false.
-        grid%alarm_ufls_active = .false.
-        grid%alarm_turbine_max = .false.
-    end subroutine reset_controls
 
     subroutine draw_dashboard_buffered(hwnd, hdc)
         type(c_ptr), value :: hwnd
@@ -1683,7 +1174,7 @@ contains
                     grid%battery_soc_pct, grid%battery_energy_MWh, BATTERY_CAPACITY_MWH
                 call draw_faceplate(hdc, fp5, fy, fw, 68, "BESS SOC", trim(adjustl(vt)), &
                     merge(COL_RED, COL_BLUE, grid%alarm_low_soc))
-                write(vt, '(F5.1,"/",F4.0," MW")') effective_renewable_MW(), grid%renewable_MW
+                write(vt, '(F5.1,"/",F4.0," MW")') effective_renewable_MW(grid), grid%renewable_MW
                 call draw_faceplate(hdc, fp6, fy, fw, 68, "RES INJECTION", trim(adjustl(vt)), &
                     merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
@@ -1746,10 +1237,10 @@ contains
             "Load demand", trim(adjustl(value)), &
             grid%demand_MW, DEMAND_MIN_MW, DEMAND_MAX_MW, COL_RED)
 
-        write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(), grid%renewable_MW
+        write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(grid), grid%renewable_MW
         call draw_custom_slider(hdc, ID_RENEWABLE, layout_slider_x, layout_slider_y(2), layout_slider_w, &
             "Renewable dispatch", trim(adjustl(value)), &
-            effective_renewable_MW(), 0.0_dp, RENEWABLE_MAX_MW, &
+            effective_renewable_MW(grid), 0.0_dp, RENEWABLE_MAX_MW, &
             merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
         write(value, '(SP,F5.1," MW")') grid%storage_request_MW
@@ -1830,7 +1321,7 @@ contains
             call draw_text(hdc, title_x + 10, panel_top + 10, "Plant telemetry", COL_MUTED)
             write(line, '("Freq  ",F7.3," Hz")') grid%frequency_Hz
             call draw_text(hdc, title_x + 10, panel_top + 34, adjustl(line), frequency_color())
-            write(line, '("RES   ",F5.1,"/",F4.0," MW")') effective_renewable_MW(), grid%renewable_MW
+            write(line, '("RES   ",F5.1,"/",F4.0," MW")') effective_renewable_MW(grid), grid%renewable_MW
             call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), &
                 merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
             write(line, '("ROCOF ",SP,F5.3," Hz/s")') grid%ROCOF_Hz_s
@@ -2403,7 +1894,7 @@ contains
         seg_w = scaled_width(grid%gas_power_MW, maximum, width)
         call fill_box(hdc, cursor, y, cursor + seg_w, y + height, gas_color)
         cursor = cursor + seg_w
-        seg_w = scaled_width(effective_renewable_MW(), maximum, width)
+        seg_w = scaled_width(effective_renewable_MW(grid), maximum, width)
         call fill_box(hdc, cursor, y, cursor + seg_w, y + height, renewable_color)
         cursor = cursor + seg_w
         ! Curtailed renewable energy shown as hatched dim segment
@@ -2423,11 +1914,11 @@ contains
         call stroke_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
         if (grid%renewable_curtail_MW > 0.05_dp) then
             write(text, '("Gas ",F5.1,"  RES ",F5.1,"/",F4.0,"  Curt ",F4.1,"  BESS ",SP,F5.1)') &
-                grid%gas_power_MW, effective_renewable_MW(), grid%renewable_MW, &
+                grid%gas_power_MW, effective_renewable_MW(grid), grid%renewable_MW, &
                 grid%renewable_curtail_MW, grid%storage_MW
         else
             write(text, '("Gas ",F5.1,"  RES ",F5.1,"  BESS ",SP,F5.1," MW")') &
-                grid%gas_power_MW, effective_renewable_MW(), grid%storage_MW
+                grid%gas_power_MW, effective_renewable_MW(grid), grid%storage_MW
         end if
         call draw_text(hdc, x + 10, y + 8, adjustl(text), COL_PANEL_DEEP)
     end subroutine draw_stacked_supply
@@ -2518,7 +2009,7 @@ contains
         call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_CYAN)
 
         write(line, '("RES headroom ",F4.1," MW  reserve $",F4.0,"/h  curtail opp $",F5.0,"/h   CO2 ",F5.2," kg/s")') &
-            renewable_headroom_MW(), grid%renewable_reserve_value_usd_h, &
+            renewable_headroom_MW(grid), grid%renewable_reserve_value_usd_h, &
             grid%renewable_curtail_cost_usd_h, grid%CO2_rate_kg_s
         call draw_text(hdc, x + 598, y + 84, adjustl(line), COL_MUTED)
     end subroutine draw_roi_panel
@@ -2591,7 +2082,7 @@ contains
         prev_x = x
         prev_y = y + height
         do i = 1, grid%history_count
-            idx = history_index(i)
+            idx = history_index(grid, i)
             select case (series)
             case (1)
                 value = grid%hist_frequency_Hz(idx)
@@ -2612,13 +2103,6 @@ contains
             prev_y = py
         end do
     end subroutine draw_trace
-
-    function history_index(position) result(idx)
-        integer, intent(in) :: position
-        integer :: idx
-
-        idx = mod(grid%history_head - grid%history_count + position - 1 + HISTORY_N, HISTORY_N) + 1
-    end function history_index
 
     subroutine draw_frequency_meter(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
@@ -2664,7 +2148,7 @@ contains
         center_y = grid_y + grid_h / 2
 
         call draw_node(hdc, x, row1, node_w, node_h, "Gas", grid%gas_power_MW, COL_LIME)
-        call draw_node(hdc, x, row2, node_w, node_h, "Renew", effective_renewable_MW(), &
+        call draw_node(hdc, x, row2, node_w, node_h, "Renew", effective_renewable_MW(grid), &
             merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
         call draw_node(hdc, x, row3, node_w, node_h, "BESS", grid%storage_MW, COL_BLUE)
 
@@ -2927,13 +2411,6 @@ contains
         end do
         c_text(n + 1) = c_null_char
     end subroutine make_c_string
-
-    pure function clamp_real(value, lo, hi) result(clamped)
-        real(dp), intent(in) :: value, lo, hi
-        real(dp) :: clamped
-
-        clamped = min(max(value, lo), hi)
-    end function clamp_real
 
     pure function loword(value) result(word)
         integer(c_intptr_t), intent(in) :: value
