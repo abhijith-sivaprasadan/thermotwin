@@ -1,5 +1,9 @@
 # ThermoTwin-F
 
+[![CI](https://github.com/YOUR-USERNAME/thermotwin-f/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR-USERNAME/thermotwin-f/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
+
 **A Modern Fortran gas-turbine performance simulator — design, degradation,
 transient thermal response, measurement uncertainty, and inverse diagnostics.**
 
@@ -14,6 +18,21 @@ The whole project is built around a single shared data model — one `InputCase`
 (machine + operating point) flows in, one `CycleResult` (every station state and
 KPI) flows out — so the advanced modules compose coherently instead of being
 independent scripts.
+
+## Results at a glance
+
+<table>
+<tr>
+<td align="center"><b>Design-point cycle</b><br><img src="output/figures/design_point.png" alt="Design-point summary — station temperatures and fuel energy disposition" width="480"></td>
+<td align="center"><b>Degradation impact</b><br><img src="output/figures/degradation.png" alt="Clean / mild / severe / washed KPI comparison" width="480"></td>
+</tr>
+<tr>
+<td align="center"><b>Inverse diagnostics</b><br><img src="output/figures/diagnostics.png" alt="Recovered vs true degradation parameters" width="480"></td>
+<td align="center"><b>Measurement uncertainty</b><br><img src="output/figures/uncertainty.png" alt="Monte Carlo KPI uncertainty and bias-sensitivity tornado" width="480"></td>
+</tr>
+</table>
+
+---
 
 > **Honesty note.** This is a non-proprietary **educational** simulator built on
 > standard textbook thermodynamics with representative property values. It is
