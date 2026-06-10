@@ -16,6 +16,8 @@ module engine_core
     use fluid_properties, only: set_property_model, PROP_VARIABLE
     use off_design, only: OffDesignPoint, solve_off_design
     use engine_state
+    use hrsg, only: HrsgResult, solve_hrsg
+    use steam_cycle, only: SteamCycleResult, solve_steam_cycle, ramp_limited, STEAM_RAMP_MW_PER_S
     use grid_dynamics, only: tick_frequency_dynamics
     use dispatch_agc, only: tick_auto_balance, balance_now, reset_controls, &
         ramp_renewable_curtailment_to, should_curtail_renewables, &
@@ -33,6 +35,7 @@ module engine_core
     public :: GridState, clamp_real
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: limited_storage_power, append_history, history_index
+    public :: bottoming_power_MW, thermal_generation_MW
     public :: tick_frequency_dynamics
     public :: tick_auto_balance, balance_now, reset_controls
     public :: ramp_renewable_curtailment_to, should_curtail_renewables
@@ -84,7 +87,7 @@ contains
         ! upward ramps drive the transient surge-margin excursion.
         st%gas_ramp_pct_per_s = (st%gas_dispatch_pct - st%prev_gas_dispatch_pct) / dt_s
         st%prev_gas_dispatch_pct = st%gas_dispatch_pct
-        call refresh_model(st)                  ! gas power, imbalance, economics
+        call refresh_model(st, dt_s)            ! gas/steam power, imbalance, economics
         call update_battery_soc(st, dt_s)       ! SOC tracking
         call tick_frequency_dynamics(st, dt_s)  ! swing eq + primary response + UFLS
         st%CO2_cumulative_t = st%CO2_cumulative_t + &
@@ -97,25 +100,40 @@ contains
     !> the steady-state power balance and economics. The operating point comes
     !> from the off-design solver: choked-turbine running line, IGV-first load
     !> control, map efficiency penalties, and surge margin.
-    subroutine refresh_model(st)
+    subroutine refresh_model(st, dt_s)
         type(GridState), intent(inout) :: st
+        real(dp), intent(in), optional :: dt_s
         type(InputCase) :: ic
         type(OffDesignPoint) :: od_cap, od
+        type(HrsgResult) :: hrsg_cap, hrsg_live
+        type(SteamCycleResult) :: steam_cap, steam_live
         real(dp) :: load_fraction
+        real(dp) :: step_s
 
         ic = baseline_case()
         ic%ambient_T_K = st%ambient_C + KELVIN_OFFSET
         ic%T_turbine_inlet_K = st%TIT_K
+        if (present(dt_s)) then
+            step_s = dt_s
+        else
+            step_s = 0.0_dp
+        end if
 
         ! Capacity: IGVs fully open at the operator's firing-temperature setpoint.
         call solve_off_design(ic, 1.0_dp, 0.0_dp, od_cap)
         st%gas_capacity_MW = max(0.0_dp, od_cap%cyc%net_power_MW)
+        call solve_hrsg(od_cap%cyc%exhaust_temperature_K, od_cap%cyc%mdot_gas_kg_s, &
+            ic%ambient_T_K, hrsg_cap)
+        call solve_steam_cycle(hrsg_cap, ic%ambient_T_K, steam_cap)
+        st%steam_capacity_MW = merge(steam_cap%net_power_MW, 0.0_dp, st%combined_cycle)
+        st%plant_capacity_MW = st%gas_capacity_MW + st%steam_capacity_MW
 
         load_fraction = clamp_real(st%gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
         call solve_off_design(ic, load_fraction, st%gas_ramp_pct_per_s, od)
 
         st%gas_power_MW = max(0.0_dp, od%cyc%net_power_MW)
-        st%heat_rate_kJ_kWh = od%cyc%heat_rate_kJ_kWh
+        st%gt_heat_rate_kJ_kWh = od%cyc%heat_rate_kJ_kWh
+        st%gt_thermal_efficiency = od%cyc%thermal_efficiency
         st%exhaust_K = od%cyc%exhaust_temperature_K
         st%fuel_flow_kg_s = od%cyc%fuel_flow_kg_s
         st%heat_input_MW = od%cyc%heat_input_MW
@@ -125,9 +143,52 @@ contains
         st%TIT_actual_K = od%TIT_K
         st%PR_op = od%PR_op
         st%storage_MW = limited_storage_power(st, st%storage_request_MW)
-        st%supply_MW = st%gas_power_MW + effective_renewable_MW(st) + st%storage_MW
+        call solve_hrsg(od%cyc%exhaust_temperature_K, od%cyc%mdot_gas_kg_s, &
+            ic%ambient_T_K, hrsg_live)
+        call solve_steam_cycle(hrsg_live, ic%ambient_T_K, steam_live)
+        if (st%combined_cycle) then
+            st%steam_power_target_MW = steam_live%net_power_MW
+            if (step_s > 0.0_dp) then
+                st%steam_power_MW = ramp_limited(st%steam_power_MW, st%steam_power_target_MW, &
+                    STEAM_RAMP_MW_PER_S, step_s)
+            else
+                st%steam_power_MW = st%steam_power_target_MW
+            end if
+            st%hrsg_recovered_heat_MW = hrsg_live%recovered_heat_MW
+            st%hrsg_stack_T_K = hrsg_live%stack_T_K
+            st%hrsg_pinch_K = hrsg_live%pinch_K
+            st%hrsg_approach_K = hrsg_live%approach_K
+            st%hrsg_steam_flow_kg_s = hrsg_live%steam_flow_kg_s
+            st%hrsg_steam_T_K = hrsg_live%steam_T_K
+            st%hrsg_steam_pressure_bar = hrsg_live%steam_pressure_bar
+            st%hrsg_effectiveness = hrsg_live%effectiveness
+            st%condenser_pressure_kPa = steam_live%condenser_pressure_kPa
+            st%alarm_hrsg_pinch = .not. hrsg_live%pinch_ok
+        else
+            st%steam_power_target_MW = 0.0_dp
+            st%steam_power_MW = 0.0_dp
+            st%hrsg_recovered_heat_MW = 0.0_dp
+            st%hrsg_stack_T_K = 0.0_dp
+            st%hrsg_pinch_K = 0.0_dp
+            st%hrsg_approach_K = 0.0_dp
+            st%hrsg_steam_flow_kg_s = 0.0_dp
+            st%hrsg_steam_T_K = 0.0_dp
+            st%hrsg_steam_pressure_bar = 0.0_dp
+            st%hrsg_effectiveness = 0.0_dp
+            st%condenser_pressure_kPa = 0.0_dp
+            st%alarm_hrsg_pinch = .false.
+        end if
+        st%plant_power_MW = st%gas_power_MW + bottoming_power_MW(st)
+        if (st%heat_input_MW > 1.0e-9_dp) then
+            st%plant_efficiency = st%plant_power_MW / st%heat_input_MW
+            st%heat_rate_kJ_kWh = 3600.0_dp / max(st%plant_efficiency, 1.0e-9_dp)
+        else
+            st%plant_efficiency = 0.0_dp
+            st%heat_rate_kJ_kWh = huge(1.0_dp)
+        end if
+        st%supply_MW = st%plant_power_MW + effective_renewable_MW(st) + st%storage_MW
         st%imbalance_MW = st%supply_MW - st%demand_MW
-        st%reserve_MW = max(0.0_dp, st%gas_capacity_MW - st%gas_power_MW)
+        st%reserve_MW = max(0.0_dp, st%plant_capacity_MW - st%plant_power_MW)
         ! frequency_Hz is integrated by tick_frequency_dynamics; not recomputed here
         call refresh_economics(st)
     end subroutine refresh_model
@@ -189,7 +250,7 @@ contains
         call tag_set("GT1.DISPATCH_PCT",      st%gas_dispatch_pct,    "%",      t)
         call tag_set("GT1.RESERVE_MW",        st%reserve_MW,          "MW",     t)
         call tag_set("GT1.GOVERNOR_MW",       st%governor_delta_MW,   "MW",     t)
-        call tag_set("GT1.HEAT_RATE_KJ_KWH",  st%heat_rate_kJ_kWh,    "kJ/kWh", t)
+        call tag_set("GT1.HEAT_RATE_KJ_KWH",  st%gt_heat_rate_kJ_kWh, "kJ/kWh", t)
         call tag_set("GT1.EXHAUST_K",         st%exhaust_K,           "K",      t)
         call tag_set("GT1.FUEL_KG_S",         st%fuel_flow_kg_s,      "kg/s",   t)
         call tag_set("GT1.TIT_K",             st%TIT_K,               "K",      t)
@@ -198,6 +259,18 @@ contains
         call tag_set("GT1.SURGE_MARGIN_PCT",  st%surge_margin_pct,    "%",      t)
         call tag_set("GT1.IGV_PCT",           st%igv_pct,             "%",      t)
         call tag_set("GT1.PR",                st%PR_op,               "-",      t)
+        call tag_set("PLANT.MODE_CC",         merge(1.0_dp, 0.0_dp, st%combined_cycle), "-", t)
+        call tag_set("PLANT.THERMAL_MW",      st%plant_power_MW,      "MW",     t)
+        call tag_set("PLANT.CAPACITY_MW",     st%plant_capacity_MW,   "MW",     t)
+        call tag_set("PLANT.EFFICIENCY",      st%plant_efficiency,    "-",      t)
+        call tag_set("PLANT.HEAT_RATE_KJ_KWH", st%heat_rate_kJ_kWh,   "kJ/kWh", t)
+        call tag_set("ST1.POWER_MW",          st%steam_power_MW,      "MW",     t)
+        call tag_set("ST1.TARGET_MW",         st%steam_power_target_MW, "MW",   t)
+        call tag_set("ST1.COND_KPA",          st%condenser_pressure_kPa, "kPa", t)
+        call tag_set("HRSG.RECOVERED_MW",     st%hrsg_recovered_heat_MW, "MW",  t)
+        call tag_set("HRSG.STACK_K",          st%hrsg_stack_T_K,      "K",      t)
+        call tag_set("HRSG.PINCH_K",          st%hrsg_pinch_K,        "K",      t)
+        call tag_set("HRSG.STEAM_KG_S",       st%hrsg_steam_flow_kg_s, "kg/s",  t)
         call tag_set("REN.AVAILABLE_MW",      st%renewable_MW,        "MW",     t)
         call tag_set("REN.ACTUAL_MW",         effective_renewable_MW(st), "MW", t)
         call tag_set("REN.CURTAIL_MW",        st%renewable_curtail_MW, "MW",    t)

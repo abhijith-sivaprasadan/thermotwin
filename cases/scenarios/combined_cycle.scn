@@ -1,0 +1,18 @@
+# Phase 3 combined-cycle validation smoke test.
+name     combined_cycle
+duration 2
+dt       0.25
+
+at 0.0 set auto_balance 0
+at 0.0 set combined_cycle 1
+at 0.0 set gas_dispatch_pct 100
+at 0.0 set demand_MW 52
+at 0.0 set renewable_MW 0
+at 0.0 set storage_request_MW 0
+
+at 1.0 assert_above steam_power_MW 20.0
+at 1.0 assert_above plant_power_MW 50.0
+at 1.0 assert_above plant_efficiency 0.52
+at 1.0 assert_below plant_efficiency 0.56
+at 1.0 assert_above hrsg_pinch_K 14.9
+at 1.0 assert_above hrsg_stack_T_K 360.0

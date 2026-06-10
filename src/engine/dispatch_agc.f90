@@ -31,7 +31,7 @@ contains
         ! Stage 1: renewable inverter active-power setpoint. It cannot exceed
         ! weather availability, but any curtailed headroom is restored first in a shortage.
         eff_renew = effective_renewable_MW(st)
-        gap_MW = st%demand_MW - eff_renew - st%gas_power_MW &
+        gap_MW = st%demand_MW - eff_renew - thermal_generation_MW(st) &
                  - limited_storage_power(st, st%storage_request_MW)
         if (gap_MW > 0.10_dp .and. st%renewable_curtail_MW > 0.0_dp) then
             target_curtail_MW = max(0.0_dp, st%renewable_curtail_MW - gap_MW)
@@ -40,7 +40,7 @@ contains
 
         ! Stage 2: BESS covers the residual quickly while respecting SOC limits.
         eff_renew = effective_renewable_MW(st)
-        bess_target_MW = clamp_real(st%demand_MW - eff_renew - st%gas_power_MW, &
+        bess_target_MW = clamp_real(st%demand_MW - eff_renew - thermal_generation_MW(st), &
                                     STORAGE_MIN_MW, STORAGE_MAX_MW)
         if (st%fcr_hold) then
             if (bess_target_MW < -0.5_dp) bess_target_MW = max(bess_target_MW, 0.65_dp * bess_target_MW)
@@ -59,7 +59,7 @@ contains
             clamp_real(bess_target_MW - st%storage_request_MW, -bess_step_MW, bess_step_MW)
 
         ! Stage 3: if BESS cannot absorb surplus fast enough, trim renewable injection.
-        gap_MW = st%demand_MW - eff_renew - st%gas_power_MW &
+        gap_MW = st%demand_MW - eff_renew - thermal_generation_MW(st) &
                  - limited_storage_power(st, st%storage_request_MW)
         if (gap_MW < -0.50_dp .and. should_curtail_renewables(st)) then
             surplus_MW = -gap_MW
@@ -72,7 +72,7 @@ contains
 
         ! Stage 4: turbine follows the remaining steady dispatch requirement.
         eff_renew = effective_renewable_MW(st)
-        needed_gas_MW = st%demand_MW - eff_renew &
+        needed_gas_MW = st%demand_MW - eff_renew - bottoming_power_MW(st) &
                         - limited_storage_power(st, st%storage_request_MW)
         if (st%gas_capacity_MW > 1.0e-6_dp) then
             gas_target_pct = 100.0_dp * needed_gas_MW / st%gas_capacity_MW
@@ -93,12 +93,12 @@ contains
 
         if (st%gas_capacity_MW <= 1.0e-6_dp) return
         st%renewable_curtail_MW = 0.0_dp
-        bess_snap_MW = clamp_real(st%demand_MW - st%renewable_MW - st%gas_power_MW, &
+        bess_snap_MW = clamp_real(st%demand_MW - st%renewable_MW - thermal_generation_MW(st), &
                                   STORAGE_MIN_MW, STORAGE_MAX_MW)
         if (bess_snap_MW > 0.0_dp .and. st%battery_soc_pct < 5.0_dp)  bess_snap_MW = 0.0_dp
         if (bess_snap_MW < 0.0_dp .and. st%battery_soc_pct > 95.0_dp) bess_snap_MW = 0.0_dp
         st%storage_request_MW = bess_snap_MW
-        needed_gas_MW = st%demand_MW - st%renewable_MW &
+        needed_gas_MW = st%demand_MW - st%renewable_MW - bottoming_power_MW(st) &
                         - limited_storage_power(st, st%storage_request_MW)
         st%gas_dispatch_pct = clamp_real(100.0_dp * needed_gas_MW / st%gas_capacity_MW, &
                                          GAS_MIN_PCT, GAS_MAX_PCT)
@@ -193,6 +193,25 @@ contains
         st%PR_op = 15.0_dp
         st%gas_ramp_pct_per_s = 0.0_dp
         st%prev_gas_dispatch_pct = st%gas_dispatch_pct
+        st%combined_cycle = .false.
+        st%plant_power_MW = 0.0_dp
+        st%plant_capacity_MW = 0.0_dp
+        st%steam_power_MW = 0.0_dp
+        st%steam_power_target_MW = 0.0_dp
+        st%steam_capacity_MW = 0.0_dp
+        st%plant_efficiency = 0.0_dp
+        st%gt_heat_rate_kJ_kWh = 0.0_dp
+        st%gt_thermal_efficiency = 0.0_dp
+        st%hrsg_recovered_heat_MW = 0.0_dp
+        st%hrsg_stack_T_K = 0.0_dp
+        st%hrsg_pinch_K = 0.0_dp
+        st%hrsg_approach_K = 0.0_dp
+        st%hrsg_steam_flow_kg_s = 0.0_dp
+        st%hrsg_steam_T_K = 0.0_dp
+        st%hrsg_steam_pressure_bar = 0.0_dp
+        st%hrsg_effectiveness = 0.0_dp
+        st%condenser_pressure_kPa = 0.0_dp
+        st%alarm_hrsg_pinch = .false.
         st%alarm_surge = .false.
         st%alarm_underfreq = .false.
         st%alarm_overfreq  = .false.

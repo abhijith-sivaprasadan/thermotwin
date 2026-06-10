@@ -69,7 +69,7 @@ contains
         end if
 
         ! Swing equation: df/dt = (P_gen - P_load) / M_eff
-        P_gen_eff  = st%gas_power_MW + st%governor_delta_MW + &
+        P_gen_eff  = thermal_generation_MW(st) + st%governor_delta_MW + &
                      effective_renewable_MW(st) - st%renewable_lfsmo_MW + &
                      st%storage_MW + st%BESS_primary_MW
         P_load_eff = st%demand_MW * (1.0_dp - st%UFLS_shed_fraction)

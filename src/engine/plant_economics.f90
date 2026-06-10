@@ -27,7 +27,7 @@ contains
         st%margin_usd_h = st%revenue_usd_h - st%fuel_cost_usd_h - &
             st%storage_cost_usd_h - st%imbalance_penalty_usd_h
 
-        imbalance_without_bess_MW = st%gas_power_MW + effective_renewable_MW(st) - st%demand_MW
+        imbalance_without_bess_MW = st%plant_power_MW + effective_renewable_MW(st) - st%demand_MW
         avoided_imbalance_MW = max(0.0_dp, abs(imbalance_without_bess_MW) - abs(st%imbalance_MW))
         st%bess_imbalance_value_usd_h = avoided_imbalance_MW * IMBALANCE_PENALTY_USD_MWH
 
@@ -65,8 +65,8 @@ contains
         end if
 
         st%CO2_rate_kg_s = st%fuel_flow_kg_s * CO2_KG_PER_KG_FUEL
-        if (st%gas_power_MW > 0.1_dp) then
-            st%CO2_intensity_g_kWh = st%CO2_rate_kg_s * 3600.0_dp / st%gas_power_MW
+        if (st%plant_power_MW > 0.1_dp) then
+            st%CO2_intensity_g_kWh = st%CO2_rate_kg_s * 3600.0_dp / st%plant_power_MW
         else
             st%CO2_intensity_g_kWh = 0.0_dp
         end if

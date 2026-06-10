@@ -64,13 +64,28 @@ MODULES=(
     diagnostics_solver
     csv_io
     sensitivity_driver
+    off_design
+    hrsg
+    steam_cycle
+    tag_bus
+    engine_state
+    grid_dynamics
+    dispatch_agc
+    plant_economics
+    engine_core
+    scenario_runner
 )
 
 OBJS=()
 echo "Compiling modules..."
 for m in "${MODULES[@]}"; do
     echo "  [FC] ${m}.f90"
-    ${FC} ${FFLAGS} -c "${SRC}/${m}.f90" -o "${BUILD}/${m}.o"
+    if [[ -f "${SRC}/${m}.f90" ]]; then
+        source_path="${SRC}/${m}.f90"
+    else
+        source_path="${SRC}/engine/${m}.f90"
+    fi
+    ${FC} ${FFLAGS} -c "${source_path}" -o "${BUILD}/${m}.o"
     OBJS+=("${BUILD}/${m}.o")
 done
 

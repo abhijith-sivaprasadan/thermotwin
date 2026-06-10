@@ -411,6 +411,7 @@ contains
         case ("auto_balance");         st%auto_balance = value > 0.5_dp
         case ("fcr_hold");             st%fcr_hold = value > 0.5_dp
         case ("roi_dispatch");         st%roi_dispatch = value > 0.5_dp
+        case ("combined_cycle");       st%combined_cycle = value > 0.5_dp
         case default
             ok = .false.
         end select
@@ -437,6 +438,16 @@ contains
         case ("gas_dispatch_pct");      value = st%gas_dispatch_pct
         case ("gas_power_MW");          value = st%gas_power_MW
         case ("gas_capacity_MW");       value = st%gas_capacity_MW
+        case ("plant_power_MW");        value = st%plant_power_MW
+        case ("plant_capacity_MW");     value = st%plant_capacity_MW
+        case ("plant_efficiency");      value = st%plant_efficiency
+        case ("plant_heat_rate_kJ_kWh"); value = st%heat_rate_kJ_kWh
+        case ("gt_heat_rate_kJ_kWh");   value = st%gt_heat_rate_kJ_kWh
+        case ("steam_power_MW");        value = st%steam_power_MW
+        case ("steam_target_MW");       value = st%steam_power_target_MW
+        case ("hrsg_pinch_K");          value = st%hrsg_pinch_K
+        case ("hrsg_stack_T_K");        value = st%hrsg_stack_T_K
+        case ("hrsg_steam_flow_kg_s");  value = st%hrsg_steam_flow_kg_s
         case ("surge_margin_pct");      value = st%surge_margin_pct
         case ("igv_pct");               value = st%igv_pct
         case ("TIT_actual_K");          value = st%TIT_actual_K

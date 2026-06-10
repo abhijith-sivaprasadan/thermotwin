@@ -12,6 +12,7 @@ module engine_state
 
     public :: GridState, clamp_real
     public :: effective_renewable_MW, renewable_headroom_MW
+    public :: bottoming_power_MW, thermal_generation_MW
     public :: limited_storage_power, append_history, history_index
 
     ! --- Operator-adjustable ranges -------------------------------------
@@ -79,11 +80,19 @@ module engine_state
         real(dp) :: TIT_K = 1400.0_dp
         real(dp) :: gas_power_MW = 0.0_dp
         real(dp) :: gas_capacity_MW = 0.0_dp
+        real(dp) :: plant_power_MW = 0.0_dp
+        real(dp) :: plant_capacity_MW = 0.0_dp
+        real(dp) :: steam_power_MW = 0.0_dp
+        real(dp) :: steam_power_target_MW = 0.0_dp
+        real(dp) :: steam_capacity_MW = 0.0_dp
         real(dp) :: supply_MW = 0.0_dp
         real(dp) :: imbalance_MW = 0.0_dp
         real(dp) :: reserve_MW = 0.0_dp
         real(dp) :: frequency_Hz = 50.0_dp
+        real(dp) :: gt_heat_rate_kJ_kWh = 0.0_dp
+        real(dp) :: gt_thermal_efficiency = 0.0_dp
         real(dp) :: heat_rate_kJ_kWh = 0.0_dp
+        real(dp) :: plant_efficiency = 0.0_dp
         real(dp) :: exhaust_K = 0.0_dp
         real(dp) :: fuel_flow_kg_s = 0.0_dp
         real(dp) :: heat_input_MW = 0.0_dp
@@ -125,6 +134,18 @@ module engine_state
         real(dp) :: PR_op = 15.0_dp
         real(dp) :: gas_ramp_pct_per_s = 0.0_dp
         real(dp) :: prev_gas_dispatch_pct = 82.0_dp
+        ! Phase 3 combined-cycle bottoming system
+        logical  :: combined_cycle = .false.
+        real(dp) :: hrsg_recovered_heat_MW = 0.0_dp
+        real(dp) :: hrsg_stack_T_K = 0.0_dp
+        real(dp) :: hrsg_pinch_K = 0.0_dp
+        real(dp) :: hrsg_approach_K = 0.0_dp
+        real(dp) :: hrsg_steam_flow_kg_s = 0.0_dp
+        real(dp) :: hrsg_steam_T_K = 0.0_dp
+        real(dp) :: hrsg_steam_pressure_bar = 0.0_dp
+        real(dp) :: hrsg_effectiveness = 0.0_dp
+        real(dp) :: condenser_pressure_kPa = 0.0_dp
+        logical  :: alarm_hrsg_pinch = .false.
         logical  :: alarm_surge = .false.
         ! Alarm state flags (drives annunciator tiles)
         logical  :: alarm_underfreq    = .false.
@@ -162,6 +183,22 @@ contains
         real(dp) :: mw
         mw = clamp_real(st%renewable_curtail_MW, 0.0_dp, st%renewable_MW)
     end function renewable_headroom_MW
+
+    pure function bottoming_power_MW(st) result(mw)
+        type(GridState), intent(in) :: st
+        real(dp) :: mw
+        if (st%combined_cycle) then
+            mw = st%steam_power_MW
+        else
+            mw = 0.0_dp
+        end if
+    end function bottoming_power_MW
+
+    pure function thermal_generation_MW(st) result(mw)
+        type(GridState), intent(in) :: st
+        real(dp) :: mw
+        mw = st%gas_power_MW + bottoming_power_MW(st)
+    end function thermal_generation_MW
 
     !> BESS power actually deliverable for a request, honouring energy limits.
     !> Sign convention: positive = discharge (adds to supply).
