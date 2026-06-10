@@ -236,3 +236,60 @@ J(d) = w_P  * ((P_model  - P_meas ) / P_meas )^2
 minimised by a coarse 4-D grid search followed by coordinate-descent
 refinement. The choice of weights is discussed in
 `validation_and_uncertainty.md`.
+
+## 14. Off-design operation: running line, IGV load control, surge margin
+
+The live engine (GUI and scenario runner) no longer prescribes mass flow
+directly; the operating point comes from compressor-turbine matching at
+fixed synchronous shaft speed (single-shaft machine).
+
+**Choked-turbine running line.** The first turbine nozzle is choked across
+the load range, so its corrected flow is constant (calibrated once at the
+ISO design point):
+
+```
+W3 * sqrt(T3) / P3 = K_t            (Saravanamuttoo et al.; Walsh & Fletcher)
+```
+
+For a given inlet flow `W` and firing temperature `T3` this pins the cycle
+pressure ratio:
+
+```
+P3 = W * (1 + f) * sqrt(T3) / K_t,      PR = P3 / (P1 * (1 - dP_comb))
+```
+
+The weak fuel-air-ratio feedback (`f`) converges in two fixed-point passes.
+
+**Load control (industrial practice).** Variable inlet guide vanes close
+first — corrected inlet flow from 100% down to 70% of design with firing
+temperature held — then fuel/TIT reduction takes over below the IGV range
+(Kehlhofer et al., Combined-Cycle Gas & Steam Turbine Power Plants). The
+solver bisects IGV flow fraction, then TIT in [950 K, TIT_set], to deliver
+the requested fraction of current capacity.
+
+**Ambient correction.** At fixed speed and IGV setting the compressor
+swallows constant corrected flow, so physical flow scales as
+`delta / sqrt(theta)` relative to the ISO inlet — hot days genuinely derate
+the machine (~11% at +35 C for this model).
+
+**Map efficiency penalties** (representative, quadratic in distance from
+design; see assumptions_limitations.md):
+
+```
+eta_c = eta_c,d - 0.20 * (1 - W/W_d)^2
+eta_t = eta_t,d - 0.30 * (1 - PR/PR_d)^2
+```
+
+**Surge margin.** The surge line sits a 20% design margin above the running
+line and falls with IGV closure; fast load increases over-fuel the combustor
+before airflow responds, so the transient operating point moves toward surge:
+
+```
+PR_surge = PR_d * 1.20 * (W/W_d)^0.85
+PR_trans = PR_op * min(1.25, 1 + 0.008 * max(0, dDispatch/dt [%/s]))
+SM%      = 100 * (PR_surge - PR_trans) / PR_trans     (alarm below 8%)
+```
+
+The resulting part-load heat-rate curve rises monotonically and steeply
+below ~60% load (12,000 -> 16,300 -> 22,200 kJ/kWh at 100/40/20% load),
+the expected real-engine shape.

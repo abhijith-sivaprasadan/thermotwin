@@ -31,7 +31,7 @@ CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
-        csv_io sensitivity_driver \
+        csv_io sensitivity_driver off_design \
         tag_bus engine_state grid_dynamics dispatch_agc plant_economics engine_core \
         scenario_runner
 
@@ -82,15 +82,17 @@ $(BUILD)/uncertainty_analysis.o: $(BUILD)/cycle_solver.o $(BUILD)/utilities.o
 $(BUILD)/diagnostics_solver.o:   $(BUILD)/cycle_solver.o $(BUILD)/degradation.o
 $(BUILD)/csv_io.o:               $(BUILD)/types.o $(BUILD)/utilities.o
 $(BUILD)/sensitivity_driver.o:   $(BUILD)/cycle_solver.o
+$(BUILD)/off_design.o:           $(BUILD)/cycle_solver.o $(BUILD)/ambient.o $(BUILD)/types.o
 $(BUILD)/tag_bus.o:              $(BUILD)/precision_kinds.o
 $(BUILD)/engine_state.o:         $(BUILD)/precision_kinds.o
-$(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o
+$(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o
 $(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
 $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \
                                  $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
-                                 $(BUILD)/types.o $(BUILD)/constants.o
+                                 $(BUILD)/types.o $(BUILD)/constants.o \
+                                 $(BUILD)/off_design.o $(BUILD)/fluid_properties.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
 

@@ -85,7 +85,7 @@ Move all simulation state and logic out of `gui_win32.f90` into engine modules:
 - CI runs every scenario headless after the unit tests (implemented).
 - **Done:** `thermotwin scenario run cases/scenarios/load_step.scn` passes in CI.
 
-### Phase 2 — Physics depth, part A: real gas + component maps
+### Phase 2 — Physics depth, part A: real gas + component maps ✅
 
 - Temperature-dependent cp/γ/h as the default path (keep constant-property mode
   for the verified hand calculation).

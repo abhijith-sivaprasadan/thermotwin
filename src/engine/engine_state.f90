@@ -56,7 +56,9 @@ module engine_state
     ! --- Dispatch actuator limits ----------------------------------------
     real(dp), parameter, public :: GAS_MIN_PCT = 20.0_dp
     real(dp), parameter, public :: GAS_MAX_PCT = 100.0_dp
-    real(dp), parameter, public :: GAS_RAMP_PCT_PER_S = 18.0_dp
+    ! AGC slew limit: fast for a demo, but bounded so sustained ramps keep the
+    ! compressor clear of the surge-margin alarm (see off_design transient PR)
+    real(dp), parameter, public :: GAS_RAMP_PCT_PER_S = 8.0_dp
     real(dp), parameter, public :: BESS_RAMP_MW_PER_S = 4.0_dp
     real(dp), parameter, public :: CURTAIL_RAMP_MW_PER_S = 10.0_dp  ! inverter-fast
 
@@ -115,6 +117,15 @@ module engine_state
         real(dp) :: renewable_lfsmo_MW = 0.0_dp
         logical  :: roi_dispatch = .true.
         logical  :: fcr_hold = .true.
+        ! Off-design map context (Phase 2): IGV + TIT load control
+        real(dp) :: surge_margin_pct = 20.0_dp
+        real(dp) :: igv_pct = 100.0_dp
+        real(dp) :: flow_frac = 1.0_dp
+        real(dp) :: TIT_actual_K = 1400.0_dp
+        real(dp) :: PR_op = 15.0_dp
+        real(dp) :: gas_ramp_pct_per_s = 0.0_dp
+        real(dp) :: prev_gas_dispatch_pct = 82.0_dp
+        logical  :: alarm_surge = .false.
         ! Alarm state flags (drives annunciator tiles)
         logical  :: alarm_underfreq    = .false.
         logical  :: alarm_overfreq     = .false.

@@ -1,0 +1,18 @@
+# Compressor surge-margin protection. A manual dispatch slam over-fuels the
+# combustor before airflow catches up: the transient operating point crosses
+# the surge alarm line. Normal AGC ramps must stay clear of it.
+name     surge_ramp
+duration 30
+dt       0.25
+
+at 0.0   set auto_balance 0
+at 2.0   set gas_dispatch_pct 25
+at 4.0   assert_above surge_margin_pct 20.0    # deep part load: wide margin
+
+# Operator slams the dispatch lever to full
+at 10.0  set gas_dispatch_pct 100
+
+at 10.25 assert_below surge_margin_pct 8.0     # transient excursion -> alarm zone
+at 13.0  assert_above surge_margin_pct 15.0    # settles once the ramp ends
+at 13.0  assert_near  gas_dispatch_pct 100.0 0.001
+at 13.0  assert_above igv_pct 99.0             # IGVs fully open at base load

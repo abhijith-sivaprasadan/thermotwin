@@ -8,6 +8,7 @@
 module grid_dynamics
     use precision_kinds, only: dp
     use engine_state
+    use off_design, only: SURGE_ALARM_PCT
     implicit none
     private
 
@@ -83,6 +84,7 @@ contains
         st%alarm_low_soc     = st%battery_soc_pct < 15.0_dp
         st%alarm_ufls_active = st%UFLS_stage > 0
         st%alarm_turbine_max = st%gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
+        st%alarm_surge       = st%surge_margin_pct < SURGE_ALARM_PCT
     end subroutine tick_frequency_dynamics
 
 end module grid_dynamics

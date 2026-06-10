@@ -13,6 +13,8 @@ module engine_core
     use constants, only: KELVIN_OFFSET
     use types, only: InputCase, CycleResult
     use cycle_solver, only: solve_cycle
+    use fluid_properties, only: set_property_model, PROP_VARIABLE
+    use off_design, only: OffDesignPoint, solve_off_design
     use engine_state
     use grid_dynamics, only: tick_frequency_dynamics
     use dispatch_agc, only: tick_auto_balance, balance_now, reset_controls, &
@@ -57,10 +59,16 @@ module engine_core
 contains
 
     !> Reset to the default operating point and solve the initial cycle.
+    !> The live engine runs with temperature-dependent gas properties; the
+    !> constant-property model remains the default elsewhere so the verified
+    !> hand calculation (selftest) is untouched.
     subroutine engine_init(st)
         type(GridState), intent(inout) :: st
 
+        call set_property_model(PROP_VARIABLE)
         call reset_controls(st)
+        st%prev_gas_dispatch_pct = st%gas_dispatch_pct
+        st%gas_ramp_pct_per_s = 0.0_dp
         call refresh_model(st)
         call publish_tags(st)
     end subroutine engine_init
@@ -72,6 +80,10 @@ contains
 
         st%elapsed_s = st%elapsed_s + dt_s
         call tick_auto_balance(st, dt_s)        ! AGC secondary ramp
+        ! Dispatch slew rate over this tick (slider moves + AGC combined);
+        ! upward ramps drive the transient surge-margin excursion.
+        st%gas_ramp_pct_per_s = (st%gas_dispatch_pct - st%prev_gas_dispatch_pct) / dt_s
+        st%prev_gas_dispatch_pct = st%gas_dispatch_pct
         call refresh_model(st)                  ! gas power, imbalance, economics
         call update_battery_soc(st, dt_s)       ! SOC tracking
         call tick_frequency_dynamics(st, dt_s)  ! swing eq + primary response + UFLS
@@ -81,31 +93,37 @@ contains
         call publish_tags(st)
     end subroutine engine_step
 
-    !> Solve the gas-turbine cycle at current conditions and refresh the
-    !> steady-state power balance and economics.
+    !> Solve the gas-turbine operating point at current conditions and refresh
+    !> the steady-state power balance and economics. The operating point comes
+    !> from the off-design solver: choked-turbine running line, IGV-first load
+    !> control, map efficiency penalties, and surge margin.
     subroutine refresh_model(st)
         type(GridState), intent(inout) :: st
         type(InputCase) :: ic
-        type(CycleResult) :: res
+        type(OffDesignPoint) :: od_cap, od
         real(dp) :: load_fraction
 
         ic = baseline_case()
         ic%ambient_T_K = st%ambient_C + KELVIN_OFFSET
         ic%T_turbine_inlet_K = st%TIT_K
 
-        ic%mdot_air_kg_s = 100.0_dp
-        res = solve_cycle(ic)
-        st%gas_capacity_MW = max(0.0_dp, res%net_power_MW)
+        ! Capacity: IGVs fully open at the operator's firing-temperature setpoint.
+        call solve_off_design(ic, 1.0_dp, 0.0_dp, od_cap)
+        st%gas_capacity_MW = max(0.0_dp, od_cap%cyc%net_power_MW)
 
         load_fraction = clamp_real(st%gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
-        ic%mdot_air_kg_s = 100.0_dp * load_fraction
-        res = solve_cycle(ic)
+        call solve_off_design(ic, load_fraction, st%gas_ramp_pct_per_s, od)
 
-        st%gas_power_MW = max(0.0_dp, res%net_power_MW)
-        st%heat_rate_kJ_kWh = res%heat_rate_kJ_kWh
-        st%exhaust_K = res%exhaust_temperature_K
-        st%fuel_flow_kg_s = res%fuel_flow_kg_s
-        st%heat_input_MW = res%heat_input_MW
+        st%gas_power_MW = max(0.0_dp, od%cyc%net_power_MW)
+        st%heat_rate_kJ_kWh = od%cyc%heat_rate_kJ_kWh
+        st%exhaust_K = od%cyc%exhaust_temperature_K
+        st%fuel_flow_kg_s = od%cyc%fuel_flow_kg_s
+        st%heat_input_MW = od%cyc%heat_input_MW
+        st%surge_margin_pct = od%surge_margin_pct
+        st%igv_pct = od%igv_pct
+        st%flow_frac = od%flow_frac
+        st%TIT_actual_K = od%TIT_K
+        st%PR_op = od%PR_op
         st%storage_MW = limited_storage_power(st, st%storage_request_MW)
         st%supply_MW = st%gas_power_MW + effective_renewable_MW(st) + st%storage_MW
         st%imbalance_MW = st%supply_MW - st%demand_MW
@@ -175,7 +193,11 @@ contains
         call tag_set("GT1.EXHAUST_K",         st%exhaust_K,           "K",      t)
         call tag_set("GT1.FUEL_KG_S",         st%fuel_flow_kg_s,      "kg/s",   t)
         call tag_set("GT1.TIT_K",             st%TIT_K,               "K",      t)
+        call tag_set("GT1.TIT_ACTUAL_K",      st%TIT_actual_K,        "K",      t)
         call tag_set("GT1.AMBIENT_C",         st%ambient_C,           "degC",   t)
+        call tag_set("GT1.SURGE_MARGIN_PCT",  st%surge_margin_pct,    "%",      t)
+        call tag_set("GT1.IGV_PCT",           st%igv_pct,             "%",      t)
+        call tag_set("GT1.PR",                st%PR_op,               "-",      t)
         call tag_set("REN.AVAILABLE_MW",      st%renewable_MW,        "MW",     t)
         call tag_set("REN.ACTUAL_MW",         effective_renewable_MW(st), "MW", t)
         call tag_set("REN.CURTAIL_MW",        st%renewable_curtail_MW, "MW",    t)

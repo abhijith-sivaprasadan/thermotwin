@@ -1456,9 +1456,9 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, w, h
         integer :: tile_w, gap, tx, i
-        character(len=20) :: labels(6)
-        logical :: states(6)
-        integer(c_int) :: colors(6)
+        character(len=20) :: labels(7)
+        logical :: states(7)
+        integer(c_int) :: colors(7)
 
         labels(1) = "UNDER-FREQ"
         labels(2) = "OVER-FREQ"
@@ -1466,26 +1466,29 @@ contains
         labels(4) = "LOW BESS SOC"
         labels(5) = "UFLS ACTIVE"
         labels(6) = "TURBINE MAX"
+        labels(7) = "SURGE MARGIN"
         states(1) = grid%alarm_underfreq
         states(2) = grid%alarm_overfreq
         states(3) = grid%alarm_low_reserve
         states(4) = grid%alarm_low_soc
         states(5) = grid%alarm_ufls_active
         states(6) = grid%alarm_turbine_max
+        states(7) = grid%alarm_surge
         colors(1) = COL_RED
         colors(2) = COL_AMBER
         colors(3) = COL_AMBER
         colors(4) = COL_AMBER
         colors(5) = COL_RED
         colors(6) = COL_AMBER
+        colors(7) = COL_RED
 
         gap = 4
-        tile_w = (w - 7 * gap) / 6
+        tile_w = (w - 8 * gap) / 7
 
         call fill_box(hdc, x, y, x + w, y + h, COL_PANEL_DEEP)
         call stroke_box(hdc, x, y, x + w, y + h, COL_BORDER, 1)
 
-        do i = 1, 6
+        do i = 1, 7
             tx = x + gap + (i - 1) * (tile_w + gap)
             if (states(i)) then
                 ! Active alarm tile: colored with dark body

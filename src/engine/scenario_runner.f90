@@ -437,6 +437,11 @@ contains
         case ("gas_dispatch_pct");      value = st%gas_dispatch_pct
         case ("gas_power_MW");          value = st%gas_power_MW
         case ("gas_capacity_MW");       value = st%gas_capacity_MW
+        case ("surge_margin_pct");      value = st%surge_margin_pct
+        case ("igv_pct");               value = st%igv_pct
+        case ("TIT_actual_K");          value = st%TIT_actual_K
+        case ("PR_op");                 value = st%PR_op
+        case ("gas_ramp_pct_per_s");    value = st%gas_ramp_pct_per_s
         case ("supply_MW");             value = st%supply_MW
         case ("imbalance_MW");          value = st%imbalance_MW
         case ("reserve_MW");            value = st%reserve_MW

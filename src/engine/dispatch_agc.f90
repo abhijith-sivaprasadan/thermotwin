@@ -186,6 +186,14 @@ contains
         st%renewable_lfsmo_MW = 0.0_dp
         st%roi_dispatch = .true.
         st%fcr_hold = .true.
+        st%surge_margin_pct = 20.0_dp
+        st%igv_pct = 100.0_dp
+        st%flow_frac = 1.0_dp
+        st%TIT_actual_K = st%TIT_K
+        st%PR_op = 15.0_dp
+        st%gas_ramp_pct_per_s = 0.0_dp
+        st%prev_gas_dispatch_pct = st%gas_dispatch_pct
+        st%alarm_surge = .false.
         st%alarm_underfreq = .false.
         st%alarm_overfreq  = .false.
         st%alarm_low_reserve = .false.

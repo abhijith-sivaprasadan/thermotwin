@@ -121,3 +121,20 @@ Each limitation above is a clean next step:
 6. A Bayesian / Kalman formulation of the diagnostics problem with uncertainty
    on the recovered degradation parameters.
 7. Combined-cycle bottoming (HRSG + steam turbine) using the exhaust stream.
+
+## Off-design maps (revamp Phase 2)
+
+* The compressor/turbine map behaviour is **representative, not
+  engine-specific**: quadratic efficiency penalties, a power-law surge line
+  with a 20% design margin, and a constant choked-turbine flow parameter.
+  Real maps have speed lines, beta lines, and Reynolds corrections; none of
+  that detail is claimed here.
+* The transient surge excursion is a phenomenological model (PR rising with
+  dispatch slew rate, capped at +25%) standing in for the real over-fueling
+  dynamics of the fuel system and combustor volume.
+* Variable inlet guide vanes are modelled purely as a corrected-flow
+  multiplier (1.00 down to 0.70) with an efficiency penalty; actual stage
+  re-matching is not computed.
+* The live engine runs the VARIABLE (temperature-dependent cp) property
+  model; the CONSTANT model remains the default elsewhere so the verified
+  hand calculation is reproduced exactly by `thermotwin selftest`.

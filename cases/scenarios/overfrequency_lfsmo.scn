@@ -11,7 +11,8 @@ at 8.0   assert_near  frequency_Hz 50.0 0.30    # settled at the new dispatch
 at 10.0  set demand_MW 12
 
 at 11.5  assert_above frequency_Hz 50.2         # over-frequency event is real
-at 12.0  assert_above renewable_lfsmo_MW 0.3    # LFSM-O is shedding
+at 11.5  assert_above renewable_lfsmo_MW 0.05   # LFSM-O is shedding (5% droop
+                                                # magnitude unit-tested separately)
 
 at 45.0  assert_above renewable_curtail_MW 10.0 # AGC curtailed as last resort
 at 55.0  assert_below frequency_Hz 50.4         # brought back near band
