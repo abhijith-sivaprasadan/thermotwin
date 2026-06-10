@@ -76,22 +76,22 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: CANVAS_W = 1280_c_int
     integer(c_int), parameter :: CANVAS_H = 940_c_int
 
-    integer(c_int), parameter :: COL_BG = int(Z'00130E08', c_int)
-    integer(c_int), parameter :: COL_BG_GRID = int(Z'001A140D', c_int)
-    integer(c_int), parameter :: COL_PANEL = int(Z'0020190F', c_int)
-    integer(c_int), parameter :: COL_PANEL_ALT = int(Z'002A2114', c_int)
-    integer(c_int), parameter :: COL_PANEL_DEEP = int(Z'001A130B', c_int)
-    integer(c_int), parameter :: COL_BORDER = int(Z'00534A37', c_int)
-    integer(c_int), parameter :: COL_BORDER_SOFT = int(Z'00382F21', c_int)
-    integer(c_int), parameter :: COL_INK = int(Z'00F0EEE6', c_int)
-    integer(c_int), parameter :: COL_MUTED = int(Z'00A8A38E', c_int)
-    integer(c_int), parameter :: COL_DIM = int(Z'00796F5D', c_int)
-    integer(c_int), parameter :: COL_CYAN = int(Z'00DCC72E', c_int)
-    integer(c_int), parameter :: COL_BLUE = int(Z'00F6823B', c_int)
-    integer(c_int), parameter :: COL_GREEN = int(Z'008ED65B', c_int)
-    integer(c_int), parameter :: COL_LIME = int(Z'0064F2BE', c_int)
-    integer(c_int), parameter :: COL_AMBER = int(Z'004DB8FF', c_int)
-    integer(c_int), parameter :: COL_RED = int(Z'004758EF', c_int)
+    integer(c_int), parameter :: COL_BG = int(Z'00120F0B', c_int)
+    integer(c_int), parameter :: COL_BG_GRID = int(Z'00191610', c_int)
+    integer(c_int), parameter :: COL_PANEL = int(Z'001F1A11', c_int)
+    integer(c_int), parameter :: COL_PANEL_ALT = int(Z'002A2317', c_int)
+    integer(c_int), parameter :: COL_PANEL_DEEP = int(Z'001A150D', c_int)
+    integer(c_int), parameter :: COL_BORDER = int(Z'004D4639', c_int)
+    integer(c_int), parameter :: COL_BORDER_SOFT = int(Z'00373126', c_int)
+    integer(c_int), parameter :: COL_INK = int(Z'00EAE7E2', c_int)
+    integer(c_int), parameter :: COL_MUTED = int(Z'00A6A092', c_int)
+    integer(c_int), parameter :: COL_DIM = int(Z'00787265', c_int)
+    integer(c_int), parameter :: COL_CYAN = int(Z'00B8A46B', c_int)
+    integer(c_int), parameter :: COL_BLUE = int(Z'00B88E6D', c_int)
+    integer(c_int), parameter :: COL_GREEN = int(Z'0078A86F', c_int)
+    integer(c_int), parameter :: COL_LIME = int(Z'006DB19B', c_int)
+    integer(c_int), parameter :: COL_AMBER = int(Z'004D92C7', c_int)
+    integer(c_int), parameter :: COL_RED = int(Z'00555BC3', c_int)
 
     real(dp), parameter :: DEMAND_MIN_MW = 10.0_dp
     real(dp), parameter :: DEMAND_MAX_MW = 100.0_dp
@@ -1140,16 +1140,18 @@ contains
 
         call fill_box(hdc, x0, y0, x0 + w, y0 + h, COL_PANEL)
         call stroke_box(hdc, x0, y0, x0 + w, y0 + h, COL_BORDER, 1)
-        call fill_box(hdc, x0, y0, x0 + w, y0 + 5, COL_CYAN)
+        call fill_box(hdc, x0, y0, x0 + w, y0 + 3, COL_BORDER)
 
         call draw_title_text(hdc, inner_x, y0 + 20, "ThermoTwin-F Plant Control Console", COL_INK)
         write(subtitle, '("Turbine island + grid bus | t=",F6.1," s | Auto ",A)') &
             grid%elapsed_s, merge("ON ", "OFF", grid%auto_balance)
         call draw_text(hdc, inner_x, y0 + 48, trim(subtitle), COL_MUTED)
-        call draw_text(hdc, x0 + w - 164, y0 + 24, "CONTROL ROOM HMI", COL_LIME)
+        call draw_text(hdc, x0 + w - 142, y0 + 24, "OPERATIONS HMI", COL_MUTED)
         call grid_status(status, status_color)
-        call fill_box(hdc, inner_x, y0 + 72, inner_x + inner_w, y0 + 96, status_color)
-        call draw_text(hdc, inner_x + 12, y0 + 76, trim(status), COL_PANEL_DEEP)
+        call fill_box(hdc, inner_x, y0 + 72, inner_x + inner_w, y0 + 96, COL_PANEL_ALT)
+        call fill_box(hdc, inner_x, y0 + 72, inner_x + 6, y0 + 96, status_color)
+        call stroke_box(hdc, inner_x, y0 + 72, inner_x + inner_w, y0 + 96, status_color, 1)
+        call draw_text(hdc, inner_x + 14, y0 + 76, trim(status), status_color)
 
         scale_MW = max(max(DEMAND_MAX_MW, grid%demand_MW), max(grid%supply_MW, grid%gas_capacity_MW))
         call draw_kpi_tiles(hdc, inner_x, kpi_y, inner_w)
@@ -1191,7 +1193,7 @@ contains
 
         call fill_box(hdc, left, top, right, bottom, COL_PANEL_DEEP)
         call stroke_box(hdc, left, top, right, bottom, COL_BORDER, 1)
-        call fill_box(hdc, left, top, right, top + 5, COL_LIME)
+        call fill_box(hdc, left, top, right, top + 3, COL_BORDER)
         call draw_title_text(hdc, title_x, top + 28, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 56, "Operator dispatch console", COL_MUTED)
         call fill_box(hdc, title_x, top + 82, right - 24, top + 83, COL_BORDER_SOFT)
@@ -1272,11 +1274,11 @@ contains
         call draw_text(hdc, x + width - 78, y - 34, value_text, color)
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
-        call fill_box(hdc, x, y, x + width, y + 8, COL_PANEL_ALT)
-        call fill_box(hdc, x, y, knob_x, y + 8, color)
+        call fill_box(hdc, x, y, x + width, y + 7, COL_PANEL_ALT)
+        call fill_box(hdc, x, y, knob_x, y + 7, color)
         call stroke_box(hdc, x, y, x + width, y + 8, COL_BORDER_SOFT, 1)
-        call fill_box(hdc, knob_x - 7, y - 8, knob_x + 7, y + 18, COL_INK)
-        call stroke_box(hdc, knob_x - 7, y - 8, knob_x + 7, y + 18, color, merge(3, 2, active_control == control_id))
+        call fill_box(hdc, knob_x - 6, y - 7, knob_x + 6, y + 17, COL_PANEL)
+        call stroke_box(hdc, knob_x - 6, y - 7, knob_x + 6, y + 17, color, merge(2, 1, active_control == control_id))
         write(lo_text, '(F0.0)') lo
         write(hi_text, '(F0.0)') hi
         call draw_text(hdc, x, y + 20, trim(adjustl(lo_text)), COL_DIM)
@@ -1290,8 +1292,8 @@ contains
         integer(c_int), intent(in) :: color
 
         call fill_box(hdc, left, top, right, bottom, COL_PANEL_ALT)
-        call fill_box(hdc, left, top, left + 5, bottom, color)
-        call stroke_box(hdc, left, top, right, bottom, color, 2)
+        call fill_box(hdc, left, top, left + 4, bottom, color)
+        call stroke_box(hdc, left, top, right, bottom, COL_BORDER_SOFT, 1)
         call draw_text(hdc, left + 16, top + 12, label, COL_INK)
     end subroutine draw_button
 
@@ -1307,7 +1309,7 @@ contains
             tx = x + i * (tile_w + gap)
             call fill_box(hdc, tx, y, tx + tile_w, y + 72, COL_PANEL_ALT)
             call stroke_box(hdc, tx, y, tx + tile_w, y + 72, COL_BORDER_SOFT, 1)
-            call fill_box(hdc, tx, y, tx + tile_w, y + 3, merge(COL_LIME, COL_CYAN, i == 0))
+            call fill_box(hdc, tx, y, tx + tile_w, y + 2, COL_BORDER)
         end do
 
         write(value, '(F6.1," MW")') grid%gas_power_MW
@@ -1478,8 +1480,8 @@ contains
         call stroke_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
 
         call draw_text(hdc, x + 10, y + 6, "Hz", COL_AMBER)
-        call draw_text(hdc, x + 44, y + 6, "Demand", COL_RED)
-        call draw_text(hdc, x + 126, y + 6, "Turbine", COL_LIME)
+        call draw_text(hdc, x + 44, y + 6, "Demand", COL_MUTED)
+        call draw_text(hdc, x + 126, y + 6, "Turbine", COL_MUTED)
 
         gx = x + 8
         gy = y + 28
@@ -1548,9 +1550,9 @@ contains
         if (height < 1) return
         call fill_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
         center_x = x + width / 2
-        call fill_box(hdc, center_x - 34, y, center_x + 34, y + height, int(Z'00334720', c_int))
+        call fill_box(hdc, center_x - 34, y, center_x + 34, y + height, int(Z'002D3325', c_int))
         call stroke_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
-        call draw_line(hdc, center_x, y, center_x, y + height, COL_GREEN, 2)
+        call draw_line(hdc, center_x, y, center_x, y + height, COL_GREEN, 1)
         frac = clamp_real((grid%frequency_Hz - 58.5_dp) / 3.0_dp, 0.0_dp, 1.0_dp)
         marker_x = x + int(frac * real(width, dp))
         call draw_line(hdc, marker_x, y - 4, marker_x, y + height + 4, frequency_color(), 4)
@@ -1593,10 +1595,10 @@ contains
         call draw_text(hdc, grid_x + grid_w / 2 - 32, grid_y + 34, adjustl(text), frequency_color())
 
         call draw_node(hdc, load_x, row2, node_w, node_h, "Load", grid%demand_MW, COL_RED)
-        call draw_line(hdc, x + node_w, row1 + node_h / 2, grid_x, grid_y + 14, COL_LIME, 3)
-        call draw_line(hdc, x + node_w, row2 + node_h / 2, grid_x, center_y, COL_GREEN, 3)
-        call draw_line(hdc, x + node_w, row3 + node_h / 2, grid_x, grid_y + grid_h - 14, COL_BLUE, 3)
-        call draw_line(hdc, grid_x + grid_w, center_y, load_x, row2 + node_h / 2, COL_RED, 4)
+        call draw_line(hdc, x + node_w, row1 + node_h / 2, grid_x, grid_y + 14, COL_LIME, 2)
+        call draw_line(hdc, x + node_w, row2 + node_h / 2, grid_x, center_y, COL_GREEN, 2)
+        call draw_line(hdc, x + node_w, row3 + node_h / 2, grid_x, grid_y + grid_h - 14, COL_BLUE, 2)
+        call draw_line(hdc, grid_x + grid_w, center_y, load_x, row2 + node_h / 2, COL_RED, 2)
     end subroutine draw_power_flow
 
     subroutine draw_node(hdc, x, y, width, height, label, value, color)
@@ -1608,7 +1610,7 @@ contains
         character(len=64) :: text
 
         call fill_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
-        call stroke_box(hdc, x, y, x + width, y + height, color, 2)
+        call stroke_box(hdc, x, y, x + width, y + height, color, 1)
         call draw_text(hdc, x + 10, y + 7, label, COL_INK)
         write(text, '(SP,F6.1," MW")') value
         call draw_text(hdc, x + 10, y + 24, adjustl(text), COL_MUTED)
@@ -1619,13 +1621,13 @@ contains
         integer(c_int), intent(out) :: color
 
         if (abs(grid%imbalance_MW) <= 0.5_dp) then
-            text = "BALANCED | supply matches demand within 0.5 MW"
+            text = "Grid balanced | supply matches demand within 0.5 MW"
             color = COL_GREEN
         else if (grid%imbalance_MW < 0.0_dp) then
-            text = "SHORTAGE | raise turbine, discharge BESS, add renewables, or lower demand"
+            text = "Grid shortage | raise turbine, discharge BESS, add renewables, or lower demand"
             color = COL_RED
         else
-            text = "SURPLUS | lower turbine, charge BESS, curtail renewables, or raise demand"
+            text = "Grid surplus | lower turbine, charge BESS, curtail renewables, or raise demand"
             color = COL_AMBER
         end if
     end subroutine grid_status
