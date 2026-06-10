@@ -1,0 +1,19 @@
+# Operator leaves AUTO off; demand jumps far beyond available generation.
+# Frequency collapses through the UFLS thresholds: relays must latch in
+# stages, then reset only after recovery above 49.5 Hz.
+name     ufls_cascade
+duration 60
+dt       0.25
+
+at 0.0   set auto_balance 0
+at 5.0   set demand_MW 80
+
+at 8.0   assert_above UFLS_stage 0.5            # shedding has begun
+at 20.0  assert_above UFLS_stage 2.5            # cascade reached stage 3
+at 20.0  assert_below frequency_Hz 48.4
+
+at 25.0  set demand_MW 30                       # operator sheds load manually
+
+at 50.0  assert_near  UFLS_stage 0.0 0.1        # relays reset after recovery
+at 55.0  assert_above frequency_Hz 49.5
+at 55.0  assert_below frequency_Hz 51.0         # manual mode: governor-only band

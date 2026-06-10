@@ -1,0 +1,15 @@
+# Gas turbine trips to minimum stable load. Governor + BESS primary arrest
+# the frequency fall; AGC re-dispatches; UFLS must not latch at the end.
+name     turbine_trip
+duration 60
+dt       0.25
+
+at 2.0   assert_near  frequency_Hz 50.0 0.20
+at 5.0   command turbine_trip
+
+at 6.0   assert_below frequency_Hz 49.95        # the dip is real
+at 8.0   assert_above frequency_Hz 49.5         # governor headroom keeps it out of UFLS
+
+at 35.0  assert_near  frequency_Hz 50.0 0.15    # recovered
+at 50.0  assert_near  imbalance_MW 0.0 0.75
+at 55.0  assert_near  UFLS_stage 0.0 0.1        # relays disarmed at the end

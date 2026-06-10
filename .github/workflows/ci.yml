@@ -33,3 +33,9 @@ jobs:
 
       - name: Physics self-test
         run: fpm run --profile release -- selftest
+
+      - name: Scenario regression suite
+        run: |
+          for scn in cases/scenarios/*.scn; do
+            fpm run --profile release -- scenario run "$scn"
+          done

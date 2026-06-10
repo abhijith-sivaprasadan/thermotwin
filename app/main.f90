@@ -26,6 +26,7 @@ program thermotwin
     use diagnostics_solver, only: Observation, DiagnosticWeights, DiagnosticResult, &
                                   default_weights, diagnose
     use utilities, only: seed_rng, itoa
+    use scenario_runner, only: Scenario, scenario_load, scenario_run
     implicit none
 
     character(len=256) :: mode, infile, outfile
@@ -71,6 +72,9 @@ program thermotwin
     case ("selftest")
         call mode_selftest()
 
+    case ("scenario")
+        call mode_scenario(nargs)
+
     case default
         write(*, '(A)') "ERROR: unknown mode '"//trim(mode)//"'"
         call print_usage()
@@ -100,8 +104,50 @@ contains
         write(*, '(A)') "  thermotwin uncertainty <baseline.csv>"
         write(*, '(A)') "  thermotwin diagnostics <baseline.csv>"
         write(*, '(A)') "  thermotwin selftest"
+        write(*, '(A)') "  thermotwin scenario run <file.scn> [--record out.csv]"
         write(*, '(A)') ""
     end subroutine print_usage
+
+    !===================================================================
+    ! MODE: scenario -- scripted grid/plant playback with assertions
+    !===================================================================
+    subroutine mode_scenario(nargs)
+        integer, intent(in) :: nargs
+        character(len=256) :: sub, scn_path, arg, record_path
+        type(Scenario) :: sc
+        integer :: i, failures
+        logical :: ok
+
+        if (nargs < 3) then
+            write(*, '(A)') "ERROR: usage: thermotwin scenario run <file.scn> [--record out.csv]"
+            error stop 2
+        end if
+        call get_command_argument(2, sub)
+        if (trim(sub) /= "run") then
+            write(*, '(A)') "ERROR: unknown scenario subcommand '"//trim(sub)//"'"
+            error stop 2
+        end if
+        call get_command_argument(3, scn_path)
+
+        record_path = ""
+        i = 4
+        do while (i <= nargs)
+            call get_command_argument(i, arg)
+            if (trim(arg) == "--record" .and. i + 1 <= nargs) then
+                call get_command_argument(i + 1, record_path)
+                i = i + 2
+            else
+                write(*, '(A)') "ERROR: unknown scenario option '"//trim(arg)//"'"
+                error stop 2
+            end if
+        end do
+
+        call scenario_load(trim(scn_path), sc, ok)
+        if (.not. ok) error stop 3
+
+        call scenario_run(sc, failures, trim(record_path))
+        if (failures > 0) error stop 6
+    end subroutine mode_scenario
 
     !===================================================================
     ! MODE: run  -- solve every row of an input CSV

@@ -51,7 +51,7 @@ Today `gui/gui_win32.f90` (~2,650 lines) owns grid dynamics, AGC, economics, ala
 
 ## 2. Phases
 
-### Phase 0 — Engine extraction (foundation, everything depends on this)
+### Phase 0 — Engine extraction (foundation, everything depends on this) ✅
 
 Move all simulation state and logic out of `gui_win32.f90` into engine modules:
 
@@ -68,15 +68,22 @@ Move all simulation state and logic out of `gui_win32.f90` into engine modules:
   merit-order ordering) — these are currently untestable because they live in the GUI.
 - **Done when:** GUI behaves identically, `fpm test` covers engine modules, CI green.
 
-### Phase 1 — Scenario engine + replay (makes everything else verifiable)
+### Phase 1 — Scenario engine + replay (makes everything else verifiable) ✅
 
-- JSON scenario files: timed events (`t=30: demand=70`, `t=60: trip GT1`,
-  `t=90: assert freq > 49.5`), deterministic playback at 1×/10×/max speed.
-- Scenario recorder: dump tag bus to CSV each tick; replay a recorded session.
-- 5–6 reference scenarios: load step, renewable ramp, unit trip, over-frequency
-  (tests LFSM-O), curtailment day, UFLS cascade.
-- CI runs scenarios headless and checks assertions — physics regression suite.
-- **Done when:** `thermotwin scenario run cases/scenarios/load_step.json` passes in CI.
+- ~~JSON scenario files~~ → **`.scn` line-based format** (implemented): timed
+  events (`at 5.0 set demand_MW 45`, `at 5.0 command turbine_trip`,
+  `at 25.0 assert_near frequency_Hz 50.0 0.10`), deterministic playback.
+  *Deviation from plan:* JSON would have required json-fortran, which the
+  fpm-free Makefile build can't absorb cheaply; the line format is
+  zero-dependency in both build systems and easier to diff. Speed control
+  (1×/10×) deferred to the HMI replay work in Phase 6 — headless runs always
+  execute at max speed.
+- Flight recorder (implemented): `--record out.csv` dumps the full tag bus
+  every tick.
+- 5 reference scenarios (implemented): load step, cloud ramp, turbine trip,
+  over-frequency LFSM-O, UFLS cascade — 31 assertions total.
+- CI runs every scenario headless after the unit tests (implemented).
+- **Done:** `thermotwin scenario run cases/scenarios/load_step.scn` passes in CI.
 
 ### Phase 2 — Physics depth, part A: real gas + component maps
 

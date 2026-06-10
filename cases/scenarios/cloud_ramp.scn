@@ -1,0 +1,15 @@
+# High-renewable operation, then a cloud front removes 15 MW of resource.
+# The turbine must ramp up to refill the gap; no curtailment at the end.
+name     cloud_ramp
+duration 45
+dt       0.25
+
+at 0.0   set renewable_MW 25
+at 3.0   assert_near  frequency_Hz 50.0 0.25    # settled after re-dispatch
+at 5.0   command cloud_ramp                     # renewable 25 -> 10 MW
+
+at 6.0   assert_below frequency_Hz 50.0
+at 25.0  assert_near  frequency_Hz 50.0 0.10
+at 40.0  assert_near  imbalance_MW 0.0 0.75
+at 40.0  assert_below renewable_curtail_MW 0.1  # nothing wasted
+at 40.0  assert_above gas_dispatch_pct 60.0     # turbine refilled the gap

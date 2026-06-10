@@ -1,0 +1,16 @@
+# +10 MW load step. AGC merit order must recover frequency and balance:
+# the turbine saturates at 100% and the BESS picks up the remainder.
+name     load_step
+duration 45
+dt       0.25
+
+at 2.0   assert_near  frequency_Hz 50.0 0.20    # settled start
+at 5.0   set demand_MW 45
+
+at 6.0   assert_below frequency_Hz 50.0         # must dip after the step
+at 6.0   assert_above frequency_Hz 49.0         # primary response holds it shallow
+
+at 25.0  assert_near  frequency_Hz 50.0 0.10    # AGC recovered
+at 40.0  assert_near  imbalance_MW 0.0 0.75
+at 40.0  assert_above gas_dispatch_pct 95.0     # turbine carries what it can
+at 40.0  assert_above storage_MW 3.0            # BESS discharges the remainder

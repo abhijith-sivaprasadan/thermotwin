@@ -32,7 +32,8 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver \
-        tag_bus engine_state grid_dynamics dispatch_agc plant_economics engine_core
+        tag_bus engine_state grid_dynamics dispatch_agc plant_economics engine_core \
+        scenario_runner
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
 TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
@@ -90,6 +91,8 @@ $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.
                                  $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \
                                  $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
                                  $(BUILD)/types.o $(BUILD)/constants.o
+$(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
+                                 $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
 
 $(EXE): $(OBJS) $(BUILD)/main.o
 	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/main.o -o $@
