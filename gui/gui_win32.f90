@@ -927,8 +927,8 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - 432, layout_slider_y(6) + 72)
-        layout_footer_y = layout_control_bottom - 58
+        layout_button_y = min(layout_control_bottom - 570, layout_slider_y(6) + 72)
+        layout_footer_y = layout_control_bottom - 50
 
         layout_main_left = layout_control_left + layout_control_w + layout_gap
         layout_main_top = layout_margin
@@ -1422,25 +1422,25 @@ contains
         by = layout_button_y
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_AUTO
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_BALANCE
-        by = layout_button_y + 46
+        by = layout_button_y + 44
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_CC_MODE
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_FCR_HOLD
-        by = layout_button_y + 92
+        by = layout_button_y + 88
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_ROI_MODE
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_LOAD_STEP
-        by = layout_button_y + 138
+        by = layout_button_y + 132
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_CLOUD_RAMP
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_TURBINE_TRIP
-        by = layout_button_y + 184
+        by = layout_button_y + 176
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_MARKET_PROFILE
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_MARKET_REPLAY
-        by = layout_button_y + 230
+        by = layout_button_y + 220
         if (point_in_rect(x, y, bx1, by, bx3, by + bh)) control_id = ID_RESET
         ! Scenario name box: click cycles to next scenario (when not playing)
-        by = layout_button_y + 300
+        by = layout_button_y + 278
         if (point_in_rect(x, y, bx1, by, bx3, by + bh) .and. .not. scn_playing) &
             control_id = ID_SCN_NEXT
-        by = layout_button_y + 346
+        by = layout_button_y + 322
         if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_SCN_PREV
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_SCN_RUN_STOP
     end function hit_test_control
@@ -1824,7 +1824,7 @@ contains
         call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
             "BALANCE 1X", COL_PANEL, .false.)
 
-        by = layout_button_y + 46
+        by = layout_button_y + 44
         if (grid%fleet_mode) then
             call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
                 "FLEET", COL_CYAN, .true.)
@@ -1843,7 +1843,7 @@ contains
                 "FREE BESS", COL_PANEL_ALT, .false.)
         end if
 
-        by = layout_button_y + 92
+        by = layout_button_y + 88
         if (grid%roi_dispatch) then
             call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
                 "ROI MODE", COL_GREEN, .true.)
@@ -1854,7 +1854,7 @@ contains
         call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
             "LOAD +10", COL_PANEL, .false.)
 
-        by = layout_button_y + 138
+        by = layout_button_y + 132
         call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
             "CLOUD -15", COL_PANEL, .false.)
         if (grid%fleet_mode) then
@@ -1865,7 +1865,7 @@ contains
                 "TURB TRIP", COL_RED, .false.)
         end if
 
-        by = layout_button_y + 184
+        by = layout_button_y + 176
         button_text = "LOC "//trim(grid%market_power_zone)
         call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
             trim(button_text), COL_CYAN, grid%market_weather_enabled)
@@ -1877,16 +1877,16 @@ contains
                 "REPLAY", COL_PANEL_ALT, .false.)
         end if
 
-        by = layout_button_y + 230
+        by = layout_button_y + 220
         call draw_industrial_button(hdc, bx1, by, bx3, by + btn_h, &
             "RESET", COL_PANEL, .false.)
 
         ! Scenario playback selector
-        by = layout_button_y + 278
+        by = layout_button_y + 262
         call fill_box(hdc, title_x, by, right - 24, by + 1, COL_BORDER_SOFT)
-        call draw_text(hdc, title_x, by + 6, "Scenario playback", COL_MUTED)
+        call draw_text(hdc, title_x, by + 4, "Scenario playback", COL_MUTED)
 
-        by = layout_button_y + 300
+        by = layout_button_y + 278
         call fill_soft_box(hdc, bx1, by, bx3, by + btn_h, COL_PANEL_ALT)
         call stroke_soft_box(hdc, bx1, by, bx3, by + btn_h, &
             merge(COL_GREEN, COL_BORDER_SOFT, scn_playing), 1)
@@ -1901,7 +1901,7 @@ contains
                 by + btn_h - 1, COL_GREEN)
         end if
 
-        by = layout_button_y + 346
+        by = layout_button_y + 322
         call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
             "<< SCN", COL_PANEL, .false.)
         if (scn_playing) then
@@ -1912,13 +1912,16 @@ contains
                 "RUN SCN >>", COL_LIME, .false.)
         end if
 
-        panel_top = layout_button_y + 392
+        panel_top = layout_button_y + 366
         panel_bottom = layout_footer_y - 28
-        if (panel_bottom - panel_top > 118) then
-            row_gap = max(21, (panel_bottom - panel_top - 50) / 5)
+        if (panel_bottom - panel_top > 120) then
+            row_gap = max(20, (panel_bottom - panel_top - 48) / 5)
             call fill_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_PANEL_ALT)
             call stroke_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_BORDER_SOFT, 1)
             call draw_text(hdc, title_x + 10, panel_top + 10, "Plant telemetry", COL_MUTED)
+            if (opcua_active()) then
+                call draw_text(hdc, right - 88, panel_top + 10, "OPC 4840", COL_GREEN)
+            end if
             write(line, '("Freq  ",F7.3," Hz")') grid%frequency_Hz
             call draw_text(hdc, title_x + 10, panel_top + 34, adjustl(line), frequency_color())
             if (grid%fleet_mode) then

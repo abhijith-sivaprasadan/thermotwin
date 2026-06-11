@@ -41,3 +41,4 @@ gui/open62541.h
 
 # Generated configs
 thermotwin.ini
+release/
