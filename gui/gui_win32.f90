@@ -3591,22 +3591,23 @@ contains
     subroutine draw_history_traces(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
-        integer :: gx, gy, gw, gh, gi
-        character(len=20) :: lbl
+        integer :: gx, gy, gw, gh, gi, leg_step
+        integer :: py_lo, py_hi   ! pixel rows for 49.8 Hz and 50.2 Hz
+        real(dp) :: span_s
+        character(len=24) :: lbl
 
-        ! Panel shell: left accent strip + dark body
+        ! Panel shell: amber accent strip + dark body
         call fill_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
         call fill_box(hdc, x, y, x + 5, y + height, COL_AMBER)
         call draw_line(hdc, x, y, x + width, y, COL_BORDER, 1)
         call draw_line(hdc, x, y + height, x + width, y + height, COL_BORDER, 1)
 
-        ! Plot area layout: left margin for Y-axis labels
-        gx = x + 44
-        gy = y + 26
-        gw = width - 52
-        gh = height - 36
+        ! Plot area: wider left margin for 5-char Y labels, extra bottom for X labels
+        gx = x + 48
+        gy = y + 28
+        gw = width - 56
+        gh = height - 40
 
-        ! Plot area background
         call fill_box(hdc, gx, gy, gx + gw, gy + gh, COL_BG)
 
         ! Horizontal grid lines at 25 / 50 / 75 %
@@ -3617,15 +3618,25 @@ contains
         do gi = 1, 3
             call draw_line(hdc, gx + gi * gw / 4, gy, gx + gi * gw / 4, gy + gh, COL_BG_GRID, 1)
         end do
-        ! Nominal 50 Hz centre line — slightly brighter
+        ! Nominal 50.0 Hz centre — brighter horizontal reference
         call draw_line(hdc, gx, gy + gh / 2, gx + gw, gy + gh / 2, COL_BORDER, 1)
 
-        ! Y-axis labels (left, in Hz units of the frequency range)
-        call draw_text(hdc, x + 6, gy - 7,       "51.5", COL_DIM)
-        call draw_text(hdc, x + 6, gy + gh/2 - 7,"50.0", COL_AMBER)
-        call draw_text(hdc, x + 6, gy + gh - 7,  "48.5", COL_DIM)
+        ! FCR deadband guard lines: 49.8 Hz and 50.2 Hz (dashed cyan)
+        ! Y range 48.5..51.5 Hz (3.0 Hz span); 49.8 = 43.3 % from bottom, 50.2 = 56.7 %
+        py_lo = gy + gh - nint((49.8_dp - 48.5_dp) / 3.0_dp * real(gh, dp))
+        py_hi = gy + gh - nint((50.2_dp - 48.5_dp) / 3.0_dp * real(gh, dp))
+        do gi = gx + 2, gx + gw - 4, 10
+            call draw_line(hdc, gi, py_lo, min(gi + 6, gx + gw - 2), py_lo, COL_CYAN, 1)
+            call draw_line(hdc, gi, py_hi, min(gi + 6, gx + gw - 2), py_hi, COL_CYAN, 1)
+        end do
 
-        ! Plot area border
+        ! Y-axis labels (Hz)
+        call draw_text(hdc, x + 4, gy - 7,          "51.5", COL_DIM)
+        call draw_text(hdc, x + 4, py_hi - 7,       "50.2", COL_CYAN)
+        call draw_text(hdc, x + 4, gy + gh / 2 - 7, "50.0", COL_AMBER)
+        call draw_text(hdc, x + 4, py_lo - 7,       "49.8", COL_CYAN)
+        call draw_text(hdc, x + 4, gy + gh - 7,     "48.5", COL_DIM)
+
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
 
         if (grid%history_count < 2) then
@@ -3636,13 +3647,27 @@ contains
             call draw_trace(hdc, gx, gy, gw, gh, 3, 0.0_dp, 100.0_dp, COL_LIME)
         end if
 
-        ! Live legend with current values
-        write(lbl, '(F7.3," Hz")') grid%frequency_Hz
-        call draw_text(hdc, gx + 4,  y + 8, trim(adjustl(lbl)), COL_AMBER)
-        write(lbl, '(F5.1," MW")') grid%demand_MW
-        call draw_text(hdc, gx + 106, y + 8, trim(adjustl(lbl)), COL_RED)
-        write(lbl, '(F5.1,"%")') grid%gas_dispatch_pct
-        call draw_text(hdc, gx + 210, y + 8, trim(adjustl(lbl)), COL_LIME)
+        ! X-axis time labels below plot border (proportional to actual buffer fill)
+        span_s = real(grid%history_count, dp) * 0.25_dp
+        write(lbl, '("-",I0,"s")') nint(span_s)
+        call draw_text(hdc, gx,               gy + gh + 3, adjustl(lbl), COL_DIM)
+        write(lbl, '("-",I0,"s")') nint(span_s * 0.75_dp)
+        call draw_text(hdc, gx + gw / 4 - 8,  gy + gh + 3, adjustl(lbl), COL_DIM)
+        write(lbl, '("-",I0,"s")') nint(span_s * 0.5_dp)
+        call draw_text(hdc, gx + gw / 2 - 8,  gy + gh + 3, adjustl(lbl), COL_DIM)
+        write(lbl, '("-",I0,"s")') nint(span_s * 0.25_dp)
+        call draw_text(hdc, gx + 3*gw / 4 - 8,gy + gh + 3, adjustl(lbl), COL_DIM)
+        call draw_text(hdc, gx + gw - 12,      gy + gh + 3, "0s",          COL_DIM)
+
+        ! Live legend: colored dot + value, proportionally spaced
+        leg_step = max(80, gw / 3)
+        write(lbl, '("o ",F7.3," Hz")') grid%frequency_Hz
+        call draw_text(hdc, gx + 2,             y + 10, adjustl(lbl), COL_AMBER)
+        write(lbl, '("o ",F5.1," MW")') grid%demand_MW
+        call draw_text(hdc, gx + leg_step,      y + 10, adjustl(lbl), COL_RED)
+        write(lbl, '("o ",F5.1," %")') grid%gas_dispatch_pct
+        call draw_text(hdc, gx + 2 * leg_step,  y + 10, adjustl(lbl), COL_LIME)
+        call draw_text(hdc, gx + gw - 60,       y + 10, "FCR +/-0.2Hz",  COL_CYAN)
     end subroutine draw_history_traces
 
     subroutine draw_trace(hdc, x, y, width, height, series, lo, hi, color)
