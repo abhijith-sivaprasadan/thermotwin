@@ -31,7 +31,7 @@ module scenario_runner
     implicit none
     private
 
-    public :: Scenario, ScenarioEvent, scenario_load, scenario_run
+    public :: Scenario, ScenarioEvent, scenario_load, scenario_run, scenario_gui_tick
 
     integer, parameter :: MAX_EVENTS = 96
     integer, parameter :: KIND_SET          = 1
@@ -139,6 +139,18 @@ contains
                 " of ", n_asserts, " assertions failed)"
         end if
     end subroutine scenario_run
+
+    !> Drive one GUI timer tick of a scenario against the live grid state.
+    !> Call BEFORE engine_step(st, dt); t_now = st%elapsed_s (time before the tick).
+    !> done is set .true. when the scenario duration has elapsed.
+    subroutine scenario_gui_tick(sc, st, t_now, done)
+        type(Scenario), intent(inout) :: sc
+        type(GridState), intent(inout) :: st
+        real(dp), intent(in) :: t_now
+        logical, intent(out) :: done
+        call apply_due_inputs(sc, st, t_now)
+        done = t_now + sc%dt_s * 0.5_dp >= sc%duration_s
+    end subroutine scenario_gui_tick
 
     ! ------------------------------------------------------------------
     ! Parsing

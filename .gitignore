@@ -33,3 +33,11 @@ output/results_gui_run.csv
 output/gui_*.png
 gui_debug.log
 gui/app_icon.ico
+
+# open62541 amalgam — large vendor files (~19 MB total)
+# Download with: make download-opcua
+gui/open62541.c
+gui/open62541.h
+
+# Generated configs
+thermotwin.ini

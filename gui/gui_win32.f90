@@ -11,6 +11,10 @@ module thermotwin_win32_gui
         c_ptr, c_sizeof
     use precision_kinds, only: dp
     use engine_core
+    use scenario_runner, only: Scenario, scenario_load, scenario_gui_tick
+    use opcua_bridge, only: opcua_start, opcua_stop, opcua_iterate, &
+                            opcua_write, opcua_active
+    use tag_bus, only: tag_count, tag_name_at, tag_value_at, tag_units_at
     implicit none
     private
 
@@ -82,6 +86,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_CC_MODE = 209_c_int
     integer(c_int), parameter :: ID_MARKET_PROFILE = 210_c_int
     integer(c_int), parameter :: ID_MARKET_REPLAY = 211_c_int
+    integer(c_int), parameter :: ID_SCN_PREV     = 212_c_int
+    integer(c_int), parameter :: ID_SCN_NEXT     = 213_c_int
+    integer(c_int), parameter :: ID_SCN_RUN_STOP = 214_c_int
     integer(c_int), parameter :: ID_NONE = 0_c_int
     integer(c_int), parameter :: TIMER_ID = 1_c_int
     integer(c_int), parameter :: TIMER_MS = 250_c_int
@@ -643,6 +650,26 @@ module thermotwin_win32_gui
     character(len=8) :: alarm_log_state(ALARM_LOG_N) = ""
     logical :: native_renderer_ready = .false.
 
+    ! Scenario selector and live playback state
+    integer, parameter :: N_SCENARIOS = 9
+    character(len=20), parameter :: SCN_LABEL(N_SCENARIOS) = [character(len=20) :: &
+        "Load Step           ", "Cloud Ramp          ", "Turbine Trip        ", &
+        "UFLS Cascade        ", "LFSM-O Overfreq     ", "Surge Ramp          ", &
+        "Combined Cycle      ", "Fleet Dispatch      ", "Market Replay       "]
+    character(len=64), parameter :: SCN_PATH(N_SCENARIOS) = [character(len=64) :: &
+        "cases/scenarios/load_step.scn                                   ", &
+        "cases/scenarios/cloud_ramp.scn                                  ", &
+        "cases/scenarios/turbine_trip.scn                                ", &
+        "cases/scenarios/ufls_cascade.scn                                ", &
+        "cases/scenarios/overfrequency_lfsmo.scn                         ", &
+        "cases/scenarios/surge_ramp.scn                                  ", &
+        "cases/scenarios/combined_cycle.scn                              ", &
+        "cases/scenarios/fleet_dispatch.scn                              ", &
+        "cases/scenarios/market_replay.scn                               "]
+    integer :: scn_selected = 1
+    logical :: scn_playing = .false.
+    type(Scenario) :: scn_active
+
 contains
 
     subroutine run_gui()
@@ -759,6 +786,7 @@ contains
             call refresh_model(grid)
             call append_history(grid)
             call update_alarm_workflow()
+            call opcua_start(4840)
             lres = SetTimer(hwnd, int(TIMER_ID, c_intptr_t), TIMER_MS, c_null_ptr)
             call log_debug("message: WM_CREATE complete")
             lres = 0_c_intptr_t
@@ -777,8 +805,17 @@ contains
             return
 
         case (WM_TIMER)
+            if (scn_playing) then
+                block
+                    logical :: scn_done
+                    call scenario_gui_tick(scn_active, grid, grid%elapsed_s, scn_done)
+                    if (scn_done) scn_playing = .false.
+                end block
+            end if
             call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
             call update_alarm_workflow()
+            call flush_opcua_tags()
+            call opcua_iterate()
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -825,6 +862,7 @@ contains
             call log_debug("message: WM_DESTROY")
             call save_hmi_config()
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
+            call opcua_stop()
             call destroy_fonts()
             if (native_renderer_ready) call hmi_native_shutdown()
             native_renderer_ready = .false.
@@ -889,7 +927,7 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - 330, layout_slider_y(6) + 72)
+        layout_button_y = min(layout_control_bottom - 432, layout_slider_y(6) + 72)
         layout_footer_y = layout_control_bottom - 58
 
         layout_main_left = layout_control_left + layout_control_w + layout_gap
@@ -1020,6 +1058,29 @@ contains
             active_control = ID_NONE
         case (ID_MARKET_REPLAY)
             call toggle_market_replay()
+            active_control = ID_NONE
+        case (ID_SCN_PREV)
+            scn_selected = mod(scn_selected - 2 + N_SCENARIOS, N_SCENARIOS) + 1
+            scn_playing = .false.
+            active_control = ID_NONE
+        case (ID_SCN_NEXT)
+            scn_selected = mod(scn_selected, N_SCENARIOS) + 1
+            scn_playing = .false.
+            active_control = ID_NONE
+        case (ID_SCN_RUN_STOP)
+            if (scn_playing) then
+                scn_playing = .false.
+            else
+                block
+                    logical :: scn_ok
+                    call scenario_load(trim(adjustl(SCN_PATH(scn_selected))), scn_active, scn_ok)
+                    if (scn_ok) then
+                        call engine_init(grid)
+                        call reset_alarm_workflow()
+                        scn_playing = .true.
+                    end if
+                end block
+            end if
             active_control = ID_NONE
         case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
@@ -1375,6 +1436,13 @@ contains
         if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_MARKET_REPLAY
         by = layout_button_y + 230
         if (point_in_rect(x, y, bx1, by, bx3, by + bh)) control_id = ID_RESET
+        ! Scenario name box: click cycles to next scenario (when not playing)
+        by = layout_button_y + 300
+        if (point_in_rect(x, y, bx1, by, bx3, by + bh) .and. .not. scn_playing) &
+            control_id = ID_SCN_NEXT
+        by = layout_button_y + 346
+        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_SCN_PREV
+        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_SCN_RUN_STOP
     end function hit_test_control
 
     function hit_test_nav(x, y) result(screen_id)
@@ -1679,9 +1747,10 @@ contains
     subroutine draw_control_panel(hdc)
         type(c_ptr), value :: hdc
         character(len=40) :: value
-        character(len=64) :: line, button_text
+        character(len=64) :: line, button_text, scn_txt
         integer :: left, top, right, bottom, title_x, panel_top, panel_bottom, row_gap
         integer :: bx1, bx2, bx3, by, btn_w, btn_h, btn_gap
+        real(dp) :: scn_prog
 
         left = layout_control_left
         top = layout_control_top
@@ -1812,7 +1881,38 @@ contains
         call draw_industrial_button(hdc, bx1, by, bx3, by + btn_h, &
             "RESET", COL_PANEL, .false.)
 
-        panel_top = layout_button_y + 290
+        ! Scenario playback selector
+        by = layout_button_y + 278
+        call fill_box(hdc, title_x, by, right - 24, by + 1, COL_BORDER_SOFT)
+        call draw_text(hdc, title_x, by + 6, "Scenario playback", COL_MUTED)
+
+        by = layout_button_y + 300
+        call fill_soft_box(hdc, bx1, by, bx3, by + btn_h, COL_PANEL_ALT)
+        call stroke_soft_box(hdc, bx1, by, bx3, by + btn_h, &
+            merge(COL_GREEN, COL_BORDER_SOFT, scn_playing), 1)
+        write(scn_txt, '(I0,"/",I0,"  ",A)') scn_selected, N_SCENARIOS, &
+            trim(SCN_LABEL(scn_selected))
+        call draw_text(hdc, bx1 + 10, by + 11, trim(adjustl(scn_txt)), &
+            merge(COL_GREEN, COL_INK, scn_playing))
+        if (scn_playing .and. scn_active%duration_s > 0.0_dp) then
+            scn_prog = min(1.0_dp, grid%elapsed_s / scn_active%duration_s)
+            call fill_box(hdc, bx1 + 1, by + btn_h - 4, &
+                bx1 + 1 + int(scn_prog * real(bx3 - bx1 - 2, dp)), &
+                by + btn_h - 1, COL_GREEN)
+        end if
+
+        by = layout_button_y + 346
+        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
+            "<< SCN", COL_PANEL, .false.)
+        if (scn_playing) then
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "STOP SCN", COL_RED, .true.)
+        else
+            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
+                "RUN SCN >>", COL_LIME, .false.)
+        end if
+
+        panel_top = layout_button_y + 392
         panel_bottom = layout_footer_y - 28
         if (panel_bottom - panel_top > 118) then
             row_gap = max(21, (panel_bottom - panel_top - 50) / 5)
@@ -3837,6 +3937,16 @@ contains
         ok = TextOutA(hdc, int(x, c_int), int(y, c_int), c_loc(c_text), int(n, c_int))
         if (c_associated(h_font_title)) old_font = SelectObject(hdc, old_font)
     end subroutine draw_title_text
+
+    !> Push every tag bus entry to the OPC UA address space.
+    !> Called once per timer tick; tags auto-register on first write.
+    subroutine flush_opcua_tags()
+        integer :: i
+        if (.not. opcua_active()) return
+        do i = 1, tag_count()
+            call opcua_write(trim(tag_name_at(i)), tag_value_at(i), trim(tag_units_at(i)))
+        end do
+    end subroutine flush_opcua_tags
 
     subroutine reset_debug_log()
         integer :: unit, ios

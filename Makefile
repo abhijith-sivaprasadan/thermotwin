@@ -33,7 +33,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver off_design hrsg steam_cycle \
         tag_bus engine_state market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics engine_core \
-        scenario_runner
+        scenario_runner opcua_bridge
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
 TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
@@ -45,8 +45,12 @@ GUI_DEBUG_EXE := thermotwin-gui-debug.exe
 GUI_ICON := gui/app_icon.ico
 GUI_RES := $(BUILD)/gui_icon.res
 GUI_NATIVE_OBJ := $(BUILD)/hmi_native_draw.o
+OPCUA_OBJ := $(BUILD)/open62541.o $(BUILD)/opcua_server.o
 
-.PHONY: all tests check debug run gui gui-debug clean
+OPCUA_VER := v1.5.4
+OPCUA_URL := https://github.com/open62541/open62541/releases/download/$(OPCUA_VER)
+
+.PHONY: all tests check debug run gui gui-debug clean download-opcua
 .SECONDEXPANSION:
 
 all: $(EXE)
@@ -101,6 +105,7 @@ $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.
                                   $(BUILD)/fleet_dispatch.o $(BUILD)/market_data.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
+$(BUILD)/opcua_bridge.o:         $(BUILD)/precision_kinds.o
 
 $(EXE): $(OBJS) $(BUILD)/main.o
 	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/main.o -o $@
@@ -131,13 +136,24 @@ gui: $(GUI_EXE)
 $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
 
-$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_NATIVE_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32
+# open62541 amalgam — compiled once with -O1 (full optimisation is slow)
+$(BUILD)/open62541.o: gui/open62541.c | $(BUILD)
+	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@ 2>/dev/null
+
+# OPC UA server C wrapper
+$(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)
+	gcc -O2 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
+
+$(BUILD)/opcua_bridge.o: $(SRC)/engine/opcua_bridge.f90 | $(BUILD)
+	$(FC) $(FFLAGS) -c $< -o $@
+
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 gui-debug: $(GUI_DEBUG_EXE)
 
-$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_NATIVE_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 $(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
 	windres $< -O coff -o $@
@@ -147,3 +163,10 @@ $(GUI_ICON): scripts/generate_gui_icon.py
 
 clean:
 	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)
+
+download-opcua:
+	curl -L $(OPCUA_URL)/open62541.c -o gui/open62541.c
+	curl -L $(OPCUA_URL)/open62541.h -o gui/open62541.h
+	sed -i 's|^#define UA_ARCHITECTURE_POSIX|/* #undef UA_ARCHITECTURE_POSIX */|' gui/open62541.h
+	sed -i 's|^\/\* #undef UA_ARCHITECTURE_WIN32 \*\/|#define UA_ARCHITECTURE_WIN32|' gui/open62541.h
+	sed -i 's|^#define UA_ENABLE_ENCRYPTION_MBEDTLS|/* #undef UA_ENABLE_ENCRYPTION_MBEDTLS */|' gui/open62541.h
