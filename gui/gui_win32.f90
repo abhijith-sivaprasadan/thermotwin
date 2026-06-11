@@ -2157,6 +2157,7 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
         integer :: ix, iw, top_y, map_w, side_x, side_w, row_y
+        integer :: map_h, ts_h, ts_y
         character(len=96) :: subtitle, value
         integer(c_int) :: surge_color
 
@@ -2170,8 +2171,16 @@ contains
         map_w = max(520, int(0.58_dp * real(iw, dp)))
         side_x = ix + map_w + 18
         side_w = max(260, iw - map_w - 18)
-        call draw_section_title_width(hdc, ix, top_y + 76, "Compressor operating map", map_w)
-        call draw_gt_map(hdc, ix, top_y + 104, map_w, max(260, height - 230))
+
+        ! Split left panel: compressor map (top ~65%) + Brayton T-s (bottom ~35%)
+        ts_h  = max(80, min(150, height / 4))
+        map_h = max(220, height - 250 - ts_h)
+        ts_y  = top_y + 104 + map_h + 8
+
+        call draw_section_title_width(hdc, ix, top_y + 76, "Compressor map  (iso-speed + surge limit)", map_w)
+        call draw_gt_map(hdc, ix, top_y + 104, map_w, map_h)
+        call draw_section_title_width(hdc, ix, ts_y, "Brayton T-s  (state points 1-4)", map_w)
+        call draw_brayton_ts(hdc, ix, ts_y + 26, map_w, ts_h)
 
         call draw_section_title_width(hdc, side_x, top_y + 76, "Station values", side_w)
         surge_color = merge(COL_RED, merge(COL_AMBER, COL_GREEN, grid%surge_margin_pct < 12.0_dp), &
@@ -2206,9 +2215,11 @@ contains
     subroutine draw_gt_map(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
-        integer :: gx, gy, gw, gh, i, px, py, sx1, sy1, sx2, sy2
-        real(dp) :: f, pr
+        integer :: gx, gy, gw, gh, i, px, py, pxp, pyp, is, smx
+        real(dp) :: f, pr, pr_run, n, f_surge_at_PR
         character(len=64) :: line
+        real(dp), parameter :: N_ISO(3)   = [0.80_dp, 0.90_dp, 1.00_dp]
+        integer(c_int), parameter :: COL_ISO(3) = [COL_DIM, COL_MUTED, COL_CYAN]
 
         gx = x + 58
         gy = y + 28
@@ -2222,36 +2233,158 @@ contains
             call draw_line(hdc, gx, gy + i * gh / 5, gx + gw, gy + i * gh / 5, COL_BG_GRID, 1)
         end do
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
-        call draw_text(hdc, gx, y + 8, "Corrected mass flow fraction", COL_MUTED)
-        call draw_text(hdc, x + 8, gy + gh / 2, "PR", COL_MUTED)
 
-        do i = 0, 39
-            f = 0.35_dp + real(i, dp) * 0.65_dp / 39.0_dp
-            pr = 7.0_dp + 11.0_dp * f ** 0.72_dp
-            px = gx + int((f - 0.35_dp) / 0.65_dp * real(gw, dp))
-            py = gy + gh - int((pr - 6.0_dp) / 14.0_dp * real(gh, dp))
-            if (i > 0) call draw_line(hdc, sx1, sy1, px, py, COL_CYAN, 2)
-            sx1 = px
-            sy1 = py
+        ! Axis labels and tick values
+        call draw_text(hdc, gx + gw / 2 - 60, y + 8, "Corrected mass flow fraction", COL_MUTED)
+        call draw_text(hdc, x + 6, gy + gh / 2 - 6, "PR", COL_MUTED)
+        call draw_text(hdc, gx - 4,          gy + gh + 2, "0.35", COL_DIM)
+        call draw_text(hdc, gx + gw / 2 - 8, gy + gh + 2, "0.68", COL_DIM)
+        call draw_text(hdc, gx + gw - 10,    gy + gh + 2, "1.0",  COL_DIM)
+        call draw_text(hdc, x + 8, gy - 7,         "20", COL_DIM)
+        call draw_text(hdc, x + 8, gy + gh / 2 - 7,"13", COL_DIM)
+        call draw_text(hdc, x + 8, gy + gh - 7,    "6",  COL_DIM)
+
+        ! Iso-speed lines: 80%, 90%, 100%.  PR scales as N^2 (fan law) from the running line.
+        do is = 1, 3
+            n = N_ISO(is)
+            pxp = -1; pyp = -1
+            do i = 0, 39
+                f    = 0.35_dp + real(i, dp) * (n - 0.35_dp) / 39.0_dp
+                pr_run = 7.0_dp + 11.0_dp * f ** 0.72_dp
+                pr   = max(6.5_dp, (pr_run - 6.0_dp) * n * n + 6.0_dp)
+                px   = gx + int((f - 0.35_dp) / 0.65_dp * real(gw, dp))
+                py   = gy + gh - int((clamp_real(pr, 6.0_dp, 20.0_dp) - 6.0_dp) / 14.0_dp * real(gh, dp))
+                if (i > 0 .and. pxp >= 0) &
+                    call draw_line(hdc, pxp, pyp, px, py, COL_ISO(is), merge(2, 1, is == 3))
+                pxp = px; pyp = py
+            end do
+            write(line, '(I0,"% N")') nint(n * 100.0_dp)
+            call draw_text(hdc, px + 3, py - 8, trim(adjustl(line)), COL_ISO(is))
         end do
+
+        ! Surge limit line
+        pxp = -1; pyp = -1
         do i = 0, 39
-            f = 0.35_dp + real(i, dp) * 0.65_dp / 39.0_dp
+            f  = 0.35_dp + real(i, dp) * 0.65_dp / 39.0_dp
             pr = 8.5_dp + 13.0_dp * f ** 0.85_dp
             px = gx + int((f - 0.35_dp) / 0.65_dp * real(gw, dp))
-            py = gy + gh - int((pr - 6.0_dp) / 14.0_dp * real(gh, dp))
-            if (i > 0) call draw_line(hdc, sx2, sy2, px, py, COL_RED, 2)
-            sx2 = px
-            sy2 = py
+            py = gy + gh - int((clamp_real(pr, 6.0_dp, 20.0_dp) - 6.0_dp) / 14.0_dp * real(gh, dp))
+            if (i > 0 .and. pxp >= 0) call draw_line(hdc, pxp, pyp, px, py, COL_RED, 2)
+            pxp = px; pyp = py
         end do
+        call draw_text(hdc, gx + gw - 88, gy + 14, "surge limit", COL_RED)
+
+        ! Operating point dot
         px = gx + int((clamp_real(grid%flow_frac, 0.35_dp, 1.0_dp) - 0.35_dp) / 0.65_dp * real(gw, dp))
         py = gy + gh - int((clamp_real(grid%PR_op, 6.0_dp, 20.0_dp) - 6.0_dp) / 14.0_dp * real(gh, dp))
         call hmi_fill_pie(hdc, int(px, c_int), int(py, c_int), 8_c_int, 0.0_c_float, 360.0_c_float, COL_LIME)
         call hmi_fill_pie(hdc, int(px, c_int), int(py, c_int), 4_c_int, 0.0_c_float, 360.0_c_float, COL_BG)
+
+        ! Surge margin arrow: horizontal line from OP toward surge boundary at same PR
+        if (grid%PR_op > 8.6_dp) then
+            f_surge_at_PR = ((clamp_real(grid%PR_op, 8.6_dp, 21.4_dp) - 8.5_dp) / 13.0_dp) ** (1.0_dp / 0.85_dp)
+        else
+            f_surge_at_PR = 0.35_dp
+        end if
+        smx = gx + int((clamp_real(f_surge_at_PR, 0.35_dp, 1.0_dp) - 0.35_dp) / 0.65_dp * real(gw, dp))
+        call draw_line(hdc, smx, py, px, py, COL_AMBER, 1)
+        call draw_line(hdc, smx, py, smx + 7, py - 4, COL_AMBER, 1)
+        call draw_line(hdc, smx, py, smx + 7, py + 4, COL_AMBER, 1)
+        write(line, '(F4.1,"% SM")') grid%surge_margin_pct
+        call draw_text(hdc, (px + smx) / 2 - 14, py - 14, trim(adjustl(line)), COL_AMBER)
+
+        ! OP readout
         write(line, '("OP  flow ",F5.1,"%  PR ",F5.2)') 100.0_dp * grid%flow_frac, grid%PR_op
         call draw_text(hdc, gx + 12, gy + gh - 28, trim(adjustl(line)), COL_LIME)
-        call draw_text(hdc, gx + gw - 170, gy + 14, "surge line", COL_RED)
-        call draw_text(hdc, gx + gw - 170, gy + 38, "running line", COL_CYAN)
     end subroutine draw_gt_map
+
+    ! Brayton cycle T-s diagram using live engine state points.
+    ! Plots the four state points: 1=comp inlet, 2=comp outlet, 3=turbine inlet, 4=exhaust.
+    subroutine draw_brayton_ts(hdc, x, y, width, height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height
+        real(dp), parameter :: GAMMA   = 1.4_dp
+        real(dp), parameter :: CP      = 1.005_dp   ! kJ/kgK
+        real(dp), parameter :: R_AIR   = 0.287_dp   ! kJ/kgK
+        real(dp), parameter :: ETA_C   = 0.82_dp    ! compressor isentropic efficiency
+        real(dp) :: T1, T2, T3, T4, s1, s2, s3, s4
+        real(dp) :: T_min, T_max, s_min, s_max
+        integer :: gx, gy, gw, gh
+        integer :: px1, py1, px2, py2, px3, py3, px4, py4
+        character(len=24) :: lbl
+
+        if (height < 40 .or. width < 80) return
+
+        ! Compute state points from live engine values
+        T1 = grid%ambient_C + 273.15_dp
+        T2 = T1 * (1.0_dp + (grid%PR_op ** ((GAMMA - 1.0_dp) / GAMMA) - 1.0_dp) / ETA_C)
+        T3 = max(grid%TIT_actual_K, T2 + 100.0_dp)
+        T4 = max(grid%exhaust_K, T1 + 10.0_dp)
+
+        s1 = 0.0_dp
+        s2 = s1 + CP * log(T2 / T1) - R_AIR * log(max(grid%PR_op, 1.01_dp))
+        s3 = s2 + CP * log(T3 / T2)
+        s4 = s3 + CP * log(T4 / T3) + R_AIR * log(max(grid%PR_op, 1.01_dp))
+
+        T_min = T1 - 60.0_dp
+        T_max = T3 + 80.0_dp
+        s_min = min(s2 - 0.06_dp, -0.02_dp)
+        s_max = max(s4, s3) + 0.08_dp
+
+        gx = x + 52
+        gy = y + 4
+        gw = max(40, width - 60)
+        gh = max(28, height - 14)
+
+        call fill_soft_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
+        call stroke_soft_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
+        call fill_box(hdc, gx, gy, gx + gw, gy + gh, COL_BG)
+        call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
+
+        ! Map state points to pixels
+        px1 = gx + nint((s1 - s_min) / (s_max - s_min) * real(gw, dp))
+        py1 = gy + nint((1.0_dp - (T1 - T_min) / (T_max - T_min)) * real(gh, dp))
+        px2 = gx + nint((s2 - s_min) / (s_max - s_min) * real(gw, dp))
+        py2 = gy + nint((1.0_dp - (T2 - T_min) / (T_max - T_min)) * real(gh, dp))
+        px3 = gx + nint((s3 - s_min) / (s_max - s_min) * real(gw, dp))
+        py3 = gy + nint((1.0_dp - (T3 - T_min) / (T_max - T_min)) * real(gh, dp))
+        px4 = gx + nint((s4 - s_min) / (s_max - s_min) * real(gw, dp))
+        py4 = gy + nint((1.0_dp - (T4 - T_min) / (T_max - T_min)) * real(gh, dp))
+        ! Clamp to plot area
+        px1=max(gx,min(gx+gw,px1)); py1=max(gy,min(gy+gh,py1))
+        px2=max(gx,min(gx+gw,px2)); py2=max(gy,min(gy+gh,py2))
+        px3=max(gx,min(gx+gw,px3)); py3=max(gy,min(gy+gh,py3))
+        px4=max(gx,min(gx+gw,px4)); py4=max(gy,min(gy+gh,py4))
+
+        ! Process lines: 1→2 compression, 2→3 combustion, 3→4 expansion
+        call draw_line(hdc, px1, py1, px2, py2, COL_CYAN, 2)
+        call draw_line(hdc, px2, py2, px3, py3, COL_RED,  2)
+        call draw_line(hdc, px3, py3, px4, py4, COL_LIME, 2)
+
+        ! State point dots
+        call fill_box(hdc, px1-4, py1-4, px1+4, py1+4, COL_INK)
+        call fill_box(hdc, px2-4, py2-4, px2+4, py2+4, COL_CYAN)
+        call fill_box(hdc, px3-4, py3-4, px3+4, py3+4, COL_RED)
+        call fill_box(hdc, px4-4, py4-4, px4+4, py4+4, COL_LIME)
+
+        ! State labels with temperature
+        write(lbl, '("1 ",I0,"K")') nint(T1)
+        call draw_text(hdc, px1 - 6,  py1 + 4,  adjustl(lbl), COL_INK)
+        write(lbl, '("2 ",I0,"K")') nint(T2)
+        call draw_text(hdc, px2 + 5,  py2 - 12, adjustl(lbl), COL_CYAN)
+        write(lbl, '("3 ",I0,"K")') nint(T3)
+        call draw_text(hdc, px3 - 12, py3 - 12, adjustl(lbl), COL_RED)
+        write(lbl, '("4 ",I0,"K")') nint(T4)
+        call draw_text(hdc, px4 + 5,  py4 + 4,  adjustl(lbl), COL_LIME)
+
+        ! Y-axis range labels (K)
+        write(lbl, '(I0,"K")') nint(T_min)
+        call draw_text(hdc, x + 4, gy + gh - 8, adjustl(lbl), COL_DIM)
+        write(lbl, '(I0,"K")') nint(T_max - 80.0_dp)
+        call draw_text(hdc, x + 4, gy + 2, adjustl(lbl), COL_DIM)
+        call draw_text(hdc, x + 4, gy + gh / 2 - 6, "T", COL_MUTED)
+        call draw_text(hdc, gx + gw/2 - 22, gy + gh + 2, "s (kJ/kgK)", COL_MUTED)
+    end subroutine draw_brayton_ts
 
     subroutine draw_combined_cycle_screen(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
