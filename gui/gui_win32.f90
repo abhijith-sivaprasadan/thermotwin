@@ -1737,7 +1737,8 @@ contains
                         "Live traces  (Hz | demand MW | turbine %)", tw)
                     call draw_history_traces(hdc, inner_x, ly + 26, tw, lh)
                     call draw_section_title_width(hdc, fx2, ly, "Power flow", fw2)
-                    call draw_power_flow(hdc, fx2, ly + 26, fw2, lh)
+                    call draw_power_flow(hdc, fx2, ly + 26, fw2, lh * 6 / 10)
+                    call draw_heat_rate_chart(hdc, fx2, ly + 26 + lh * 6 / 10, fw2, lh * 4 / 10)
                 end block
             end block
         end block
@@ -3757,6 +3758,88 @@ contains
         call draw_line(hdc, x + node_w, row3 + node_h / 2, grid_x, grid_y + grid_h - 14, COL_BLUE, 2)
         call draw_line(hdc, grid_x + grid_w, center_y, load_x, row2 + node_h / 2, COL_RED, 2)
     end subroutine draw_power_flow
+
+    ! Heat-rate vs load operating curve — fills bottom-right of the F1 overview.
+    ! Shows a pre-computed part-load HR curve, ISO design-point and warning
+    ! threshold lines, and a live coloured dot at the current operating point.
+    subroutine draw_heat_rate_chart(hdc, x, y, width, height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width, height
+        character(len=48) :: lbl
+        ! Typical simple-cycle GT part-load heat rate (5 control points, load 30..100 %)
+        real(dp), parameter :: HR_DESIGN  = 9200.0_dp   ! kJ/kWh at rated load
+        real(dp), parameter :: HR_YMIN    = 8500.0_dp
+        real(dp), parameter :: HR_YMAX    = 14500.0_dp
+        real(dp), parameter :: LD_PTS(5)  = [30.0_dp, 50.0_dp, 70.0_dp, 85.0_dp, 100.0_dp]
+        real(dp), parameter :: HR_PTS(5)  = [13800.0_dp, 12000.0_dp, 10500.0_dp, 9700.0_dp, HR_DESIGN]
+        integer :: gx, gy, gw, gh, i, px, py, px2, py2, dot_col
+        real(dp) :: load_pct, hr_live, fx, fy_r
+
+        if (height < 40 .or. width < 60) return
+
+        gx = x + 4
+        gy = y + 16
+        gw = max(40, width - 8)
+        gh = max(24, height - 20)
+
+        ! Title + live value on the same row
+        write(lbl, '("HR vs load | ",F6.0," kJ/kWh")') grid%heat_rate_kJ_kWh
+        if (grid%heat_rate_kJ_kWh < HR_DESIGN * 1.05_dp) then
+            dot_col = COL_GREEN
+        else if (grid%heat_rate_kJ_kWh < HR_DESIGN * 1.15_dp) then
+            dot_col = COL_AMBER
+        else
+            dot_col = COL_RED
+        end if
+        call draw_text(hdc, gx, y + 2, adjustl(lbl), dot_col)
+
+        call fill_soft_box(hdc, gx, gy, gx + gw, gy + gh, COL_PANEL_ALT)
+        call stroke_soft_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
+
+        ! Draw three reference lines (dashed): design, +8%, +20%
+        call draw_hr_hline(hdc, gx, gy, gw, gh, HR_YMIN, HR_YMAX, HR_DESIGN, COL_GREEN)
+        call draw_hr_hline(hdc, gx, gy, gw, gh, HR_YMIN, HR_YMAX, HR_DESIGN * 1.08_dp, COL_AMBER)
+        call draw_hr_hline(hdc, gx, gy, gw, gh, HR_YMIN, HR_YMAX, HR_DESIGN * 1.20_dp, COL_RED)
+
+        ! Part-load curve polyline
+        do i = 1, 4
+            fx   = real(gx, dp) + (LD_PTS(i)     - 30.0_dp) / 70.0_dp * real(gw, dp)
+            fy_r = real(gy + gh, dp) - (HR_PTS(i)     - HR_YMIN) / (HR_YMAX - HR_YMIN) * real(gh, dp)
+            px  = nint(fx); py  = max(gy, min(gy + gh, nint(fy_r)))
+            fx   = real(gx, dp) + (LD_PTS(i + 1) - 30.0_dp) / 70.0_dp * real(gw, dp)
+            fy_r = real(gy + gh, dp) - (HR_PTS(i + 1) - HR_YMIN) / (HR_YMAX - HR_YMIN) * real(gh, dp)
+            px2 = nint(fx); py2 = max(gy, min(gy + gh, nint(fy_r)))
+            call draw_line(hdc, px, py, px2, py2, COL_BORDER, 1)
+        end do
+
+        ! Live operating dot
+        load_pct = 100.0_dp * grid%plant_power_MW / max(grid%plant_capacity_MW, 1.0e-9_dp)
+        hr_live  = max(HR_YMIN, min(HR_YMAX, grid%heat_rate_kJ_kWh))
+        load_pct = max(30.0_dp, min(100.0_dp, load_pct))
+        fx   = real(gx, dp) + (load_pct - 30.0_dp) / 70.0_dp * real(gw, dp)
+        fy_r = real(gy + gh, dp) - (hr_live - HR_YMIN) / (HR_YMAX - HR_YMIN) * real(gh, dp)
+        px = nint(fx); py = max(gy, min(gy + gh, nint(fy_r)))
+        call fill_box(hdc, px - 5, py - 5, px + 5, py + 5, dot_col)
+        call stroke_box(hdc, px - 5, py - 5, px + 5, py + 5, COL_PANEL_ALT, 1)
+
+        ! Axis labels
+        call draw_text(hdc, gx,             gy + gh + 2, "30%",  COL_MUTED)
+        call draw_text(hdc, gx + gw/2 - 8,  gy + gh + 2, "65%",  COL_MUTED)
+        call draw_text(hdc, gx + gw - 22,   gy + gh + 2, "100%", COL_MUTED)
+    end subroutine draw_heat_rate_chart
+
+    ! Helper: draw a dashed horizontal line at heat-rate value hr_val inside chart axes.
+    subroutine draw_hr_hline(hdc, gx, gy, gw, gh, hr_min, hr_max, hr_val, col)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: gx, gy, gw, gh, col
+        real(dp), intent(in) :: hr_min, hr_max, hr_val
+        integer :: py, i
+        py = nint(real(gy + gh, dp) - (hr_val - hr_min) / (hr_max - hr_min) * real(gh, dp))
+        if (py < gy .or. py > gy + gh) return
+        do i = gx + 2, gx + gw - 4, 8
+            call draw_line(hdc, i, py, min(i + 4, gx + gw - 2), py, col, 1)
+        end do
+    end subroutine draw_hr_hline
 
     subroutine draw_node(hdc, x, y, width, height, label, value, color)
         type(c_ptr), value :: hdc
