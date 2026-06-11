@@ -33,7 +33,11 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver off_design hrsg steam_cycle \
         tag_bus engine_state market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics engine_core \
-        scenario_runner opcua_bridge
+        scenario_runner
+
+# opcua_bridge is GUI-only: its C backend (open62541) is not linked into the
+# CLI or tests.  Compile separately and include only in GUI link targets.
+OPCUA_F_OBJ := $(BUILD)/opcua_bridge.o
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
 TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
@@ -147,13 +151,13 @@ $(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)
 $(BUILD)/opcua_bridge.o: $(SRC)/engine/opcua_bridge.f90 | $(BUILD)
 	$(FC) $(FFLAGS) -c $< -o $@
 
-$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 gui-debug: $(GUI_DEBUG_EXE)
 
-$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 $(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
 	windres $< -O coff -o $@
