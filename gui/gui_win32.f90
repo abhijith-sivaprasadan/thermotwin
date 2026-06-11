@@ -1717,14 +1717,14 @@ contains
 
                 ! --- ROI panel ---
                 call draw_section_title_width(hdc, inner_x, fy + 80, "ROI and thermodynamic economics", inner_w)
-                call draw_roi_panel(hdc, inner_x, fy + 102, inner_w, 108)
+                call draw_roi_panel(hdc, inner_x, fy + 102, inner_w, 90)
 
                 ! --- Live traces + power flow ---
                 block
                     integer :: ly, lh, lg, tw, fx2, fw2
-                    ly = fy + 80 + 122
+                    ly = fy + 80 + 118
                     if (ly > y0 + h - 170) ly = y0 + h - 170
-                    if (ly < fy + 188) ly = fy + 188
+                    if (ly < fy + 198) ly = fy + 198
                     lh = y0 + h - ly - 18
                     lh = min(max(150, lh), 340)
                     if (ly + lh > y0 + h - 12) lh = max(120, y0 + h - ly - 12)
@@ -2812,7 +2812,7 @@ contains
             write(value, '("P$",F5.0," gas$",F4.1," CO2$",F4.0)') &
                 grid%power_price_usd_mwh, grid%fuel_price_usd_gj, grid%carbon_price_usd_t
             call draw_popup_line(hdc, x, row_y + 112, "Market inputs", trim(adjustl(value)), COL_MUTED)
-            call draw_roi_panel(hdc, x + 18, y + h - 126, w - 36, 108)
+            call draw_roi_panel(hdc, x + 18, y + h - 110, w - 36, 90)
         case (FP_BESS)
             write(value, '(F5.1,"%  ",F5.1," MWh")') grid%battery_soc_pct, grid%battery_energy_MWh
             call draw_popup_line(hdc, x, row_y, "Energy state", trim(adjustl(value)), COL_BLUE)
@@ -3485,93 +3485,106 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
         character(len=160) :: line
-        real(dp) :: net_usd_mwh, capacity_pct
+        real(dp) :: net_usd_mwh, capacity_pct, plant_eta_pct
         integer(c_int) :: margin_color
+        integer :: c1, c2, c3, c4, c5, c6, cw  ! six equal columns
 
         if (height < 1) return
-        net_usd_mwh = grid%value_stack_usd_h / max(grid%demand_MW, 1.0_dp)
-        capacity_pct = 100.0_dp * grid%plant_power_MW / max(grid%plant_capacity_MW, 1.0e-9_dp)
-        margin_color = merge(COL_GREEN, COL_RED, grid%value_stack_usd_h >= 0.0_dp)
+        net_usd_mwh   = grid%value_stack_usd_h / max(grid%demand_MW, 1.0_dp)
+        capacity_pct  = 100.0_dp * grid%plant_power_MW / max(grid%plant_capacity_MW, 1.0e-9_dp)
+        plant_eta_pct = grid%plant_efficiency * 100.0_dp
+        margin_color  = merge(COL_GREEN, COL_RED, grid%value_stack_usd_h >= 0.0_dp)
 
         call fill_soft_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
         call stroke_soft_box(hdc, x, y, x + width, y + height, COL_BORDER_SOFT, 1)
-        call draw_line(hdc, x + width / 4, y + 8, x + width / 4, y + height - 8, COL_BORDER_SOFT, 1)
-        call draw_line(hdc, x + width / 2, y + 8, x + width / 2, y + height - 8, COL_BORDER_SOFT, 1)
-        call draw_line(hdc, x + 3 * width / 4, y + 8, x + 3 * width / 4, y + height - 8, COL_BORDER_SOFT, 1)
 
-        call draw_text(hdc, x + 12, y + 10, "Revenue", COL_MUTED)
+        ! Six equal columns for the top two data rows
+        cw = (width - 12) / 6
+        c1 = x + 12
+        c2 = x + 12 + cw
+        c3 = x + 12 + 2 * cw
+        c4 = x + 12 + 3 * cw
+        c5 = x + 12 + 4 * cw
+        c6 = x + 12 + 5 * cw
+        call draw_line(hdc, c2 - 6, y + 6, c2 - 6, y + height - 6, COL_BORDER_SOFT, 1)
+        call draw_line(hdc, c3 - 6, y + 6, c3 - 6, y + height - 6, COL_BORDER_SOFT, 1)
+        call draw_line(hdc, c4 - 6, y + 6, c4 - 6, y + height - 6, COL_BORDER_SOFT, 1)
+        call draw_line(hdc, c5 - 6, y + 6, c5 - 6, y + height - 6, COL_BORDER_SOFT, 1)
+        call draw_line(hdc, c6 - 6, y + 6, c6 - 6, y + height - 6, COL_BORDER_SOFT, 1)
+
+        ! Row A — labels
+        call draw_text(hdc, c1, y + 8,  "Revenue",     COL_MUTED)
+        call draw_text(hdc, c2, y + 8,  "Fuel+carbon", COL_MUTED)
+        call draw_text(hdc, c3, y + 8,  "Value stack", COL_MUTED)
+        call draw_text(hdc, c4, y + 8,  "Heat rate",   COL_MUTED)
+        call draw_text(hdc, c5, y + 8,  "Plant eta",   COL_MUTED)
+        call draw_text(hdc, c6, y + 8,  "CO2 rate",    COL_MUTED)
+
+        ! Row B — values
         write(line, '("$",F7.0,"/h")') grid%revenue_usd_h
-        call draw_text(hdc, x + 12, y + 34, adjustl(line), COL_INK)
-
-        call draw_text(hdc, x + width / 4 + 12, y + 10, "Fuel + carbon", COL_MUTED)
+        call draw_text(hdc, c1, y + 26, adjustl(line), COL_INK)
         write(line, '("$",F7.0,"/h")') grid%fuel_cost_usd_h + grid%imbalance_penalty_usd_h + grid%co2_cost_usd_h
-        call draw_text(hdc, x + width / 4 + 12, y + 34, adjustl(line), COL_AMBER)
+        call draw_text(hdc, c2, y + 26, adjustl(line), COL_AMBER)
+        write(line, '("$",F5.1,"/MWh")') net_usd_mwh
+        call draw_text(hdc, c3, y + 26, adjustl(line), margin_color)
+        write(line, '(F6.0," kJ/kWh")') grid%heat_rate_kJ_kWh
+        call draw_text(hdc, c4, y + 26, adjustl(line), &
+            merge(COL_GREEN, COL_AMBER, grid%heat_rate_kJ_kWh < 9500.0_dp))
+        write(line, '(F5.1," %")') plant_eta_pct
+        call draw_text(hdc, c5, y + 26, adjustl(line), &
+            merge(COL_GREEN, COL_AMBER, plant_eta_pct > 38.0_dp))
+        write(line, '(F5.2," kg/s")') grid%CO2_rate_kg_s
+        call draw_text(hdc, c6, y + 26, adjustl(line), &
+            merge(COL_AMBER, COL_MUTED, grid%CO2_rate_kg_s > 10.0_dp))
 
-        call draw_text(hdc, x + width / 2 + 12, y + 10, "Value stack", COL_MUTED)
-        write(line, '("$",F6.1,"/MWh")') net_usd_mwh
-        call draw_text(hdc, x + width / 2 + 12, y + 34, adjustl(line), margin_color)
+        ! Separator between rows B and C
+        call draw_line(hdc, x + 8, y + 46, x + width - 8, y + 46, COL_BORDER_SOFT, 1)
 
-        call draw_text(hdc, x + 3 * width / 4 + 12, y + 10, "Heat rate", COL_MUTED)
-        write(line, '(F7.0," kJ/kWh")') grid%heat_rate_kJ_kWh
-        call draw_text(hdc, x + 3 * width / 4 + 12, y + 34, adjustl(line), COL_INK)
-
+        ! Row C — four secondary physics metrics, half-width each pair
         if (grid%fleet_mode) then
-            write(line, '("GT1 ",F4.1,"/",F4.1,"  GT2 ",F4.1,"/",F4.1,"  CC1 ",F4.1,"/",F4.1," MW")') &
+            write(line, '("GT1 ",F4.1,"/",F4.1," MW  GT2 ",F4.1,"/",F4.1," MW")') &
                 grid%fleet_unit_actual_MW(FLEET_GT1), grid%fleet_unit_setpoint_MW(FLEET_GT1), &
-                grid%fleet_unit_actual_MW(FLEET_GT2), grid%fleet_unit_setpoint_MW(FLEET_GT2), &
-                grid%fleet_unit_actual_MW(FLEET_CC1), grid%fleet_unit_setpoint_MW(FLEET_CC1)
+                grid%fleet_unit_actual_MW(FLEET_GT2), grid%fleet_unit_setpoint_MW(FLEET_GT2)
+            call draw_text(hdc, c1, y + 54, adjustl(line), COL_MUTED)
+            write(line, '("CC1 ",F4.1,"/",F4.1," MW  LMP $",F4.0,"/MWh  inertia ",F4.0," MWs")') &
+                grid%fleet_unit_actual_MW(FLEET_CC1), grid%fleet_unit_setpoint_MW(FLEET_CC1), &
+                grid%fleet_lmp_usd_MWh, grid%fleet_inertia_MWs
+            call draw_text(hdc, c4, y + 54, adjustl(line), COL_MUTED)
         else if (grid%combined_cycle) then
-            write(line, '("Fuel heat ",F5.1," MWth  GT HR ",F7.0,"  plant eta ",F5.1,"%  load ",F5.1,"%")') &
-                grid%heat_input_MW, grid%gt_heat_rate_kJ_kWh, grid%plant_efficiency * 100.0_dp, capacity_pct
-        else
-            write(line, '("Fuel heat ",F5.1," MWth  Fuel ",F4.2," kg/s  GT load ",F5.1,"%")') &
+            write(line, '("Qin ",F5.1," MWth  m_f ",F4.2," kg/s  load ",F5.1," %")') &
                 grid%heat_input_MW, grid%fuel_flow_kg_s, capacity_pct
-        end if
-        call draw_text(hdc, x + 12, y + 60, adjustl(line), COL_MUTED)
-
-        if (grid%fleet_mode) then
-            write(line, '("Cost $/MWh GT1 ",F5.0,"  GT2 ",F5.0,"  CC1 ",F5.0,"  LMP ",F5.0)') &
-                grid%fleet_unit_cost_usd_MWh(FLEET_GT1), grid%fleet_unit_cost_usd_MWh(FLEET_GT2), &
-                grid%fleet_unit_cost_usd_MWh(FLEET_CC1), grid%fleet_lmp_usd_MWh
+            call draw_text(hdc, c1, y + 54, adjustl(line), COL_MUTED)
+            write(line, '("ST ",F4.1," MW  HRSG ",F5.1," MW  pinch ",F4.1," K  stack ",F4.0," K")') &
+                grid%steam_power_MW, grid%hrsg_recovered_heat_MW, grid%hrsg_pinch_K, grid%hrsg_stack_T_K
+            call draw_text(hdc, c4, y + 54, adjustl(line), COL_MUTED)
         else
-            write(line, '("Market P$",F4.0,"/MWh gas$",F4.1,"/GJ  BESS $",F5.0,"/h")') &
-                grid%power_price_usd_mwh, grid%fuel_price_usd_gj, grid%battery_value_usd_h
+            write(line, '("Qin ",F5.1," MWth  m_f ",F4.2," kg/s  load ",F5.1," %")') &
+                grid%heat_input_MW, grid%fuel_flow_kg_s, capacity_pct
+            call draw_text(hdc, c1, y + 54, adjustl(line), COL_MUTED)
+            write(line, '("P$ ",F4.0,"/MWh  gas ",F4.1,"/GJ  RES hdroom ",F4.1," MW")') &
+                grid%power_price_usd_mwh, grid%fuel_price_usd_gj, renewable_headroom_MW(grid)
+            call draw_text(hdc, c4, y + 54, adjustl(line), COL_MUTED)
         end if
-        call draw_text(hdc, x + 408, y + 60, adjustl(line), COL_MUTED)
 
+        ! Row D — dispatch recommendation (full width, cyan)
         if (grid%fleet_mode .and. grid%fleet_reserve_binding) then
-            line = "ED action: reserve constraint is binding; raise supply, restore unit, or lower demand"
+            line = "ED: reserve constraint binding — raise supply, restore unit, or lower demand"
         else if (grid%fleet_mode .and. grid%fuel_price_usd_gj > 12.0_dp) then
-            line = "ED action: high fuel price prioritizes RES/BESS before thermal MW"
+            line = "ED: high fuel price — RES/BESS priority before thermal MW"
         else if (grid%fleet_mode) then
-            line = "ED action: cheapest online unit carries base load, AGC follows ramp limits"
+            line = "ED: cheapest online unit on base load, AGC following ramp limits"
         else if (grid%imbalance_MW < -0.5_dp) then
-            line = "ROI action: restore RES headroom, discharge BESS, then raise turbine"
+            line = "AGC: deficit — restore RES headroom, discharge BESS, raise turbine"
         else if (grid%imbalance_MW > 0.5_dp) then
-            line = "ROI action: charge BESS, trim residual RES, then lower turbine"
+            line = "AGC: surplus — charge BESS, trim curtailed RES, lower turbine"
         else if (grid%fcr_hold .and. grid%bess_fcr_value_usd_h >= grid%bess_arbitrage_value_usd_h) then
-            line = "ROI action: hold BESS mid-SOC for FCR and imbalance value"
+            line = "ROI: BESS held mid-SOC for FCR regulation and imbalance value"
         else if (.not. grid%roi_dispatch) then
-            line = "ROI action: stability mode prioritizes Hz correction over curtailment cost"
+            line = "Stability mode: frequency correction prioritised over curtailment cost"
         else
-            line = "ROI action: capture surplus energy while keeping BESS reserve"
+            line = "ROI: capturing surplus energy while maintaining BESS frequency reserve"
         end if
-        call draw_text(hdc, x + 12, y + 84, adjustl(line), COL_CYAN)
-
-        if (grid%fleet_mode) then
-            write(line, '("Reserve ",F4.1,"/",F4.1," MW  P$",F4.0," gas$",F4.1,"  inertia ",F5.0," MWs")') &
-                grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW, grid%power_price_usd_mwh, &
-                grid%fuel_price_usd_gj, grid%fleet_inertia_MWs
-        else if (grid%combined_cycle) then
-            write(line, '("ST ",F4.1," MW  HRSG ",F5.1," MW  stack ",F5.0," K  pinch ",F4.1," K  cond ",F4.1," kPa")') &
-                grid%steam_power_MW, grid%hrsg_recovered_heat_MW, grid%hrsg_stack_T_K, &
-                grid%hrsg_pinch_K, grid%condenser_pressure_kPa
-        else
-            write(line, '("RES headroom ",F4.1," MW  reserve $",F4.0,"/h  curtail opp $",F5.0,"/h   CO2 ",F5.2," kg/s")') &
-                renewable_headroom_MW(grid), grid%renewable_reserve_value_usd_h, &
-                grid%renewable_curtail_cost_usd_h, grid%CO2_rate_kg_s
-        end if
-        call draw_text(hdc, x + 598, y + 84, adjustl(line), COL_MUTED)
+        call draw_text(hdc, c1, y + 72, adjustl(line), COL_CYAN)
     end subroutine draw_roi_panel
 
     subroutine draw_history_traces(hdc, x, y, width, height)
