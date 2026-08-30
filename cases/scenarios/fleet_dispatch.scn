@@ -1,25 +1,39 @@
-# Phase 4 fleet dispatch smoke test.
+# Fleet dispatch: merit-order unit commitment, H2 blend, trip recovery.
+# GT1 (30 MW) is expensive simple cycle; CC1 (45 MW combined) is cheapest.
+# At low fuel price GT1 sets the LMP; at high price BESS covers the gap.
 name     fleet_dispatch
-duration 8
+duration 30
 dt       0.25
 
-at 0.0 set fleet_mode 1
-at 0.0 set combined_cycle 1
-at 0.0 set auto_balance 0
-at 0.0 set demand_MW 70
-at 0.0 set renewable_MW 10
-at 0.0 set fuel_price_usd_gj 6
-at 0.0 set fleet_load_target_MW 60
+at 0.0   set fleet_mode 1
+at 0.0   set combined_cycle 1
+at 0.0   set auto_balance 0
+at 0.0   set demand_MW 70
+at 0.0   set renewable_MW 10
+at 0.0   set fuel_price_usd_gj 6
+at 0.0   set fleet_load_target_MW 60
 
-at 1.0 assert_above cc1_sp_MW 45
-at 1.0 assert_below gt1_sp_MW 1
-at 1.0 assert_above fleet_reserve_MW 5
+at 1.0   assert_above cc1_sp_MW 45                  # CC1 wins merit order
+at 1.0   assert_below gt1_sp_MW 1                   # GT1 idle at low fuel price
+at 1.0   assert_above fleet_reserve_MW 5
 
-at 2.0 set fuel_price_usd_gj 18
-at 2.0 set auto_balance 1
-at 2.0 set battery_soc_pct 70
-at 4.0 assert_above storage_request_MW 0.5
+# High fuel price: BESS ROI dispatch turns on
+at 2.0   set fuel_price_usd_gj 18
+at 2.0   set auto_balance 1
+at 2.0   set battery_soc_pct 70
+at 4.0   assert_above storage_request_MW 0.5         # BESS dispatching
 
-at 5.0 command trip_cc1
-at 5.5 assert_below cc1_online 0.5
-at 6.0 assert_below fleet_inertia_MWs 50
+# CC1 trip — GT1 + GT2 must fill the gap
+at 5.0   command trip_cc1
+at 5.5   assert_below cc1_online 0.5
+at 6.0   assert_below fleet_inertia_MWs 50           # inertia drops after CC1 loss
+at 7.0   assert_above BESS_primary_MW 0.5            # primary response active
+
+# H2 co-firing with fleet at part load
+at 10.0  command restore_fleet
+at 10.0  set fuel_price_usd_gj 10
+at 10.0  set h2_fraction_pct 15                      # 15 vol% H2 blend
+at 15.0  assert_below CO2_intensity_g_kWh 375.0      # H2 reduces fleet CO2
+
+at 20.0  set h2_fraction_pct 0
+at 22.0  assert_above CO2_intensity_g_kWh 375.0      # returns to NG baseline

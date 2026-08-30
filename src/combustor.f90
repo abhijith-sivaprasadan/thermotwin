@@ -4,18 +4,18 @@
 !>
 !> Energy balance (per unit air mass) including the fuel mass addition:
 !>
-!>     mdot_a*cp_a*T2 + mdot_f*eta_b*LHV = (mdot_a+mdot_f)*cp_g*T3
+!>     mdot_a*h_a(T2) + mdot_f*eta_b*LHV = (mdot_a+mdot_f)*h_g(T3)
 !>
 !> Dividing by mdot_a and writing f = mdot_f/mdot_a:
 !>
-!>     f = (cp_g*T3 - cp_a*T2) / (eta_b*LHV - cp_g*T3)
+!>     f = (h_g(T3) - h_a(T2)) / (eta_b*LHV - h_g(T3))
 !>
 !> This is the standard lean-combustion form and is more rigorous than the
 !> often-seen q = cp*(T3-T2) shortcut because it conserves the fuel mass that
 !> later flows through the turbine.
 module combustor
     use precision_kinds, only: dp
-    use fluid_properties, only: cp_air_at, cp_gas_at
+    use fluid_properties, only: h_air_sensible_J_kg, h_gas_sensible_J_kg
     use utilities, only: assert_positive, assert_in_range, safe_divide
     implicit none
     private
@@ -39,7 +39,7 @@ contains
         real(dp), intent(in)  :: eta_combustor, dP_fraction, LHV_J_kg
         real(dp), intent(out) :: P_out_Pa, fuel_air_ratio, q_in_per_air_J_kg
 
-        real(dp) :: cp_a, cp_g, numer, denom
+        real(dp) :: h_a, h_g, numer, denom
 
         call assert_positive(T_in_K, "combustor T_in_K")
         call assert_positive(P_in_Pa, "combustor P_in_Pa")
@@ -52,16 +52,15 @@ contains
             error stop 1
         end if
 
-        ! Properties evaluated at representative temperatures.
-        cp_a = cp_air_at(T_in_K)
-        cp_g = cp_gas_at(T_turbine_inlet_K)
+        h_a = h_air_sensible_J_kg(T_in_K)
+        h_g = h_gas_sensible_J_kg(T_turbine_inlet_K)
 
-        numer = cp_g * T_turbine_inlet_K - cp_a * T_in_K
-        denom = eta_combustor * LHV_J_kg - cp_g * T_turbine_inlet_K
+        numer = h_g - h_a
+        denom = eta_combustor * LHV_J_kg - h_g
         fuel_air_ratio = safe_divide(numer, denom)
 
         ! Sensible heat added per kg of air (useful diagnostic).
-        q_in_per_air_J_kg = cp_g * T_turbine_inlet_K - cp_a * T_in_K
+        q_in_per_air_J_kg = h_g - h_a
 
         ! Combustor pressure loss.
         P_out_Pa = P_in_Pa * (1.0_dp - dP_fraction)

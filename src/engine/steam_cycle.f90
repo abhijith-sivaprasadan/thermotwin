@@ -8,22 +8,25 @@
 module steam_cycle
     use precision_kinds, only: dp
     use hrsg, only: HrsgResult
+    use fluid_properties, only: if97_h_liq_kJ_kg, if97_h_vap_kJ_kg, &
+        if97_h_superheat_kJ_kg, if97_s_superheat_kJ_kgK, if97_quality_from_ps
     implicit none
     private
 
     public :: SteamCycleResult, solve_steam_cycle, ramp_limited
     public :: STEAM_RAMP_MW_PER_S
 
-    real(dp), parameter :: STEAM_TURBINE_ETA = 0.86_dp
+    real(dp), parameter :: STEAM_TURBINE_ETA = 0.92_dp
     real(dp), parameter :: STEAM_GENERATOR_ETA = 0.985_dp
     real(dp), parameter :: STEAM_AUX_FRACTION = 0.020_dp
     real(dp), parameter :: STEAM_RAMP_MW_PER_S = 0.18_dp
-    real(dp), parameter :: BASE_IDEAL_DROP_J_KG = 1.68e6_dp
 
     type :: SteamCycleResult
         real(dp) :: condenser_pressure_kPa = 6.0_dp
         real(dp) :: ideal_work_J_kg = 0.0_dp
         real(dp) :: actual_work_J_kg = 0.0_dp
+        real(dp) :: inlet_enthalpy_kJ_kg = 0.0_dp
+        real(dp) :: exhaust_quality = 0.0_dp
         real(dp) :: gross_power_MW = 0.0_dp
         real(dp) :: net_power_MW = 0.0_dp
     end type SteamCycleResult
@@ -34,15 +37,24 @@ contains
         type(HrsgResult), intent(in) :: hrsg_res
         real(dp), intent(in) :: ambient_T_K
         type(SteamCycleResult), intent(out) :: res
-        real(dp) :: ambient_C
+        real(dp) :: ambient_C, p_hp_bar, p_cond_bar
+        real(dp) :: h_in, s_in, h_f, h_g, h_exit_is
 
         ambient_C = ambient_T_K - 273.15_dp
         res%condenser_pressure_kPa = clamp_real(6.0_dp + 0.22_dp * (ambient_C - 15.0_dp), &
             4.5_dp, 14.0_dp)
 
-        res%ideal_work_J_kg = BASE_IDEAL_DROP_J_KG + &
-            700.0_dp * (hrsg_res%steam_T_K - 773.15_dp) - &
-            12000.0_dp * (res%condenser_pressure_kPa - 6.0_dp)
+        p_hp_bar = max(1.0_dp, hrsg_res%steam_pressure_bar)
+        p_cond_bar = max(0.01_dp, res%condenser_pressure_kPa / 100.0_dp)
+        h_in = if97_h_superheat_kJ_kg(p_hp_bar, hrsg_res%steam_T_K)
+        s_in = if97_s_superheat_kJ_kgK(p_hp_bar, hrsg_res%steam_T_K)
+        h_f = if97_h_liq_kJ_kg(p_cond_bar)
+        h_g = if97_h_vap_kJ_kg(p_cond_bar)
+        res%exhaust_quality = if97_quality_from_ps(p_cond_bar, s_in)
+        h_exit_is = h_f + res%exhaust_quality * (h_g - h_f)
+
+        res%inlet_enthalpy_kJ_kg = h_in
+        res%ideal_work_J_kg = max(0.0_dp, (h_in - h_exit_is) * 1000.0_dp)
         res%ideal_work_J_kg = max(0.0_dp, res%ideal_work_J_kg)
         res%actual_work_J_kg = res%ideal_work_J_kg * STEAM_TURBINE_ETA
 

@@ -27,13 +27,14 @@ module scenario_runner
     use engine_core, only: engine_init, engine_step, refresh_model, apply_market_profile
     use dispatch_agc, only: balance_now, reset_controls, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
-    use tag_bus, only: tag_count, tag_name_at, tag_value_at
     implicit none
     private
 
-    public :: Scenario, ScenarioEvent, scenario_load, scenario_run, scenario_gui_tick
+    public :: Scenario, ScenarioEvent, ScenarioTrace, ScenarioComparison
+    public :: scenario_load, scenario_run, scenario_gui_tick, scenario_trace, scenario_compare
 
     integer, parameter :: MAX_EVENTS = 96
+    integer, parameter, public :: SCENARIO_TRACE_N = 240
     integer, parameter :: KIND_SET          = 1
     integer, parameter :: KIND_COMMAND      = 2
     integer, parameter :: KIND_ASSERT_NEAR  = 3
@@ -56,6 +57,41 @@ module scenario_runner
         integer :: n_events = 0
         type(ScenarioEvent) :: events(MAX_EVENTS)
     end type Scenario
+
+    type :: ScenarioTrace
+        character(len=64) :: name = "unnamed"
+        integer :: n = 0
+        real(dp) :: duration_s = 0.0_dp
+        real(dp) :: dt_s = 0.0_dp
+        real(dp) :: nominal_frequency_Hz = 50.0_dp
+        real(dp) :: time_s(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: frequency_Hz(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: demand_MW(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: supply_MW(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: plant_MW(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: storage_MW(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: imbalance_MW(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: margin_usd_h(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: co2_g_kWh(SCENARIO_TRACE_N) = 0.0_dp
+        real(dp) :: min_frequency_Hz = 0.0_dp
+        real(dp) :: max_frequency_Hz = 0.0_dp
+        real(dp) :: max_abs_imbalance_MW = 0.0_dp
+        real(dp) :: final_margin_usd_h = 0.0_dp
+        real(dp) :: final_CO2_intensity_g_kWh = 0.0_dp
+        real(dp) :: final_soc_pct = 0.0_dp
+        integer :: assertion_failures = 0
+    end type ScenarioTrace
+
+    type :: ScenarioComparison
+        logical :: ready = .false.
+        type(ScenarioTrace) :: a
+        type(ScenarioTrace) :: b
+        real(dp) :: delta_min_frequency_Hz = 0.0_dp
+        real(dp) :: delta_max_abs_imbalance_MW = 0.0_dp
+        real(dp) :: delta_final_margin_usd_h = 0.0_dp
+        real(dp) :: delta_final_CO2_intensity_g_kWh = 0.0_dp
+        real(dp) :: delta_final_soc_pct = 0.0_dp
+    end type ScenarioComparison
 
 contains
 
@@ -128,7 +164,7 @@ contains
             call engine_step(st, sc%dt_s)
             t = real(k, dp) * sc%dt_s
             call eval_due_assertions(sc, st, t, n_failures, n_asserts)
-            if (recording) call record_row(rec_unit, t)
+            if (recording) call record_row(rec_unit, t, st)
         end do
         if (recording) close(rec_unit)
 
@@ -151,6 +187,69 @@ contains
         call apply_due_inputs(sc, st, t_now)
         done = t_now + sc%dt_s * 0.5_dp >= sc%duration_s
     end subroutine scenario_gui_tick
+
+    !> Run a scenario and down-sample its live states into a GUI/report trace.
+    !> This shares the same deterministic event semantics as scenario_run.
+    subroutine scenario_trace(sc, tr, n_failures)
+        type(Scenario), intent(inout) :: sc
+        type(ScenarioTrace), intent(out) :: tr
+        integer, intent(out), optional :: n_failures
+        type(GridState) :: st
+        integer :: k, nsteps, sample_stride, failures, n_asserts
+        real(dp) :: t
+
+        failures = 0
+        n_asserts = 0
+        sc%events(1:sc%n_events)%done = .false.
+
+        tr = ScenarioTrace()
+        tr%name = sc%name
+        tr%duration_s = sc%duration_s
+        tr%dt_s = sc%dt_s
+
+        call engine_init(st)
+        call apply_due_inputs(sc, st, 0.0_dp)
+        call update_trace_metrics(tr, st)
+        call sample_trace_point(tr, 0.0_dp, st)
+
+        nsteps = max(1, nint(sc%duration_s / sc%dt_s))
+        sample_stride = max(1, int(ceiling(real(nsteps + 1, dp) / &
+            real(SCENARIO_TRACE_N, dp))))
+        t = 0.0_dp
+        do k = 1, nsteps
+            call apply_due_inputs(sc, st, t)
+            call engine_step(st, sc%dt_s)
+            t = real(k, dp) * sc%dt_s
+            call eval_due_assertions(sc, st, t, failures, n_asserts)
+            call update_trace_metrics(tr, st)
+            if (mod(k, sample_stride) == 0 .or. k == nsteps) then
+                call sample_trace_point(tr, t, st, replace_last=(k == nsteps))
+            end if
+        end do
+
+        tr%assertion_failures = failures
+        if (present(n_failures)) n_failures = failures
+    end subroutine scenario_trace
+
+    !> Run two scenarios from the same initial point and calculate comparison deltas.
+    !> Deltas are B - A; positive margin/nadir and negative imbalance/CO2 are better.
+    subroutine scenario_compare(sc_a, sc_b, cmp)
+        type(Scenario), intent(inout) :: sc_a
+        type(Scenario), intent(inout) :: sc_b
+        type(ScenarioComparison), intent(out) :: cmp
+        integer :: fail_a, fail_b
+
+        cmp = ScenarioComparison()
+        call scenario_trace(sc_a, cmp%a, fail_a)
+        call scenario_trace(sc_b, cmp%b, fail_b)
+        cmp%ready = cmp%a%n > 1 .and. cmp%b%n > 1
+        cmp%delta_min_frequency_Hz = cmp%b%min_frequency_Hz - cmp%a%min_frequency_Hz
+        cmp%delta_max_abs_imbalance_MW = cmp%b%max_abs_imbalance_MW - cmp%a%max_abs_imbalance_MW
+        cmp%delta_final_margin_usd_h = cmp%b%final_margin_usd_h - cmp%a%final_margin_usd_h
+        cmp%delta_final_CO2_intensity_g_kWh = cmp%b%final_CO2_intensity_g_kWh - &
+            cmp%a%final_CO2_intensity_g_kWh
+        cmp%delta_final_soc_pct = cmp%b%final_soc_pct - cmp%a%final_soc_pct
+    end subroutine scenario_compare
 
     ! ------------------------------------------------------------------
     ! Parsing
@@ -367,6 +466,54 @@ contains
         end do
     end subroutine eval_due_assertions
 
+    subroutine update_trace_metrics(tr, st)
+        type(ScenarioTrace), intent(inout) :: tr
+        type(GridState), intent(in) :: st
+
+        if (tr%n == 0 .and. tr%min_frequency_Hz == 0.0_dp .and. &
+            tr%max_frequency_Hz == 0.0_dp) then
+            tr%min_frequency_Hz = st%frequency_Hz
+            tr%max_frequency_Hz = st%frequency_Hz
+        else
+            tr%min_frequency_Hz = min(tr%min_frequency_Hz, st%frequency_Hz)
+            tr%max_frequency_Hz = max(tr%max_frequency_Hz, st%frequency_Hz)
+        end if
+        tr%nominal_frequency_Hz = st%nominal_frequency_Hz
+        tr%max_abs_imbalance_MW = max(tr%max_abs_imbalance_MW, abs(st%imbalance_MW))
+        tr%final_margin_usd_h = st%margin_usd_h
+        tr%final_CO2_intensity_g_kWh = st%CO2_intensity_g_kWh
+        tr%final_soc_pct = st%battery_soc_pct
+    end subroutine update_trace_metrics
+
+    subroutine sample_trace_point(tr, t_now, st, replace_last)
+        type(ScenarioTrace), intent(inout) :: tr
+        real(dp), intent(in) :: t_now
+        type(GridState), intent(in) :: st
+        logical, intent(in), optional :: replace_last
+        logical :: replace
+        integer :: j
+
+        replace = .false.
+        if (present(replace_last)) replace = replace_last
+        if (replace .and. tr%n >= SCENARIO_TRACE_N) then
+            j = SCENARIO_TRACE_N
+        else
+            if (tr%n >= SCENARIO_TRACE_N) return
+            tr%n = tr%n + 1
+            j = tr%n
+        end if
+
+        tr%time_s(j) = t_now
+        tr%frequency_Hz(j) = st%frequency_Hz
+        tr%demand_MW(j) = st%demand_MW
+        tr%supply_MW(j) = st%supply_MW
+        tr%plant_MW(j) = st%plant_power_MW
+        tr%storage_MW(j) = st%storage_MW
+        tr%imbalance_MW(j) = st%imbalance_MW
+        tr%margin_usd_h(j) = st%margin_usd_h
+        tr%co2_g_kWh(j) = st%CO2_intensity_g_kWh
+    end subroutine sample_trace_point
+
     subroutine report(t_now, ev, got, pass, rel)
         real(dp), intent(in) :: t_now, got
         type(ScenarioEvent), intent(in) :: ev
@@ -455,6 +602,17 @@ contains
         case ("power_price_usd_mwh");  st%power_price_usd_mwh = value
         case ("carbon_price_usd_t");   st%carbon_price_usd_t = max(0.0_dp, value)
         case ("fcr_price_usd_mw_h");   st%fcr_reserve_price_usd_mw_h = value
+        ! New-module controls (P2X, CCS, GFM-BESS, MPC-AGC, tie-line, RL, H2)
+        case ("h2_fraction_pct");      st%h2_fraction_pct = clamp_real(value, 0.0_dp, 30.0_dp)
+        case ("p2x_active");           st%p2x_active = value > 0.5_dp
+        case ("p2x_capacity_MW");      st%p2x_capacity_MW = max(0.0_dp, value)
+        case ("ccs_active");           st%ccs_active = value > 0.5_dp
+        case ("gfm_mode");             st%gfm_mode = value > 0.5_dp
+        case ("gfm_virtual_H");        st%gfm_virtual_H = max(0.0_dp, value)
+        case ("mpc_active");           st%mpc_active = value > 0.5_dp
+        case ("tie_active");           st%tie_active = value > 0.5_dp
+        case ("tie_scheduled_MW");     st%tie_scheduled_MW = value
+        case ("rl_mode");              st%rl_mode = value > 0.5_dp
         case default
             ok = .false.
         end select
@@ -551,6 +709,46 @@ contains
         case ("exhaust_K");             value = st%exhaust_K
         case ("elapsed_s");             value = st%elapsed_s
         case ("auto_balance");          value = merge(1.0_dp, 0.0_dp, st%auto_balance)
+        ! New-module observables
+        case ("h2_fraction_pct");       value = st%h2_fraction_pct
+        case ("h2_co2_avoided_t");      value = st%h2_co2_avoided_t
+        case ("h2_mass_fraction");      value = st%h2_mass_fraction
+        case ("h2_wobbe_mj_m3");        value = st%h2_wobbe_mj_m3
+        case ("h2_wobbe_deviation_pct"); value = st%h2_wobbe_deviation_pct
+        case ("h2_wobbe_ok");           value = merge(1.0_dp, 0.0_dp, st%h2_wobbe_ok)
+        case ("flame_temp_ad_K");       value = st%flame_temp_ad_K
+        case ("flame_temp_shift_K");    value = st%flame_temp_shift_K
+        case ("nox_ppm_15o2");          value = st%nox_ppm_15o2
+        case ("nox_mg_nm3_15o2");       value = st%nox_mg_nm3_15o2
+        case ("co_ppm_15o2");           value = st%co_ppm_15o2
+        case ("co_mg_nm3_15o2");        value = st%co_mg_nm3_15o2
+        case ("stack_o2_dry_pct");      value = st%stack_o2_dry_pct
+        case ("stack_co2_vol_pct");     value = st%stack_co2_vol_pct
+        case ("combustion_lambda");     value = st%combustion_lambda
+        case ("flashback_margin_pct");  value = st%flashback_margin_pct
+        case ("cooling_air_pct");       value = st%turbine_cooling_air_pct
+        case ("cooling_air_kg_s");      value = st%turbine_cooling_air_kg_s
+        case ("metal_temp_margin_K");   value = st%turbine_metal_margin_K
+        case ("tip_clearance_mm");      value = st%tip_clearance_mm
+        case ("tip_loss_pct");          value = st%tip_loss_pct
+        case ("compressor_poly_loss_pct"); value = st%compressor_poly_loss_pct
+        case ("turbine_poly_loss_pct"); value = st%turbine_poly_loss_pct
+        case ("p2x_active");            value = merge(1.0_dp, 0.0_dp, st%p2x_active)
+        case ("p2x_load_MW");           value = st%p2x_load_MW
+        case ("p2x_h2_kg_s");           value = st%p2x_h2_kg_s
+        case ("ccs_active");            value = merge(1.0_dp, 0.0_dp, st%ccs_active)
+        case ("ccs_parasitic_MW");      value = st%ccs_parasitic_MW
+        case ("ccs_co2_captured_t_h");  value = st%ccs_co2_captured_t_h
+        case ("gfm_mode");              value = merge(1.0_dp, 0.0_dp, st%gfm_mode)
+        case ("gfm_synth_MW");          value = st%gfm_synth_MW
+        case ("gfm_H_equiv");           value = st%gfm_H_equiv
+        case ("mpc_active");            value = merge(1.0_dp, 0.0_dp, st%mpc_active)
+        case ("mpc_setpt_MW");          value = st%mpc_setpt_MW
+        case ("tie_active");            value = merge(1.0_dp, 0.0_dp, st%tie_active)
+        case ("tie_flow_MW");           value = st%tie_flow_MW
+        case ("ace_MW");                value = st%ace_MW
+        case ("rl_mode");               value = merge(1.0_dp, 0.0_dp, st%rl_mode)
+        case ("rl_cumreward");          value = st%rl_cumreward
         case default
             value = 0.0_dp
             ok = .false.
@@ -565,7 +763,7 @@ contains
         character(len=*), intent(in) :: path
         integer, intent(out) :: unit
         logical, intent(out) :: ok
-        integer :: ios, i
+        integer :: ios
 
         open(newunit=unit, file=path, status='replace', action='write', iostat=ios)
         ok = ios == 0
@@ -573,23 +771,29 @@ contains
             write(*, '(A)') "   WARNING: cannot open recorder file '"//trim(path)//"'"
             return
         end if
-        write(unit, '(A)', advance='no') "time_s"
-        do i = 1, tag_count()
-            write(unit, '(A)', advance='no') ","//trim(tag_name_at(i))
-        end do
-        write(unit, '(A)') ""
+        write(unit, '(A)') "time_s,frequency_Hz,nominal_frequency_Hz,ROCOF_Hz_s,"// &
+            "demand_MW,supply_MW,imbalance_MW,gas_dispatch_pct,gas_power_MW,"// &
+            "plant_power_MW,steam_power_MW,renewable_available_MW,renewable_actual_MW,"// &
+            "renewable_curtail_MW,storage_request_MW,storage_MW,BESS_primary_MW,"// &
+            "battery_soc_pct,reserve_MW,UFLS_stage,margin_usd_h,CO2_intensity_g_kWh,"// &
+            "heat_rate_kJ_kWh,flame_temp_ad_K,nox_mg_nm3_15o2,co_mg_nm3_15o2,"// &
+            "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW"
     end subroutine open_recorder
 
-    subroutine record_row(unit, t_now)
+    subroutine record_row(unit, t_now, st)
         integer, intent(in) :: unit
         real(dp), intent(in) :: t_now
-        integer :: i
+        type(GridState), intent(in) :: st
 
-        write(unit, '(ES16.8)', advance='no') t_now
-        do i = 1, tag_count()
-            write(unit, '(A,ES16.8)', advance='no') ",", tag_value_at(i)
-        end do
-        write(unit, '(A)') ""
+        write(unit, '(*(ES16.8,:,","))') t_now, st%frequency_Hz, st%nominal_frequency_Hz, &
+            st%ROCOF_Hz_s, st%demand_MW, st%supply_MW, st%imbalance_MW, st%gas_dispatch_pct, &
+            st%gas_power_MW, st%plant_power_MW, st%steam_power_MW, st%renewable_MW, &
+            effective_renewable_MW(st), st%renewable_curtail_MW, st%storage_request_MW, &
+            st%storage_MW, st%BESS_primary_MW, st%battery_soc_pct, st%reserve_MW, &
+            real(st%UFLS_stage, dp), st%margin_usd_h, st%CO2_intensity_g_kWh, &
+            st%heat_rate_kJ_kWh, st%flame_temp_ad_K, st%nox_mg_nm3_15o2, &
+            st%co_mg_nm3_15o2, st%flashback_margin_pct, st%turbine_cooling_air_pct, &
+            st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW
     end subroutine record_row
 
 end module scenario_runner

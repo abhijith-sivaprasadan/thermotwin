@@ -9,8 +9,9 @@ at 0.0   set auto_balance 0
 at 5.0   set demand_MW 80
 
 at 8.0   assert_above UFLS_stage 0.5            # shedding has begun
-at 20.0  assert_above UFLS_stage 2.5            # cascade reached stage 3
-at 20.0  assert_below frequency_Hz 48.4
+at 8.0   assert_above UFLS_stage 2.5            # cascade reached stage 3
+at 20.0  assert_above UFLS_stage 1.5            # relay remains latched during recovery
+at 20.0  assert_below frequency_Hz 49.5
 
 at 25.0  set demand_MW 30                       # operator sheds load manually
 

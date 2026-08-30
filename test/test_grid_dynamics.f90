@@ -5,6 +5,7 @@ program test_grid_dynamics
     use precision_kinds, only: dp
     use engine_state
     use grid_dynamics, only: tick_frequency_dynamics
+    use gfm_bess, only: gfm_step
     implicit none
     integer :: failures
     real(dp), parameter :: DT = 0.25_dp
@@ -71,6 +72,37 @@ program test_grid_dynamics
         call tick_frequency_dynamics(st, DT)
         call expect_near("BESS primary blocked when battery empty", &
             st%BESS_primary_MW, 0.0_dp, 1.0e-9_dp, failures)
+    end block
+
+    ! --- GFM BESS must use the active 50/60 Hz grid standard. ---
+    block
+        type(GridState) :: st
+
+        st%gfm_mode = .true.
+        st%nominal_frequency_Hz = 60.0_dp
+        st%frequency_Hz = 60.0_dp
+        st%freq_rocof_Hz_s = 0.0_dp
+        st%gas_capacity_MW = 50.0_dp
+        st%battery_soc_pct = 50.0_dp
+        st%storage_request_MW = 0.0_dp
+
+        call gfm_step(st, DT)
+        call expect_near("GFM: 60 Hz nominal has no false droop", &
+            st%gfm_synth_MW, 0.0_dp, 1.0e-9_dp, failures)
+        call expect_near("GFM: 60 Hz nominal does not drift BESS request", &
+            st%storage_request_MW, 0.0_dp, 1.0e-9_dp, failures)
+
+        st%frequency_Hz = 59.0_dp
+        st%storage_request_MW = STORAGE_MAX_MW - 0.1_dp
+        call gfm_step(st, DT)
+        call expect_true("GFM: request is clamped to inverter maximum", &
+            st%storage_request_MW <= STORAGE_MAX_MW + 1.0e-9_dp, failures)
+
+        st%frequency_Hz = 61.0_dp
+        st%storage_request_MW = STORAGE_MIN_MW + 0.1_dp
+        call gfm_step(st, DT)
+        call expect_true("GFM: request is clamped to inverter minimum", &
+            st%storage_request_MW >= STORAGE_MIN_MW - 1.0e-9_dp, failures)
     end block
 
     ! --- UFLS stages latch and only reset above 49.5 Hz. ---

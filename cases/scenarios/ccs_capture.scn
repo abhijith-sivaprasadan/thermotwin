@@ -1,0 +1,27 @@
+# CCS post-combustion capture: MEA regen parasitic load reduces net power.
+# At rated GT output, enabling CCS must: (a) produce a measurable parasitic
+# load, (b) capture CO2, and (c) reduce the CO2 intensity reported by the plant.
+name     ccs_capture
+duration 30
+dt       0.25
+
+at 0.0   set auto_balance 0
+at 0.0   set gas_dispatch_pct 90
+at 0.0   set combined_cycle 1
+at 0.0   set renewable_MW 0
+at 0.0   set ccs_active 0
+
+at 3.0   assert_above plant_power_MW 40.0            # stable GT + ST output
+at 3.0   assert_above CO2_intensity_g_kWh 370.0      # unabated baseline
+
+at 5.0   set ccs_active 1
+
+at 8.0   assert_above ccs_parasitic_MW 0.5          # regeneration reboiler drawing power
+at 8.0   assert_above ccs_co2_captured_t_h 1.0      # MEA capturing CO2
+at 8.0   assert_below CO2_intensity_g_kWh 100.0     # captured → net intensity plunges
+at 8.0   assert_above plant_power_MW 38.0            # net power still substantial
+
+# Confirm capture scales with GT output: back down, less exhaust = less capture
+at 15.0  set gas_dispatch_pct 50
+at 20.0  assert_below ccs_co2_captured_t_h 25.0     # less exhaust → less capture
+at 20.0  assert_below ccs_parasitic_MW 6.5

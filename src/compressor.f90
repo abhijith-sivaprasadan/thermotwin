@@ -8,7 +8,8 @@
 !> short fixed-point iteration is used to be self-consistent.
 module compressor
     use precision_kinds, only: dp
-    use fluid_properties, only: cp_air_at, gamma_exponent, get_property_model, PROP_CONSTANT
+    use fluid_properties, only: cp_air_at, gamma_exponent, get_property_model, PROP_CONSTANT, &
+        h_air_sensible_J_kg
     use utilities, only: assert_positive, assert_in_range
     implicit none
     private
@@ -63,7 +64,11 @@ contains
 
         T_mean  = 0.5_dp * (T_in_K + T_out_K)
         cp_mean = cp_air_at(T_mean)
-        w_specific_J_kg = cp_mean * (T_out_K - T_in_K)
+        if (get_property_model() /= PROP_CONSTANT) then
+            w_specific_J_kg = h_air_sensible_J_kg(T_out_K) - h_air_sensible_J_kg(T_in_K)
+        else
+            w_specific_J_kg = cp_mean * (T_out_K - T_in_K)
+        end if
     end subroutine solve_compressor
 
 end module compressor

@@ -7,6 +7,7 @@ Windows, where Codex and MinGW builds commonly run.
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -26,19 +27,27 @@ def run_binary(path: Path) -> tuple[bool, str]:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEST_DIR = ROOT / "build" / "tests"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
+    args = parser.parse_args(argv)
+    build_dir = args.build_dir.resolve()
     print("Running unit tests")
     print("==================")
     passed = 0
     failed = 0
 
-    tests = sorted(p for p in TEST_DIR.glob("test_*") if p.is_file() and p.suffix != ".o")
-    if os.name == "nt":
-        tests = sorted({p.with_suffix(".exe") if p.with_suffix(".exe").exists() else p for p in tests})
-
+    suffix = ".exe" if os.name == "nt" else ""
+    sources = sorted((ROOT / "test").glob("test_*.f90"))
+    tests = [build_dir / "tests" / (source.stem + suffix) for source in sources]
+    missing = [path for path in tests if not path.is_file()]
+    if not sources or missing:
+        print("FAIL: unit-test suite is missing or incomplete. Build all test targets first.")
+        for path in missing:
+            print(f"  Missing {path}")
+        return 1
     for test in tests:
         ok, output = run_binary(test)
         name = test.name
@@ -53,7 +62,9 @@ def main() -> int:
 
     print()
     print("Also running application selftest (physics verification)...")
-    exe = ROOT / ("thermotwin.exe" if os.name == "nt" else "thermotwin")
+    exe = build_dir / ("thermotwin" + suffix)
+    if build_dir == ROOT / "build":
+        exe = ROOT / ("thermotwin" + suffix)
     if exe.exists():
         completed = subprocess.run(
             [str(exe), "selftest"],

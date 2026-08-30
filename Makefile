@@ -32,8 +32,11 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver off_design hrsg steam_cycle \
-        tag_bus engine_state market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics engine_core \
-        scenario_runner
+        tag_bus h2_blend combustion_physics engine_state physics_fidelity exergy exergy_uq exergy_sobol thermo_limits data_reconciliation scientific_report market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics \
+        dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
+        anomaly_detector rl_dispatch fault_classifier forecast_engine \
+        p2x_electrolyser ccs_model gfm_bess tie_line mpc_agc \
+        engine_core scenario_runner
 
 # opcua_bridge is GUI-only: its C backend (open62541) is not linked into the
 # CLI or tests.  Compile separately and include only in GUI link targets.
@@ -60,7 +63,7 @@ OPCUA_URL := https://github.com/open62541/open62541/releases/download/$(OPCUA_VE
 all: $(EXE)
 
 $(BUILD):
-	@mkdir -p $(BUILD)
+	@python -c "import os; os.makedirs('$(BUILD)', exist_ok=True)"
 
 # Pattern rule: each module object depends on its source. Ordering is enforced
 # by the explicit prerequisite chain below.
@@ -96,17 +99,51 @@ $(BUILD)/steam_cycle.o:          $(BUILD)/hrsg.o
 $(BUILD)/market_data.o:          $(BUILD)/engine_state.o
 $(BUILD)/fleet_dispatch.o:       $(BUILD)/engine_state.o
 $(BUILD)/tag_bus.o:              $(BUILD)/precision_kinds.o
+$(BUILD)/h2_blend.o:             $(BUILD)/precision_kinds.o
+$(BUILD)/combustion_physics.o:   $(BUILD)/precision_kinds.o
 $(BUILD)/engine_state.o:         $(BUILD)/precision_kinds.o
+$(BUILD)/physics_fidelity.o:     $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/exergy.o:               $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/exergy_uq.o:            $(BUILD)/exergy.o $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/exergy_sobol.o:         $(BUILD)/exergy.o $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/thermo_limits.o:        $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/data_reconciliation.o:  $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/scientific_report.o:    $(BUILD)/exergy.o $(BUILD)/exergy_uq.o $(BUILD)/exergy_sobol.o $(BUILD)/thermo_limits.o $(BUILD)/data_reconciliation.o $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o
 $(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
+$(BUILD)/dnn_surrogate.o:          $(BUILD)/precision_kinds.o
+$(BUILD)/model_validation.o:       $(BUILD)/precision_kinds.o $(BUILD)/types.o \
+                                  $(BUILD)/constants.o $(BUILD)/cycle_solver.o \
+                                  $(BUILD)/dnn_surrogate.o
+$(BUILD)/minlp_dayahead.o:        $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o \
+                                  $(BUILD)/dnn_surrogate.o
+$(BUILD)/gt_optimizer.o:          $(BUILD)/engine_state.o $(BUILD)/off_design.o \
+                                  $(BUILD)/types.o $(BUILD)/precision_kinds.o
+$(BUILD)/fleet_uc.o:              $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/anomaly_detector.o:     $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/rl_dispatch.o:          $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/fault_classifier.o:     $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/forecast_engine.o:      $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/p2x_electrolyser.o:    $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/ccs_model.o:           $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/gfm_bess.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/tie_line.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/mpc_agc.o:             $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
                                   $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \
                                   $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
                                   $(BUILD)/types.o $(BUILD)/constants.o \
                                   $(BUILD)/off_design.o $(BUILD)/fluid_properties.o \
                                   $(BUILD)/hrsg.o $(BUILD)/steam_cycle.o \
-                                  $(BUILD)/fleet_dispatch.o $(BUILD)/market_data.o
+                                  $(BUILD)/fleet_dispatch.o $(BUILD)/market_data.o \
+                                  $(BUILD)/dnn_surrogate.o $(BUILD)/model_validation.o $(BUILD)/physics_fidelity.o \
+                                  $(BUILD)/minlp_dayahead.o $(BUILD)/gt_optimizer.o $(BUILD)/fleet_uc.o \
+                                  $(BUILD)/anomaly_detector.o $(BUILD)/rl_dispatch.o \
+                                  $(BUILD)/fault_classifier.o $(BUILD)/forecast_engine.o \
+                                  $(BUILD)/p2x_electrolyser.o $(BUILD)/ccs_model.o \
+                                  $(BUILD)/gfm_bess.o $(BUILD)/tie_line.o $(BUILD)/mpc_agc.o \
+                                  $(BUILD)/combustion_physics.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
 $(BUILD)/opcua_bridge.o:         $(BUILD)/precision_kinds.o
@@ -119,8 +156,8 @@ $(BUILD)/main.o: $(APP)/main.f90 $(OBJS) | $(BUILD)
 
 tests: $(TEST_BINS)
 
-$(BUILD)/tests:
-	@mkdir -p $(BUILD)/tests
+$(BUILD)/tests: | $(BUILD)
+	@python -c "import os; os.makedirs('$(BUILD)/tests', exist_ok=True)"
 
 $(BUILD)/tests/%: $(TEST)/%.f90 $(OBJS) | $(BUILD)/tests
 	$(FC) $(FFLAGS) -I $(TEST) -c $< -o $(BUILD)/$*.o
@@ -142,7 +179,7 @@ $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
 
 # open62541 amalgam — compiled once with -O1 (full optimisation is slow)
 $(BUILD)/open62541.o: gui/open62541.c | $(BUILD)
-	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@ 2>/dev/null
+	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
 
 # OPC UA server C wrapper
 $(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)

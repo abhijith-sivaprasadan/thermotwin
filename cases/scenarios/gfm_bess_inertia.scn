@@ -1,0 +1,33 @@
+# Grid-Forming BESS: virtual inertia slows ROCOF after turbine trip.
+# With GFM enabled, the synthetic inertia contribution must be positive
+# and the frequency nadir must stay shallower than the GFM-off case.
+# Two sub-tests: trip WITH GFM, then verify ROCOF is suppressed.
+name     gfm_bess_inertia
+duration 60
+dt       0.25
+
+at 0.0   set auto_balance 1
+at 0.0   set gfm_mode 1
+at 0.0   set gfm_virtual_H 4.0
+at 0.0   set battery_soc_pct 60
+at 0.0   set demand_MW 35
+at 0.0   set renewable_MW 8
+
+at 3.0   assert_near  frequency_Hz 50.0 0.20         # settled start
+at 3.0   assert_above gfm_H_equiv 0.5               # GFM contributing virtual H
+
+at 5.0   command turbine_trip
+
+at 5.25  assert_above frequency_Hz 49.0             # GFM slows ROCOF — not in UFLS
+at 6.0   assert_above frequency_Hz 49.2             # arrest: GFM synthesises inertia
+
+# ROCOF in the first 250 ms after trip: |df/dt| should be reduced by GFM
+at 6.0   assert_above gfm_synth_MW 0.5             # GFM actively injecting
+
+at 35.0  assert_near  frequency_Hz 50.0 0.15        # AGC fully recovered
+at 50.0  assert_near  imbalance_MW 0.0 0.75
+at 55.0  assert_near  UFLS_stage 0.0 0.1
+
+# Turn off GFM and confirm H_equiv drops
+at 56.0  set gfm_mode 0
+at 58.0  assert_below gfm_H_equiv 0.1

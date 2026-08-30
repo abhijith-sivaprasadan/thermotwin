@@ -40,7 +40,7 @@ independent scripts.
 > but is **not validated** against any specific commercial engine and is **not**
 > ASME PTC 22 / ISO 2314 compliant. Treat the numbers as physically plausible
 > illustrations, not predictions for a particular machine. See
-> [`docs/assumptions_limitations.md`](docs/assumptions_limitations.md).
+> [the consolidated technical report](docs/THERMOTWIN-F_TECHNICAL_REPORT.md).
 
 ---
 
@@ -49,7 +49,7 @@ independent scripts.
 You need a Fortran compiler (`gfortran` ≥ 9) and, for the plots, `python3` with
 `numpy` and `matplotlib`.
 
-### Option A — Fortran Package Manager (recommended)
+### Option A — Fortran Package Manager (alternative; not verified in this review)
 
 ```bash
 fpm build
@@ -58,7 +58,15 @@ fpm run -- run cases/design_point.csv            # solve the design point
 fpm test                                         # full unit-test suite
 ```
 
-### Option B — no fpm (gfortran + scripts)
+### Option B — gfortran + Make (verified in the current review)
+
+```bash
+make
+make check
+```
+
+The older convenience scripts below have not been reverified against the expanded
+engine module set; prefer the Make targets above for the current implementation.
 
 ```bash
 ./scripts/build.sh            # build ./thermotwin
@@ -130,7 +138,7 @@ first row of their file as the baseline machine.
 - **Inverse diagnostics** — weighted least-squares estimation of the degradation
   state from observed KPIs (grid search + coordinate-descent refinement).
 
-Representative verified design-point results: **≈30 MW**, **≈31 % thermal
+Representative legacy simple-cycle design-point results: **≈30 MW**, **≈31 % thermal
 efficiency**, **≈11 800 kJ/kWh heat rate**, **≈797 K exhaust** — squarely in the
 expected band for a simple-cycle machine.
 
@@ -166,12 +174,9 @@ thermotwin-f/
 
 | Document | Contents |
 |---|---|
-| [`docs/theory.md`](docs/theory.md) | physical background and the three-act design |
-| [`docs/equations.md`](docs/equations.md) | every implemented equation, with units |
-| [`docs/verification.md`](docs/verification.md) | the worked hand calculation the selftest reproduces |
-| [`docs/validation_and_uncertainty.md`](docs/validation_and_uncertainty.md) | diagnostics objective, weighting, and why this is verification not validation |
-| [`docs/assumptions_limitations.md`](docs/assumptions_limitations.md) | every modelling assumption and its consequence |
-| [`docs/engineering_report.md`](docs/engineering_report.md) | the narrative report tying the modules together |
+| [`docs/THERMOTWIN-F_TECHNICAL_REPORT.md`](docs/THERMOTWIN-F_TECHNICAL_REPORT.md) | consolidated equations, assumptions, analysis and verification discussion |
+| [`docs/REVAMP_7.0.md`](docs/REVAMP_7.0.md) | implementation history; roadmap aspirations are not independent validation |
+| [`docs/COMMIT_REVIEW.md`](docs/COMMIT_REVIEW.md) | current checks and remaining verification boundaries |
 | [`cases/README.md`](cases/README.md) | input CSV column format |
 
 ---
@@ -204,5 +209,9 @@ output · a Bayesian/Kalman diagnostics formulation · combined-cycle bottoming.
 ---
 
 ## License
+
+Optional neural-surrogate weights are loaded from `dnn_weights.txt`. Regenerate them
+with `python train_dnn.py` (NumPy required). Training targets are synthetic model
+outputs, not measured plant observations; surrogate agreement is not external validation.
 
 MIT — see [`LICENSE`](LICENSE).

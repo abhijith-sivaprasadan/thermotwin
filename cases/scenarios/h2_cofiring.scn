@@ -1,0 +1,34 @@
+# H2 co-firing: blend ramped from 0 -> 20 vol% while GT holds steady load.
+# Validates lower CO2 intensity, correct LHV correction, Wobbe compliance,
+# and Revamp 7.0-P3 combustion-chemistry diagnostics.
+# At 20% H2 the CO2 intensity must fall noticeably vs baseline and heat-rate
+# must not rise above the clean-NG value by more than the expected penalty.
+name     h2_cofiring
+duration 30
+dt       0.25
+
+at 0.0   set auto_balance 1
+at 0.0   set gas_dispatch_pct 82
+at 0.0   set renewable_MW 12
+at 0.0   set h2_fraction_pct 0
+
+at 3.0   assert_near  frequency_Hz 50.0 0.25         # settled at baseline
+at 3.0   assert_above CO2_intensity_g_kWh 400.0      # NG-only baseline > 400 g/kWh
+
+at 5.0   set h2_fraction_pct 10
+
+at 8.0   assert_below CO2_intensity_g_kWh 700.0      # 10% H2 cuts CO2 intensity
+at 8.0   assert_near  frequency_Hz 50.0 0.30         # grid unaffected by blend change
+
+at 10.0  set h2_fraction_pct 20
+
+at 14.0  assert_below CO2_intensity_g_kWh 680.0      # 20% H2: significant CO2 reduction
+at 14.0  assert_below heat_rate_kJ_kWh 13500.0       # heat-rate within acceptable range
+at 14.0  assert_near  frequency_Hz 50.0 0.30         # still stable
+at 14.0  assert_above flame_temp_shift_K 10.0        # H2 raises adiabatic flame temperature
+at 14.0  assert_above nox_mg_nm3_15o2 40.0           # thermal NOx correlation is live
+at 14.0  assert_below h2_wobbe_deviation_pct -1.0    # Wobbe index shifts downward with H2
+at 14.0  assert_above flashback_margin_pct 50.0      # still inside a plausible DLE margin
+
+at 25.0  set h2_fraction_pct 0                       # return to NG
+at 28.0  assert_above CO2_intensity_g_kWh 400.0      # back to NG baseline

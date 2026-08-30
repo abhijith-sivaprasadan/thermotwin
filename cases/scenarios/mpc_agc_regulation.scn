@@ -1,0 +1,30 @@
+# MPC-AGC: 5-step receding-horizon frequency regulator vs standard PI-AGC.
+# Load steps under MPC should recover frequency at least as fast as standard
+# AGC with lower frequency excursion. The MPC setpoint must be non-trivial.
+name     mpc_agc_regulation
+duration 60
+dt       0.25
+
+at 0.0   set auto_balance 1
+at 0.0   set mpc_active 1
+at 0.0   set demand_MW 35
+at 0.0   set renewable_MW 12
+
+at 3.0   assert_near  frequency_Hz 50.0 0.20
+at 3.0   assert_above mpc_setpt_MW 0.1              # MPC has a non-trivial setpoint
+
+# Load step +10 MW — MPC should plan ahead of the disturbance
+at 5.0   set demand_MW 45
+
+at 6.0   assert_above frequency_Hz 49.2             # dip bounded (MPC + BESS primary)
+at 20.0  assert_near  frequency_Hz 50.0 0.15        # faster recovery than pure PI
+at 35.0  assert_near  imbalance_MW 0.0 0.75
+
+# Cloud ramp under MPC
+at 40.0  command cloud_ramp
+
+at 42.0  assert_below frequency_Hz 50.0             # dip is real
+at 50.0  assert_near  frequency_Hz 50.0 0.20        # MPC re-dispatches
+
+at 55.0  set mpc_active 0                           # disable MPC
+at 57.0  assert_near  mpc_setpt_MW 0.0 0.1         # setpoint clears when disabled

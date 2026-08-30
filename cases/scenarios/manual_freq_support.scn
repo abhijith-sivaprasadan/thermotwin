@@ -1,0 +1,34 @@
+# MANUAL-mode frequency support: operator trips turbine then sets dispatch
+# manually to a wrong level. The new tick_frequency_support routine must
+# use BESS + curtailment to arrest the over/under-frequency excursion without
+# needing auto_balance = .true.
+name     manual_freq_support
+duration 60
+dt       0.25
+
+at 0.0   set auto_balance 0               # full manual from the start
+at 0.0   set gas_dispatch_pct 92
+at 0.0   set combined_cycle 1
+at 0.0   set demand_MW 35
+at 0.0   set renewable_MW 12
+at 0.0   set battery_soc_pct 55
+
+# With CC on and GT at 92% we have far too much supply → over-frequency
+at 5.0   assert_above frequency_Hz 50.02            # surplus detected
+at 5.0   assert_below frequency_Hz 52.0             # hasn't blown up
+
+# Freq-support should drive BESS to charge and curtail renewables
+at 15.0  assert_below frequency_Hz 51.0             # BESS + curtailment pulling freq down
+at 15.0  assert_below storage_request_MW 0.0         # BESS charging (negative = absorbing)
+
+# 30 s in, manual dispatch stays at 92% but grid settles closer to 50 Hz
+at 40.0  assert_below frequency_Hz 51.5             # freq-support is working
+at 40.0  assert_near  UFLS_stage 0.0 0.1            # no load shedding needed
+
+# Now flip to under-supply: raise load and drop renewable suddenly in manual mode
+at 42.0  set renewable_MW 0
+at 42.0  set demand_MW 70
+at 45.0  assert_below frequency_Hz 50.0             # under-frequency
+at 48.0  assert_above frequency_Hz 48.0             # BESS discharges to arrest
+at 48.0  assert_above storage_request_MW 0.0         # BESS discharging
+at 55.0  assert_above frequency_Hz 49.0             # partial recovery without auto

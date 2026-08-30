@@ -18,13 +18,17 @@ contains
         real(dp) :: imbalance_without_bess_MW, avoided_imbalance_MW
         real(dp) :: bess_up_reserve_MW, bess_down_reserve_MW, bess_fcr_reserve_MW
         real(dp) :: surplus_without_bess_MW, captured_surplus_MW
+        real(dp) :: gross_co2_kg_s, captured_co2_kg_s
 
         served_MW = min(st%demand_MW, max(0.0_dp, st%supply_MW))
         st%revenue_usd_h = served_MW * st%power_price_usd_mwh
         st%fuel_cost_usd_h = st%heat_input_MW * 3.6_dp * st%fuel_price_usd_gj
         st%storage_cost_usd_h = abs(st%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
         st%imbalance_penalty_usd_h = abs(st%imbalance_MW) * IMBALANCE_PENALTY_USD_MWH
-        st%CO2_rate_kg_s = st%fuel_flow_kg_s * CO2_KG_PER_KG_FUEL
+        gross_co2_kg_s = st%fuel_flow_kg_s * st%h2_co2_factor
+        captured_co2_kg_s = 0.0_dp
+        if (st%ccs_active .and. st%combined_cycle) captured_co2_kg_s = st%ccs_co2_captured_t_h / 3.6_dp
+        st%CO2_rate_kg_s = max(0.0_dp, gross_co2_kg_s - captured_co2_kg_s)
         st%co2_cost_usd_h = st%CO2_rate_kg_s * 3.6_dp * st%carbon_price_usd_t
         st%margin_usd_h = st%revenue_usd_h - st%fuel_cost_usd_h - &
             st%storage_cost_usd_h - st%imbalance_penalty_usd_h - st%co2_cost_usd_h

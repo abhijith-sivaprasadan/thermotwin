@@ -26,6 +26,9 @@ jobs:
       - name: Run unit tests and physics selftest
         run: python3 scripts/run_tests.py
 
+      - name: Test runner completeness checks
+        run: python3 scripts/test_run_tests.py
+
       - name: Scenario regression suite
         run: |
           for scn in cases/scenarios/*.scn; do

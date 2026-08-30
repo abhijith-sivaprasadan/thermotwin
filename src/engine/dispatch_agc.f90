@@ -11,7 +11,7 @@ module dispatch_agc
     implicit none
     private
 
-    public :: tick_auto_balance, balance_now, reset_controls
+    public :: tick_auto_balance, tick_frequency_support, balance_now, reset_controls
     public :: ramp_renewable_curtailment_to, should_curtail_renewables
     public :: apply_load_step, apply_cloud_ramp, apply_turbine_trip
 
@@ -95,6 +95,49 @@ contains
         st%gas_dispatch_pct = st%gas_dispatch_pct + &
             clamp_real(gas_target_pct - st%gas_dispatch_pct, -gas_step_pct, gas_step_pct)
     end subroutine tick_auto_balance
+
+    !> Frequency-deviation BESS + renewable support that runs even in MANUAL mode.
+    !> Only activates when |freq - nominal| > 0.3 Hz; never touches gas_dispatch_pct.
+    !> In AUTO mode this is a no-op (tick_auto_balance already handles everything).
+    subroutine tick_frequency_support(st, dt_s)
+        type(GridState), intent(inout) :: st
+        real(dp), intent(in) :: dt_s
+        real(dp) :: eff_renew, bess_target_MW, bess_step_MW, surplus_MW, target_curtail_MW
+        real(dp), parameter :: DEADBAND_HZ = 0.3_dp
+
+        if (st%auto_balance) return   ! auto_balance already covers all stages
+
+        if (abs(st%frequency_Hz - FREQ_NOMINAL_HZ) <= DEADBAND_HZ) return
+
+        eff_renew = effective_renewable_MW(st)
+
+        ! BESS target: absorb the imbalance (demand - renew - thermal), ignore gas manual setpoint
+        bess_target_MW = clamp_real(st%demand_MW - eff_renew - thermal_generation_MW(st), &
+                                    STORAGE_MIN_MW, STORAGE_MAX_MW)
+        if (bess_target_MW > 0.0_dp .and. st%battery_soc_pct < 5.0_dp)   bess_target_MW = 0.0_dp
+        if (bess_target_MW < 0.0_dp .and. st%battery_soc_pct > 95.0_dp)  bess_target_MW = 0.0_dp
+
+        bess_step_MW = BESS_RAMP_MW_PER_S * dt_s
+        st%storage_request_MW = st%storage_request_MW + &
+            clamp_real(bess_target_MW - st%storage_request_MW, -bess_step_MW, bess_step_MW)
+
+        ! Over-frequency (surplus) — also curtail renewables if BESS can't absorb fast enough
+        if (st%frequency_Hz > FREQ_NOMINAL_HZ + DEADBAND_HZ .and. should_curtail_renewables(st)) then
+            eff_renew  = effective_renewable_MW(st)
+            surplus_MW = st%supply_MW - st%demand_MW
+            if (surplus_MW > 0.5_dp) then
+                target_curtail_MW = min(st%renewable_MW, st%renewable_curtail_MW + surplus_MW)
+                call ramp_renewable_curtailment_to(st, target_curtail_MW, dt_s)
+            end if
+        end if
+
+        ! Under-frequency (shortage) — restore curtailed renewables
+        if (st%frequency_Hz < FREQ_NOMINAL_HZ - DEADBAND_HZ .and. &
+                st%renewable_curtail_MW > 0.0_dp) then
+            call ramp_renewable_curtailment_to(st, &
+                max(0.0_dp, st%renewable_curtail_MW - CURTAIL_RAMP_MW_PER_S * dt_s), dt_s)
+        end if
+    end subroutine tick_frequency_support
 
     !> One-shot balance: snap BESS and turbine to calculated setpoints.
     !> The AUTO/MANUAL latch is intentionally left unchanged.
@@ -320,6 +363,56 @@ contains
         st%alarm_low_soc = .false.
         st%alarm_ufls_active = .false.
         st%alarm_turbine_max = .false.
+        st%h2_fraction_pct = 0.0_dp
+        st%h2_lhv_mj_kg = 50.0_dp
+        st%h2_co2_factor = CO2_KG_PER_KG_FUEL
+        st%h2_nox_factor = 1.0_dp
+        st%h2_wobbe_ok = .true.
+        st%h2_co2_avoided_t = 0.0_dp
+        st%co2_daily_t = 0.0_dp
+        st%co2_daily_ref_t = 0.0_dp
+        st%p2x_active = .false.
+        st%p2x_load_MW = 0.0_dp
+        st%p2x_h2_kg_s = 0.0_dp
+        st%ccs_active = .false.
+        st%ccs_parasitic_MW = 0.0_dp
+        st%ccs_co2_captured_t_h = 0.0_dp
+        st%gfm_mode = .false.
+        st%gfm_virtual_H = 4.0_dp
+        st%gfm_droop_pct = 5.0_dp
+        st%gfm_synth_MW = 0.0_dp
+        st%gfm_H_equiv = 0.0_dp
+        st%freq_rocof_Hz_s = 0.0_dp
+        st%mpc_active = .false.
+        st%mpc_setpt_MW = 0.0_dp
+        st%mpc_cost_last = 0.0_dp
+        st%tie_active = .false.
+        st%tie_flow_MW = 0.0_dp
+        st%tie_scheduled_MW = 0.0_dp
+        st%ace_MW = 0.0_dp
+        st%zone2_freq_Hz = FREQ_NOMINAL_HZ
+        st%zone2_demand_MW = 150.0_dp
+        st%zone2_gen_MW = 150.0_dp
+        st%rl_mode = .false.
+        st%rl_storage_setpt = 0.0_dp
+        st%rl_last_reward = 0.0_dp
+        st%rl_cumreward = 0.0_dp
+        st%dnn_adapting = .false.
+        st%dnn_online_bias = 0.0_dp
+        st%dnn_online_rmse = 0.0_dp
+        st%dnn_online_n = 0
+        st%fc_class1 = 0
+        st%fc_class2 = 0
+        st%fc_conf1 = 0.0_dp
+        st%fc_conf2 = 0.0_dp
+        st%ou_active = .false.
+        st%ou_demand_noise = 0.0_dp
+        st%ou_wind_noise = 0.0_dp
+        st%freq_nadir_Hz = FREQ_NOMINAL_HZ
+        st%freq_prev_Hz = FREQ_NOMINAL_HZ
+        st%dnn_hr_sigma = 0.0_dp
+        st%pareto_n_pts = 0
+        st%pareto_dirty = .true.
     end subroutine reset_controls
 
 end module dispatch_agc

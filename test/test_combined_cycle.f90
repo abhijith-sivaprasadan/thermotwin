@@ -33,6 +33,8 @@ program test_combined_cycle
         call expect_true("CC: efficiency in 52-56% validation band", &
             st%plant_efficiency >= 0.52_dp .and. st%plant_efficiency <= 0.56_dp, failures)
         call expect_true("CC: HRSG pinch respects minimum", st%hrsg_pinch_K >= 15.0_dp, failures)
+        call expect_true("CC: HRSG pinch clears reference envelope", &
+            st%hrsg_pinch_K >= st%physics_hrsg_pinch_ref_K - 0.5_dp, failures)
         call expect_true("CC: stack temperature remains above wet-stack floor", &
             st%hrsg_stack_T_K > 360.0_dp, failures)
     end block
