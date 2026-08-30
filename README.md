@@ -49,20 +49,24 @@ independent scripts.
 You need a Fortran compiler (`gfortran` ≥ 9) and, for the plots, `python3` with
 `numpy` and `matplotlib`.
 
-### Option A — Fortran Package Manager (alternative; not verified in this review)
-
-```bash
-fpm build
-fpm run -- selftest                              # verify the physics
-fpm run -- run cases/design_point.csv            # solve the design point
-fpm test                                         # full unit-test suite
-```
-
-### Option B — gfortran + Make (verified in the current review)
+### Reference path — gfortran + Make
 
 ```bash
 make
 make check
+```
+
+See the [verification matrix](docs/verification_matrix.md) for numerical oracles,
+tolerances and the stable/experimental boundary.
+
+### Experimental alternative — Fortran Package Manager (unverified)
+
+FPM is not a supported primary path until the expanded engine passes build/test
+parity. The retained manifest and commands below are development candidates only.
+
+```bash
+fpm build
+fpm test
 ```
 
 The older convenience scripts below have not been reverified against the expanded

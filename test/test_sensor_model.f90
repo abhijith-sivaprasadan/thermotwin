@@ -43,6 +43,24 @@ program test_sensor_model
         call expect_near("noise ensemble sigma ~ spec", stddev(samp), 2.0_dp, 0.1_dp, failures)
     end block
 
+    ! Re-seeding reproduces a sequence within one compiler/runtime.
+    ! Cross-compiler bitwise equivalence is not promised by RANDOM_NUMBER.
+    block
+        type(SensorSpec) :: s
+        real(dp) :: first(17), repeated(17)
+        integer :: i
+        s = make_sensor("reseed", bias=0.0_dp, noise_sigma=2.0_dp, drift_rate=0.0_dp)
+        call seed_rng(2026)
+        do i = 1, size(first)
+            first(i) = apply_sensor(50.0_dp, s, 0.0_dp)
+        end do
+        call seed_rng(2026)
+        do i = 1, size(repeated)
+            repeated(i) = apply_sensor(50.0_dp, s, 0.0_dp)
+        end do
+        call expect_true("seed reproduces noise sequence", all(first == repeated), failures)
+    end block
+
     call finish("test_sensor_model", failures)
 contains
     include "test_assert.inc"

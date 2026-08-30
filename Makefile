@@ -10,7 +10,7 @@
 #   make gui-debug  # build the GUI with a console attached for diagnostics
 #   make clean      # remove build artefacts
 #
-# fpm users can ignore this file and simply use `fpm build` / `fpm test`.
+# Make is the verified reference path; FPM parity remains unverified.
 # ===========================================================================
 
 FC      = gfortran
