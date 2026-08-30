@@ -1,6 +1,6 @@
 # ThermoTwin-F
 
-[![CI](https://github.com/YOUR-USERNAME/thermotwin-f/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR-USERNAME/thermotwin-f/actions/workflows/ci.yml)
+[![CI](https://github.com/abhijith-sivaprasadan/thermotwin/actions/workflows/ci.yml/badge.svg)](https://github.com/abhijith-sivaprasadan/thermotwin/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
 
