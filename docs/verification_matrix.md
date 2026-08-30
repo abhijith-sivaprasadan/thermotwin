@@ -14,8 +14,15 @@ Numerical/software oracles, not external engine validation or industrial accepta
 | Seeded noise | Reseed and replay in same runtime | Exact repeated sequence | `test/test_sensor_model.f90` |
 | Noise mean/sigma | Configured mean 50, sigma 2 | 0.1 each | `test/test_sensor_model.f90` |
 
-Run `make check`. For an isolated directory, build both CLI and tests there and
-use `python scripts/run_tests.py --build-dir build/review`.
+Run `make check`. For an isolated directory, override both output variables:
+
+```sh
+make BUILD=build/review EXE=build/review/thermotwin all tests
+python scripts/run_tests.py --build-dir build/review
+```
+
+Setting only `BUILD` leaves the CLI at the repository root; the runner needs it
+inside the selected build directory for its physics selftest.
 
 ## Capability boundary
 
