@@ -70,6 +70,28 @@ program test_transient_thermal
         call expect_near("Euler vs RK4 agree (fine grid)", Tme(N), Tmr(N), 0.5_dp, failures)
     end block
 
+    ! Entire constant-driver trajectory, not just its steady-state limit.
+    block
+        type(ComponentState) :: c
+        integer, parameter :: N = 101
+        real(dp) :: t(N), Tg(N), Tm(N), exact(N), T_inf, tau
+        integer :: i
+        c%temperature_K = 300.0_dp
+        c%thermal_mass_J_K = 1.0e5_dp
+        c%hA_W_K = 5.0e3_dp
+        c%UA_loss_W_K = 1.0e3_dp
+        T_inf = (c%hA_W_K*900.0_dp + c%UA_loss_W_K*300.0_dp) / (c%hA_W_K+c%UA_loss_W_K)
+        tau = c%thermal_mass_J_K / (c%hA_W_K+c%UA_loss_W_K)
+        do i = 1, N
+            t(i) = real(i-1, dp)
+            Tg(i) = 900.0_dp
+            exact(i) = T_inf + (300.0_dp-T_inf)*exp(-t(i)/tau)
+        end do
+        call simulate_transient(c, t, Tg, 300.0_dp, INTEG_RK4, 1, Tm)
+        call expect_true("RK4 transient matches analytic trajectory", &
+            maxval(abs(Tm-exact)) < 1.0e-4_dp, failures)
+    end block
+
     call finish("test_transient_thermal", failures)
 contains
     include "test_assert.inc"

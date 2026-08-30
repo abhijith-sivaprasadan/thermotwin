@@ -6,15 +6,15 @@ maintainer = "Abhijith Sivaprasadan"
 copyright = "Copyright 2026, Abhijith Sivaprasadan"
 description = "Modern Fortran gas-turbine performance simulator (design, degradation, transient, uncertainty, diagnostics)."
 
-# ThermoTwin-F builds cleanly with the Fortran Package Manager (fpm):
+# Experimental FPM manifest: NOT a verified primary build path.
+# Use Make for the tested core build. These are candidate parity-test commands:
 #
 #   fpm build                 # compile library + app
 #   fpm run -- selftest       # run the physics self-test
 #   fpm run -- run cases/design_point.csv
 #   fpm test                  # run the full unit-test suite
 #
-# If you do not have fpm installed, the included scripts/build.sh and
-# scripts/run_tests.sh reproduce the same builds with gfortran directly.
+# Older convenience scripts are not substitutes for the verified Make workflow.
 
 [build]
 auto-executables = true
