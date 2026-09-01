@@ -4,10 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
 
-**A Modern Fortran gas-turbine performance simulator — design, degradation,
-transient thermal response, measurement uncertainty, and inverse diagnostics.**
+**A Modern Fortran gas-turbine and combined-cycle performance simulator —
+design, degradation, transient thermal response, measurement uncertainty,
+inverse diagnostics, data reconciliation, and OPC UA integration.**
 
-ThermoTwin-F models a single-shaft, open/simple Brayton-cycle gas turbine and
+ThermoTwin-F models a single-shaft, open/simple Brayton-cycle gas turbine —
+with an optional combined-cycle extension (HRSG + steam bottoming) — and
 follows the real workflow of a performance engineer across an engine's life:
 
 1. **Design** — establish the clean design point and its off-design sensitivities.
@@ -141,6 +143,16 @@ first row of their file as the baseline machine.
   KPI uncertainty, and a deterministic bias-sensitivity tornado.
 - **Inverse diagnostics** — weighted least-squares estimation of the degradation
   state from observed KPIs (grid search + coordinate-descent refinement).
+- **Combined-cycle bottoming** — single-pressure HRSG (pinch/approach-limited
+  0-D heat balance) driving a steam bottoming cycle with a condenser
+  back-pressure correlation against ambient temperature.
+- **Data reconciliation** — single-constraint weighted least-squares
+  reconciliation of redundant noisy measurements, with a chi-square(1) global
+  test for gross-error detection.
+- **OPC UA integration** — an `iso_c_binding` bridge to `open62541` that writes
+  named tag values with engineering units to an OPC UA address space; this is
+  an optional GUI-side integration, not covered by core CI (see the
+  [verification matrix](docs/verification_matrix.md)).
 
 Representative legacy simple-cycle design-point results: **≈30 MW**, **≈31 % thermal
 efficiency**, **≈11 800 kJ/kWh heat rate**, **≈797 K exhaust** — squarely in the
@@ -208,7 +220,7 @@ thermotwin-f/
 Natural extensions, each building on a stated limitation: real-gas properties by
 default · compressor/turbine performance maps · turbine cooling-air bookkeeping ·
 a first NOx correlation · a multi-node transient thermal model with stress
-output · a Bayesian/Kalman diagnostics formulation · combined-cycle bottoming.
+output · a Bayesian/Kalman diagnostics formulation.
 
 ---
 
