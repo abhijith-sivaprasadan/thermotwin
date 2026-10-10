@@ -231,3 +231,9 @@ with `python train_dnn.py` (NumPy required). Training targets are synthetic mode
 outputs, not measured plant observations; surrogate agreement is not external validation.
 
 MIT — see [`LICENSE`](LICENSE).
+
+## Parallel execution and CI
+
+Optional OpenMP batch operating-point evaluation with serial equivalence checks and measured workstation scaling. See [docs/openmp_scaling.md](docs/openmp_scaling.md).
+
+CI runs on Ubuntu, Windows and macOS. ThermoTwin-F uses release/debug profiles and serial/OpenMP builds; PyNEXUS tests Python 3.10, 3.11 and 3.12 and runs a separate Linux MPI equivalence job. Weekly runs check dependency drift. Hosted run status is available in the repository’s Actions tab; documented local measurements are separate from hosted verification.

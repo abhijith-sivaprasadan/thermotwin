@@ -1,0 +1,77 @@
+{
+  "platform": "Windows-10-10.0.26300-SP0",
+  "processor": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+  "compiler": "GNU Fortran (x86_64-win32-seh-rev1, Built by MinGW-Builds project) 13.2.0",
+  "core_count": 8,
+  "core_basis": "physical cores (psutil)",
+  "cases": 500000,
+  "repeats": 3,
+  "timing_scope": "run_cases only; setup and full serial verification excluded",
+  "rows": [
+    {
+      "mode": "serial",
+      "threads": 1,
+      "seconds": [
+        0.341278,
+        0.3374311,
+        0.3298782
+      ],
+      "median_seconds": 0.3374311,
+      "max_relative_error": 0.0,
+      "speedup": 1.0,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 1,
+      "seconds": [
+        0.5188518,
+        0.5024381,
+        0.4902007
+      ],
+      "median_seconds": 0.5024381,
+      "max_relative_error": 0.0,
+      "speedup": 0.6715874054933334,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 2,
+      "seconds": [
+        0.2784219,
+        0.2666257,
+        0.2774822
+      ],
+      "median_seconds": 0.2774822,
+      "max_relative_error": 0.0,
+      "speedup": 1.2160459301533575,
+      "ideal_speedup": 2
+    },
+    {
+      "mode": "openmp",
+      "threads": 4,
+      "seconds": [
+        0.1511542,
+        0.1661096,
+        0.1629277
+      ],
+      "median_seconds": 0.1629277,
+      "max_relative_error": 0.0,
+      "speedup": 2.0710480783807785,
+      "ideal_speedup": 4
+    },
+    {
+      "mode": "openmp",
+      "threads": 8,
+      "seconds": [
+        0.1025507,
+        0.1001919,
+        0.1029816
+      ],
+      "median_seconds": 0.1025507,
+      "max_relative_error": 0.0,
+      "speedup": 3.2903831958241145,
+      "ideal_speedup": 8
+    }
+  ]
+}

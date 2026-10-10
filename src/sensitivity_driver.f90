@@ -21,9 +21,13 @@ contains
         type(CycleResult), allocatable, intent(out) :: results(:)
         integer :: i
         allocate(results(size(cases)))
+        ! Independent operating points; property_model is read-only during this call.
+        ! No RNG, time integration, shared scratch buffers or reductions in solve_cycle.
+        !$omp parallel do default(none) shared(cases, results) private(i) schedule(static)
         do i = 1, size(cases)
             results(i) = solve_cycle(cases(i))
         end do
+        !$omp end parallel do
     end subroutine run_cases
 
     !> Sweep one named field of a base case over [v_lo, v_hi] in n points.
