@@ -11,7 +11,7 @@ python -m pip install psutil
 python scripts/benchmark_openmp.py --cases 500000 --repeats 3
 ```
 
-The driver sweeps ambient temperature (273.15â€“313.15 K), pressure ratio (10â€“20) and turbine inlet temperature (1350â€“1500 K), using existing input fields. It times only the complete batch solve with a wall clock, excluding setup and verification. A 64-bit SYSTEM_CLOCK supplies the high-resolution wall clock; the initial 32-bit timer produced a zero duration on the faster Windows hosted runner and was corrected rather than bypassing its failure. Every case is then checked against a direct serial solve, including all 25 numeric result fields, names, status and convergence. It compares with a relative tolerance of 1e-12; the measured maximum error was zero for every run. There is also a separately compiled binary with OpenMP directives disabled, which establishes the serial baseline.
+The driver sweeps ambient temperature (273.15–313.15 K), pressure ratio (10–20) and turbine inlet temperature (1350–1500 K), using existing input fields. It times only the complete batch solve with a wall clock, excluding setup and verification. A 64-bit SYSTEM_CLOCK supplies the high-resolution wall clock; the initial 32-bit timer produced a zero duration on the faster Windows hosted runner and was corrected rather than bypassing its failure. Every case is then checked against a direct serial solve, including all 25 numeric result fields, names, status and convergence. It compares with a relative tolerance of 1e-12; the measured maximum error was zero for every run. There is also a separately compiled binary with OpenMP directives disabled, which establishes the serial baseline.
 
 ## Local measurements
 
