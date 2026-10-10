@@ -34,7 +34,7 @@ jobs:
           python-version: '3.11'
       - name: Cache compiler package downloads
         if: runner.os != 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/thermotwin-apt
@@ -47,6 +47,8 @@ jobs:
           mkdir -p "$HOME/.cache/thermotwin-apt/partial"
           sudo apt-get update
           sudo apt-get -o Dir::Cache::archives="$HOME/.cache/thermotwin-apt" install -y gfortran g++ make
+          # apt owns its lock/partial paths; the cache action runs as runner.
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/thermotwin-apt"
       - name: Install macOS compiler
         if: runner.os == 'macOS'
         run: |
