@@ -4,28 +4,28 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
 
-**A Modern Fortran gas-turbine and combined-cycle performance simulator —
+**A Modern Fortran gas-turbine and combined-cycle performance simulator â€”
 design, degradation, transient thermal response, measurement uncertainty,
 inverse diagnostics, data reconciliation, and OPC UA integration.**
 
-ThermoTwin-F models a single-shaft, open/simple Brayton-cycle gas turbine —
-with an optional combined-cycle extension (HRSG + steam bottoming) — and
+ThermoTwin-F models a single-shaft, open/simple Brayton-cycle gas turbine â€”
+with an optional combined-cycle extension (HRSG + steam bottoming) â€” and
 follows the real workflow of a performance engineer across an engine's life:
 
-1. **Design** — establish the clean design point and its off-design sensitivities.
-2. **Monitor** — quantify how fouling, erosion, and pressure losses degrade performance.
-3. **Diagnose** — given noisy plant measurements, infer *where* an engine has degraded.
+1. **Design** â€” establish the clean design point and its off-design sensitivities.
+2. **Monitor** â€” quantify how fouling, erosion, and pressure losses degrade performance.
+3. **Diagnose** â€” given noisy plant measurements, infer *where* an engine has degraded.
 
-The whole project is built around a single shared data model — one `InputCase`
+The whole project is built around a single shared data model â€” one `InputCase`
 (machine + operating point) flows in, one `CycleResult` (every station state and
-KPI) flows out — so the advanced modules compose coherently instead of being
+KPI) flows out â€” so the advanced modules compose coherently instead of being
 independent scripts.
 
 ## Results at a glance
 
 <table>
 <tr>
-<td align="center"><b>Design-point cycle</b><br><img src="output/figures/design_point.png" alt="Design-point summary — station temperatures and fuel energy disposition" width="480"></td>
+<td align="center"><b>Design-point cycle</b><br><img src="output/figures/design_point.png" alt="Design-point summary â€” station temperatures and fuel energy disposition" width="480"></td>
 <td align="center"><b>Degradation impact</b><br><img src="output/figures/degradation.png" alt="Clean / mild / severe / washed KPI comparison" width="480"></td>
 </tr>
 <tr>
@@ -48,10 +48,10 @@ independent scripts.
 
 ## Quick start
 
-You need a Fortran compiler (`gfortran` ≥ 9) and, for the plots, `python3` with
+You need a Fortran compiler (`gfortran` â‰¥ 9) and, for the plots, `python3` with
 `numpy` and `matplotlib`.
 
-### Reference path — gfortran + Make
+### Reference path â€” gfortran + Make
 
 ```bash
 make
@@ -61,7 +61,7 @@ make check
 See the [verification matrix](docs/verification_matrix.md) for numerical oracles,
 tolerances and the stable/experimental boundary.
 
-### Experimental alternative — Fortran Package Manager (unverified)
+### Experimental alternative â€” Fortran Package Manager (unverified)
 
 FPM is not a supported primary path until the expanded engine passes build/test
 parity. The retained manifest and commands below are development candidates only.
@@ -130,32 +130,32 @@ first row of their file as the baseline machine.
 
 ## What it computes
 
-- **Cycle solver** — full station-by-station solution (compressor, combustor,
+- **Cycle solver** â€” full station-by-station solution (compressor, combustor,
   turbine, shaft/generator) with a rigorous fuel-mass-conserving combustor
   energy balance; outputs power, thermal efficiency, heat rate, exhaust
   temperature and energy, specific power, and a converged/sanity flag.
-- **Degradation** — four interpretable knobs (compressor fouling, mass-flow
-  loss, turbine erosion, combustor ΔP rise) applied to the clean case and
+- **Degradation** â€” four interpretable knobs (compressor fouling, mass-flow
+  loss, turbine erosion, combustor Î”P rise) applied to the clean case and
   re-solved, so all KPI changes are emergent.
-- **Transient thermal** — lumped-capacitance metal node driven by the cycle's
+- **Transient thermal** â€” lumped-capacitance metal node driven by the cycle's
   exhaust temperature, integrated with Euler and RK4.
-- **Sensor + uncertainty** — bias/noise/drift measurement model, Monte Carlo
+- **Sensor + uncertainty** â€” bias/noise/drift measurement model, Monte Carlo
   KPI uncertainty, and a deterministic bias-sensitivity tornado.
-- **Inverse diagnostics** — weighted least-squares estimation of the degradation
+- **Inverse diagnostics** â€” weighted least-squares estimation of the degradation
   state from observed KPIs (grid search + coordinate-descent refinement).
-- **Combined-cycle bottoming** — single-pressure HRSG (pinch/approach-limited
+- **Combined-cycle bottoming** â€” single-pressure HRSG (pinch/approach-limited
   0-D heat balance) driving a steam bottoming cycle with a condenser
   back-pressure correlation against ambient temperature.
-- **Data reconciliation** — single-constraint weighted least-squares
+- **Data reconciliation** â€” single-constraint weighted least-squares
   reconciliation of redundant noisy measurements, with a chi-square(1) global
   test for gross-error detection.
-- **OPC UA integration** — an `iso_c_binding` bridge to `open62541` that writes
+- **OPC UA integration** â€” an `iso_c_binding` bridge to `open62541` that writes
   named tag values with engineering units to an OPC UA address space; this is
   an optional GUI-side integration, not covered by core CI (see the
   [verification matrix](docs/verification_matrix.md)).
 
-Representative legacy simple-cycle design-point results: **≈30 MW**, **≈31 % thermal
-efficiency**, **≈11 800 kJ/kWh heat rate**, **≈797 K exhaust** — squarely in the
+Representative legacy simple-cycle design-point results: **â‰ˆ30 MW**, **â‰ˆ31 % thermal
+efficiency**, **â‰ˆ11 800 kJ/kWh heat rate**, **â‰ˆ797 K exhaust** â€” squarely in the
 expected band for a simple-cycle machine.
 
 ---
@@ -164,25 +164,25 @@ expected band for a simple-cycle machine.
 
 ```
 thermotwin-f/
-├── app/main.f90              CLI driver (all modes)
-├── src/                      simulation modules (see below)
-├── test/                     unit tests (one program per module) + shared asserts
-├── cases/                    CSV inputs + format documentation
-├── python/                   matplotlib post-processing + PDF report generator
-├── docs/                     theory, equations, verification, limitations, report
-├── scripts/                  build.sh, run_tests.sh, run_pipeline.sh
-├── output/                   generated CSVs, figures, and the PDF report
-├── fpm.toml                  Fortran Package Manager build
-├── Makefile                  gfortran build (fpm-free)
-└── LICENSE                   MIT
+â”œâ”€â”€ app/main.f90              CLI driver (all modes)
+â”œâ”€â”€ src/                      simulation modules (see below)
+â”œâ”€â”€ test/                     unit tests (one program per module) + shared asserts
+â”œâ”€â”€ cases/                    CSV inputs + format documentation
+â”œâ”€â”€ python/                   matplotlib post-processing + PDF report generator
+â”œâ”€â”€ docs/                     theory, equations, verification, limitations, report
+â”œâ”€â”€ scripts/                  build.sh, run_tests.sh, run_pipeline.sh
+â”œâ”€â”€ output/                   generated CSVs, figures, and the PDF report
+â”œâ”€â”€ fpm.toml                  Fortran Package Manager build
+â”œâ”€â”€ Makefile                  gfortran build (fpm-free)
+â””â”€â”€ LICENSE                   MIT
 ```
 
 ### Source modules (dependency order)
 
-`precision_kinds` → `constants` → `types` → `utilities` → `fluid_properties`
-→ `ambient` → `compressor` → `combustor` → `turbine` → `shaft_generator`
-→ `cycle_solver` → `degradation` → `transient_thermal` → `sensor_model`
-→ `uncertainty_analysis` → `diagnostics_solver` → `csv_io` → `sensitivity_driver`.
+`precision_kinds` â†’ `constants` â†’ `types` â†’ `utilities` â†’ `fluid_properties`
+â†’ `ambient` â†’ `compressor` â†’ `combustor` â†’ `turbine` â†’ `shaft_generator`
+â†’ `cycle_solver` â†’ `degradation` â†’ `transient_thermal` â†’ `sensor_model`
+â†’ `uncertainty_analysis` â†’ `diagnostics_solver` â†’ `csv_io` â†’ `sensitivity_driver`.
 
 ---
 
@@ -204,7 +204,7 @@ thermotwin-f/
 - **One data model:** `InputCase` and `CycleResult` are the contract every
   module speaks, which is what lets degradation/sensors/uncertainty/diagnostics
   interoperate.
-- **Switchable fluid properties:** constant `cp`/`γ` by default (so the hand
+- **Switchable fluid properties:** constant `cp`/`Î³` by default (so the hand
   calculation is exactly reproducible), with a temperature-dependent option
   behind the same interface.
 - **Reproducibility:** the RNG is explicitly seeded, so Monte Carlo studies
@@ -218,9 +218,9 @@ thermotwin-f/
 ## Roadmap
 
 Natural extensions, each building on a stated limitation: real-gas properties by
-default · compressor/turbine performance maps · turbine cooling-air bookkeeping ·
-a first NOx correlation · a multi-node transient thermal model with stress
-output · a Bayesian/Kalman diagnostics formulation.
+default Â· compressor/turbine performance maps Â· turbine cooling-air bookkeeping Â·
+a first NOx correlation Â· a multi-node transient thermal model with stress
+output Â· a Bayesian/Kalman diagnostics formulation.
 
 ---
 
@@ -230,4 +230,11 @@ Optional neural-surrogate weights are loaded from `dnn_weights.txt`. Regenerate 
 with `python train_dnn.py` (NumPy required). Training targets are synthetic model
 outputs, not measured plant observations; surrogate agreement is not external validation.
 
-MIT — see [`LICENSE`](LICENSE).
+MIT â€” see [`LICENSE`](LICENSE).
+
+
+## Parallel execution and CI
+
+Optional OpenMP batch operating-point evaluation with serial equivalence checks and measured workstation scaling. See [docs/openmp_scaling.md](docs/openmp_scaling.md).
+
+CI runs on Ubuntu, Windows and macOS. ThermoTwin-F uses release/debug profiles and serial/OpenMP builds; PyNEXUS tests Python 3.10, 3.11 and 3.12 and runs a separate Linux MPI equivalence job. Weekly runs check dependency drift. Hosted run status is available in the repository’s Actions tab; documented local measurements are separate from hosted verification.

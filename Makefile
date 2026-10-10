@@ -15,6 +15,7 @@
 
 FC      = gfortran
 CXX     = g++
+OPENMP  ?= 0
 BUILD   := build
 SRC     := src
 APP     := app
@@ -24,6 +25,10 @@ FFLAGS_COMMON := -J $(BUILD) -I $(BUILD) -ffree-line-length-none -std=f2008
 FFLAGS_REL    := -O2
 FFLAGS_DBG    := -O0 -g -fcheck=all -fbacktrace -Wall -Wextra -fimplicit-none
 FFLAGS        := $(FFLAGS_COMMON) $(FFLAGS_REL)
+ifeq ($(OPENMP),1)
+FFLAGS_COMMON += -fopenmp
+FFLAGS += -fopenmp
+endif
 CXXFLAGS_REL  := -O2 -std=c++17 -Wall -Wextra
 CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 

@@ -2,39 +2,80 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
   pull_request:
-    branches: [main, master]
+  workflow_dispatch:
+  schedule:
+    - cron: '43 5 * * 1'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
-    name: Build & test (gfortran, Ubuntu)
-    runs-on: ubuntu-latest
-
+  verify:
+    name: ${{ matrix.os }} / ${{ matrix.profile }} / OpenMP
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        profile: [release, debug]
+    env:
+      OMP_NUM_THREADS: '2'
+      OMP_DYNAMIC: 'FALSE'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install gfortran and g++
-        run: sudo apt-get install -y gfortran g++
-
-      - name: Build engine + CLI
-        run: make -j$(nproc)
-
-      - name: Build unit tests
-        run: make tests -j$(nproc)
-
-      - name: Run unit tests and physics selftest
-        run: python3 scripts/run_tests.py
-
-      - name: Test runner completeness checks
-        run: python3 scripts/test_run_tests.py
-
-      - name: Scenario regression suite
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Cache compiler package downloads
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/thermotwin-apt
+            ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-${{ runner.arch }}-gcc-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-gcc-
+      - name: Install Linux compiler
+        if: runner.os == 'Linux'
         run: |
-          for scn in cases/scenarios/*.scn; do
-            echo "--- $scn"
-            ./thermotwin scenario run "$scn"
-          done
+          mkdir -p "$HOME/.cache/thermotwin-apt/partial"
+          sudo apt-get update
+          sudo apt-get -o Dir::Cache::archives="$HOME/.cache/thermotwin-apt" install -y gfortran g++ make
+      - name: Install macOS compiler
+        if: runner.os == 'macOS'
+        run: |
+          brew install gcc
+          compiler=$(find "$(brew --prefix gcc)/bin" -name 'gfortran-*' -type f | sort | tail -n 1)
+          test -n "$compiler"
+          echo "FC=$compiler" >> "$GITHUB_ENV"
+          echo "$(dirname "$compiler")" >> "$GITHUB_PATH"
+      - name: Install Windows compiler
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc-fortran
+      - name: Expose Windows compiler to Python and Make
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          'C:\msys64\ucrt64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Existing suite and scenario regressions (OpenMP)
+        run: python scripts/ci_verify.py --profile ${{ matrix.profile }} --openmp 1
+      - name: Existing suite and scenario regressions (serial build)
+        run: python scripts/ci_verify.py --profile ${{ matrix.profile }} --openmp 0
+      - name: Full-field serial versus OpenMP equivalence and wall timing
+        run: python scripts/benchmark_openmp.py --compiler '${{ env.FC || 'gfortran' }}' --cases 20000 --repeats 1 --output build/ci-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openmp-${{ matrix.os }}-${{ matrix.profile }}
+          path: build/ci-benchmark.json
