@@ -11,7 +11,7 @@ python -m pip install psutil
 python scripts/benchmark_openmp.py --cases 500000 --repeats 3
 ```
 
-The driver sweeps ambient temperature (273.15–313.15 K), pressure ratio (10–20) and turbine inlet temperature (1350–1500 K), using existing input fields. It times only the complete batch solve with a wall clock, excluding setup and verification. Every case is then checked against a direct serial solve, including all 25 numeric result fields, names, status and convergence. It compares with a relative tolerance of 1e-12; the measured maximum error was zero for every run. There is also a separately compiled binary with OpenMP directives disabled, which establishes the serial baseline.
+The driver sweeps ambient temperature (273.15â€“313.15 K), pressure ratio (10â€“20) and turbine inlet temperature (1350â€“1500 K), using existing input fields. It times only the complete batch solve with a wall clock, excluding setup and verification. A 64-bit SYSTEM_CLOCK supplies the high-resolution wall clock; the initial 32-bit timer produced a zero duration on the faster Windows hosted runner and was corrected rather than bypassing its failure. Every case is then checked against a direct serial solve, including all 25 numeric result fields, names, status and convergence. It compares with a relative tolerance of 1e-12; the measured maximum error was zero for every run. There is also a separately compiled binary with OpenMP directives disabled, which establishes the serial baseline.
 
 ## Local measurements
 
@@ -19,11 +19,13 @@ Measured 11 October 2026 on Windows, GNU Fortran 13.2.0, 8 physical cores. These
 
 | Build | Threads | Wall time (s) | Speedup vs serial build | Ideal speedup |
 | --- | ---: | ---: | ---: | ---: |
-| serial | 1 | 0.343000 | 1.0000 | 1 |
-| openmp | 1 | 0.328000 | 1.0457 | 1 |
-| openmp | 2 | 0.203000 | 1.6897 | 2 |
-| openmp | 4 | 0.141000 | 2.4326 | 4 |
-| openmp | 8 | 0.078000 | 4.3974 | 8 |
+| serial | 1 | 0.337431 | 1.0000 | 1 |
+| openmp | 1 | 0.502438 | 0.6716 | 1 |
+| openmp | 2 | 0.277482 | 1.2160 | 2 |
+| openmp | 4 | 0.162928 | 2.0710 | 4 |
+| openmp | 8 | 0.102551 | 3.2904 | 8 |
+
+The initial 500,000-case measurements (32-bit timer) are retained in [openmp_benchmark_initial.json](openmp_benchmark_initial.json): serial 0.343 s and 8-thread OpenMP 0.078 s (4.3974x). The higher-resolution rerun above showed a lower speedup and a slower one-thread OpenMP case; both results are retained.
 
 The earlier 200,000-case pilot was noisier: serial 0.125 s; OpenMP 1/2/4/8 threads 0.203/0.109/0.063/0.047 s (speedups 0.6158/1.1468/1.9841/2.6596). In that pilot one OpenMP thread was slower than the serial binary. Larger workloads reduce timer/launch noise, but speedup is neither linear nor guaranteed. Per-case solve cost, allocation, memory bandwidth and scheduling overhead limit scaling.
 

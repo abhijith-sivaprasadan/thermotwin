@@ -4,12 +4,14 @@ program benchmark_cases
     use sensitivity_driver, only: run_cases
     use cycle_solver, only: solve_cycle
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: iso_fortran_env, only: int64
     !$ use omp_lib, only: omp_get_num_threads
     implicit none
     type(InputCase), allocatable :: cases(:)
     type(CycleResult), allocatable :: results(:)
     type(CycleResult) :: reference
-    integer :: n, i, observed_threads, rate, started, stopped
+    integer :: n, i, observed_threads
+    integer(int64) :: rate, started, stopped
     real(dp) :: error, max_error, elapsed
     character(len=64) :: arg
     n = 10000
