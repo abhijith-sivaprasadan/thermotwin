@@ -1,5 +1,13 @@
 # ThermoTwin-F — Revamp 7.0 Roadmap  (Pure Physics & Scientific Analysis)
 
+> **Release-candidate accuracy erratum (26 October 2026):** This is a historical
+> development roadmap, not independent scientific validation. Implemented gas
+> properties use NASA seven-coefficient cp polynomial terms, not full NASA-9;
+> legacy-named `if97_*` steam helpers are simplified correlations, not full
+> IAPWS-IF97. The independent CoolProp comparison quantifies material enthalpy
+> errors. See [independent benchmarks](INDEPENDENT_BENCHMARKS.md) and
+> [release evidence](RELEASE_EVIDENCE_2026-10-26.md).
+>
 > Status: **Launched** 2026-06-15 · Scope: **engine-deep** (physics + analysis + interpretation) ·
 > Flagship: **all four** (exergy · fidelity · UQ · diagrams) · Rigor: **full research pipeline**
 

@@ -2,6 +2,13 @@
 
 This folder contains the optional native Windows grid-balancing GUI.
 
+> **Release qualification:** The GitHub CI now verifies a clean Windows
+> **compilation** of this GUI after downloading the pinned open62541 source.
+> This is not evidence that all interactive screens, exports, or OPC UA tags
+> function correctly. Complete the manual [GUI acceptance checklist](../docs/GUI_ACCEPTANCE.md)
+> before distributing a new Windows binary. The current source-only research
+> beta should label the GUI experimental until then.
+
 The GUI is a single native Windows executable. The application lifecycle and
 solver integration are written in Fortran through `iso_c_binding`, and the
 dashboard links to the existing ThermoTwin-F solver modules. It does not shell

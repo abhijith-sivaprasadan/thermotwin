@@ -1,6 +1,8 @@
 # Core verification matrix
 
 Numerical/software oracles, not external engine validation or industrial acceptance limits.
+For reproducible external steam-property errors see [independent benchmarks](INDEPENDENT_BENCHMARKS.md);
+the diagnostic CoolProp comparison is not a full accuracy pass gate.
 
 | Quantity | Oracle | Absolute tolerance/check | Test |
 |---|---|---|---|
