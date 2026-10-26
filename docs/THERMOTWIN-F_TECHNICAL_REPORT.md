@@ -11,7 +11,7 @@
 | **Code base** | Modern Fortran (2008) · C++17 (GDI+) · C99 (OPC UA) · Python 3 (post-processing) |
 | **License** | MIT |
 
-> **Evidence boundary.** This is a historical technical draft, not an automatically regenerated validation report. Numerical summaries and roadmap language below require case-specific reproduction before external use. Current build/test evidence and unverified areas are recorded in `COMMIT_REVIEW.md`. Passing internal checks is not external validation or certification.
+> **Evidence boundary.** This is a historical technical draft, not an automatically regenerated validation report. Numerical summaries and roadmap language below require case-specific reproduction before external use. IMPORTANT PROPERTY CORRECTION: the current implementation uses NASA-7-style heat-capacity polynomials and approximate Antoine/constant-cp/latent-heat water correlations, NOT the full NASA-9 or IAPWS-IF97 formulations. Old language below is retained as historical project narrative, not a verified implementation claim. Refer to `INDEPENDENT_BENCHMARKS.md` and `RELEASE_GATE.md`. Passing internal checks is not external validation or certification.
 
 ---
 
@@ -424,4 +424,4 @@ thermotwin-f/
 
 ---
 
-*Generated for release 7.0 of ThermoTwin-F. All quantitative figures in this report are drawn from the repository's source, test suite, and verified live exports; modelling assumptions and the verification-vs-validation boundary are stated explicitly throughout.*
+*Historical Revamp 7.0 development monograph; quantitative examples have not yet been regenerated and audited against the DOI release candidate. This text is NOT release-specific scientific validation evidence.*
