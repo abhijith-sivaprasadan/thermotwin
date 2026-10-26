@@ -4,16 +4,16 @@ Target: proposed `v2.0.0-beta.1`, **not yet released**. This checklist is intent
 
 ## Must pass before tagging
 
-- [ ] Confirm Zenodo → GitHub authorization and enable this repository in Zenodo (requires account-owner action).
-- [ ] Complete branch review and merge only after CI is green; tag the **verified** main commit, not an unreviewed development commit.
-- [ ] Verify `CITATION.cff` parses, author ORCID matches https://orcid.org/0000-0003-0299-5745, version agrees with tag and fpm manifest. No DOI is invented or predeclared.
-- [ ] Confirm all six OS/profile matrix jobs and both serial/OpenMP variants pass (28 Fortran test programs + core selftest and 15 scenarios).
-- [ ] Run independent CoolProp IF97 comparison, archive generated data and JSON metrics, identify model approximation errors explicitly; a completed benchmark is **not** a full-IF97 accuracy certification.
+- [ ] Zenodo Linked Accounts page shows GitHub + ORCID + OpenAIRE connected; **repository-specific Zenodo toggle is unverified** and needs account-owner action.
+- [x] Preparation PR #4 merged into `main` as `f89d03bad5d3304ead88c7420f510494940e5654` after green CI. Tag must reference the final, newly checked main commit.
+- [x] Metadata CI parses `CITATION.cff`, verifies author ORCID and version agreement with `fpm.toml`; DOI is not predeclared. Recheck exact tag before archive.
+- [x] All six OS/profile matrix jobs (serial/OpenMP), full scenarios and supplemental jobs passed: [10/10 on merged `main` preparation commit](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40416209807). Repeat for the final release source commit.
+- [x] Ran CoolProp IF97 comparison and recorded numerical discrepancy metrics in [benchmark documentation](INDEPENDENT_BENCHMARKS.md), with machine-readable JSON in CI artifacts. **[ ] Still preserve full JSON durably alongside the DOI record or supplement**; CI artifacts expire. It is not IF97 conformance.
 - [ ] Review numerical claims (including full-cycle plant power/efficiency, exergy closure, UQ intervals), regenerate those that are included in release notes using this exact commit, and record parameters, toolchain versions and outputs. Exclude unverified historical claims.
 - [ ] On Windows, verify clean `make download-opcua` + `make gui` with pinned open62541 version; verify DLL runtime requirements and third-party MPL-2.0 redistribution obligations.
 - [ ] Run human GUI acceptance in `GUI_ACCEPTANCE.md`; do not claim visual/interactive certification on the basis of core CI or successful compilation alone.
 - [ ] Validate the packaged Windows executable(s) on a clean Windows 10/11 machine (start, scenarios, export, OPC UA browse); include dependencies, license notices and SHA-256 checksums. If not completed, release source-only and mark GUI experimental.
-- [ ] Confirm release title, metadata, software limitations, changelog, source ZIP and third-party notices. Do not call the software externally validated or industrially certified.
+- [x] Draft title, metadata, limitations, release notes and third-party notices reviewed for *source-only educational beta*. Final tag/source ZIP and archive still pending. Do not call it externally validated or industrially certified.
 
 ## After the tag
 

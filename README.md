@@ -3,6 +3,9 @@
 [![CI](https://github.com/abhijith-sivaprasadan/thermotwin/actions/workflows/ci.yml/badge.svg)](https://github.com/abhijith-sivaprasadan/thermotwin/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
+[![Latest release](https://img.shields.io/github/v/release/abhijith-sivaprasadan/thermotwin?include_prereleases&label=GitHub%20release)](https://github.com/abhijith-sivaprasadan/thermotwin/releases)
+
+> **Citation and DOI:** The software citation and researcher ORCID are in [`CITATION.cff`](CITATION.cff). Find the exact tagged source at [GitHub Releases](https://github.com/abhijith-sivaprasadan/thermotwin/releases). A Zenodo DOI badge/link will be added **only once an archived DOI has actually been issued**; the presence of this citation file alone is not a minted DOI.
 
 **A Modern Fortran gas-turbine and combined-cycle performance simulator —
 design, degradation, transient thermal response, measurement uncertainty,
@@ -21,7 +24,37 @@ The whole project is built around a single shared data model — one `InputCase`
 KPI) flows out — so the advanced modules compose coherently instead of being
 independent scripts.
 
+## Software release and citation
+
+ThermoTwin-F is **open research software** (MIT licensed). The `v2.0.0-beta.1`
+edition is intended as an **educational source-code prerelease**, not a qualified
+industrial performance predictor. The native Windows GUI is **experimental**:
+its compilation is covered by CI, but end-to-end interaction, OPC UA operation
+and binary redistribution are not yet accepted. No new GUI executable is
+included in the source-only prerelease.
+
+**Creator:** Abhijith Sivaprasadan ·
+[ORCID 0000-0003-0299-5745](https://orcid.org/0000-0003-0299-5745)
+
+**How to cite:** Use the *version-specific* DOI shown on the corresponding
+[Zenodo record](https://zenodo.org/) once the GitHub release has been archived.
+The version-specific DOI identifies an immutable software snapshot, whereas
+the Zenodo concept DOI represents the evolving software. Until a DOI is minted,
+cite the precise [GitHub release tag](https://github.com/abhijith-sivaprasadan/thermotwin/releases)
+or Git commit, together with `CITATION.cff`. We do not invent a DOI or present
+GitHub CI as external scientific validation.
+
+**Version evidence:** [release verification run](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40416209807)
+(10/10 CI jobs passed on merged preparation commit `f89d03bad5d3304ead88c7420f510494940e5654`),
+[release acceptance gates](docs/RELEASE_GATE.md),
+[independent reference comparisons](docs/INDEPENDENT_BENCHMARKS.md),
+and [draft release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
+Verify the checks for the **exact tag commit** before citing any release.
+
 ## Results at a glance
+
+*Illustrative figures from tracked example outputs, not experimentally validated
+plant measurements or independently audited release-version results.*
 
 <table>
 <tr>
@@ -71,8 +104,11 @@ fpm build
 fpm test
 ```
 
-The older convenience scripts below have not been reverified against the expanded
-engine module set; prefer the Make targets above for the current implementation.
+The primary supported build/test path is still `make` and `make check`.
+The compatibility build wrapper now delegates to the Makefile, and the
+`run_pipeline.sh` report-regeneration path has passed a CI smoke test.
+This establishes that the pipeline executes, **not** that every plotted value
+has been independently benchmarked.
 
 ```bash
 ./scripts/build.sh            # build ./thermotwin
@@ -103,11 +139,15 @@ economics and battery ROI estimates, uses buffered GDI rendering to keep timer
 updates smooth, and embeds a generated Windows icon for the executable.
 
 ```powershell
+make download-opcua   # pinned open62541; requires network access
 make gui
 .\thermotwin-gui.exe
 ```
 
-See [`gui/README.md`](gui/README.md) for scope and next steps.
+See [`gui/README.md`](gui/README.md) for scope and
+[the GUI acceptance protocol](docs/GUI_ACCEPTANCE.md). The GitHub Actions
+Windows job only **compiles** the GUI; the source-code prerelease must not
+be advertised as a qualified binary distribution.
 
 ---
 
@@ -154,9 +194,9 @@ first row of their file as the baseline machine.
   an optional GUI-side integration, not covered by core CI (see the
   [verification matrix](docs/verification_matrix.md)).
 
-Representative legacy simple-cycle design-point results: **≈30 MW**, **≈31 % thermal
-efficiency**, **≈11 800 kJ/kWh heat rate**, **≈797 K exhaust** — squarely in the
-expected band for a simple-cycle machine.
+Historical example simple-cycle design-point outputs include **≈30 MW** and
+**≈31% thermal efficiency**. These numbers are illustrative model outputs,
+**not** a measured industrial baseline or revalidated performance guarantee.
 
 ---
 
@@ -177,12 +217,15 @@ thermotwin-f/
 └── LICENSE                   MIT
 ```
 
-### Source modules (dependency order)
+### Source modules
 
-`precision_kinds` → `constants` → `types` → `utilities` → `fluid_properties`
-→ `ambient` → `compressor` → `combustor` → `turbine` → `shaft_generator`
-→ `cycle_solver` → `degradation` → `transient_thermal` → `sensor_model`
-→ `uncertainty_analysis` → `diagnostics_solver` → `csv_io` → `sensitivity_driver`.
+The original thermodynamic core includes `fluid_properties`, `compressor`,
+`combustor`, `turbine`, `cycle_solver`, `hrsg`, `steam_cycle`,
+`degradation`, and `diagnostics_solver`. Newer modules also cover exergy,
+reconciliation, sensitivity and Monte Carlo analysis, transient behaviour,
+grid/fleet scenarios and demonstrator machine-learning models. Consult the
+**current** `Makefile` source inventory rather than an old partial module
+list when extending the dependency graph.
 
 ---
 
@@ -194,6 +237,11 @@ thermotwin-f/
 | [`docs/REVAMP_7.0.md`](docs/REVAMP_7.0.md) | implementation history; roadmap aspirations are not independent validation |
 | [`docs/COMMIT_REVIEW.md`](docs/COMMIT_REVIEW.md) | current checks and remaining verification boundaries |
 | [`cases/README.md`](cases/README.md) | input CSV column format |
+| [`docs/INDEPENDENT_BENCHMARKS.md`](docs/INDEPENDENT_BENCHMARKS.md) | external CoolProp IF97 accuracy comparison and standalone TESPy Rankine reference |
+| [`docs/RELEASE_EVIDENCE_2026-10-26.md`](docs/RELEASE_EVIDENCE_2026-10-26.md) | commit-scoped CI and numerical benchmark evidence |
+| [`docs/RELEASE_GATE.md`](docs/RELEASE_GATE.md) | source prerelease criteria and Zenodo steps |
+| [`docs/GUI_ACCEPTANCE.md`](docs/GUI_ACCEPTANCE.md) | Windows GUI/OPC UA manual acceptance cases |
+| [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) | optional reference packages and OPC UA licensing obligations |
 
 ---
 
@@ -224,11 +272,19 @@ models, not a substitute for a certified property package. See
 [the scientific accuracy and benchmarking protocol](docs/INDEPENDENT_BENCHMARKS.md)
 and [the release gates](docs/RELEASE_GATE.md). An optional external comparison
 uses CoolProp's actual IF97 backend without copying its source code.
+At nine benchmark pressures the approximate saturation temperature had a
+**0.53 K mean absolute error**, while saturated-vapour enthalpy showed a
+**104 kJ/kg mean absolute error** and superheated enthalpy a **216 kJ/kg mean
+absolute error** (the latter includes differences in state definitions).
+See the complete [benchmark report](docs/INDEPENDENT_BENCHMARKS.md).
+A completed benchmark is not evidence of full IAPWS-IF97 conformity.
 
 The advanced grid, ML, emissions and dispatch demonstrations use representative
 and/or synthetic inputs; passing scenario tests is not experimental validation.
-The historically generated PDF report must not be represented as results freshly
-reproduced from the current release candidate.
+The historical technical monograph must not be represented as independently
+validated results from the DOI release. The PDF-report generation pipeline
+has passed a functional smoke test, but that does not constitute a full
+numerical reproduction and uncertainty audit.
 
 ## Roadmap
 
