@@ -21,7 +21,7 @@ echo "============================================================"
 
 echo
 echo "[1/4] Building simulator..."
-./scripts/build.sh
+make all
 
 echo
 echo "[2/4] Verifying physics (selftest)..."

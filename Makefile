@@ -62,7 +62,7 @@ OPCUA_OBJ := $(BUILD)/open62541.o $(BUILD)/opcua_server.o
 OPCUA_VER := v1.5.4
 OPCUA_URL := https://github.com/open62541/open62541/releases/download/$(OPCUA_VER)
 
-.PHONY: all tests check debug run gui gui-debug clean download-opcua
+.PHONY: all tests check debug run gui gui-debug clean download-opcua property-reference-grid
 .SECONDEXPANSION:
 
 all: $(EXE)
@@ -177,6 +177,12 @@ debug: clean all
 run: $(EXE)
 	./$(EXE) run cases/design_point.csv output/results_design_point.csv
 
+# Optional benchmark: sample native approximate water/steam property functions.
+property-reference-grid: $(BUILD)/property_reference_grid
+
+$(BUILD)/property_reference_grid: scripts/property_reference_grid.f90 $(OBJS) | $(BUILD)
+	$(FC) $(FFLAGS) $(OBJS) $< -o $@
+
 gui: $(GUI_EXE)
 
 $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
@@ -211,8 +217,8 @@ clean:
 	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)
 
 download-opcua:
-	curl -L $(OPCUA_URL)/open62541.c -o gui/open62541.c
-	curl -L $(OPCUA_URL)/open62541.h -o gui/open62541.h
+	curl -fL --retry 3 $(OPCUA_URL)/open62541.c -o gui/open62541.c
+	curl -fL --retry 3 $(OPCUA_URL)/open62541.h -o gui/open62541.h
 	sed -i 's|^#define UA_ARCHITECTURE_POSIX|/* #undef UA_ARCHITECTURE_POSIX */|' gui/open62541.h
 	sed -i 's|^\/\* #undef UA_ARCHITECTURE_WIN32 \*\/|#define UA_ARCHITECTURE_WIN32|' gui/open62541.h
 	sed -i 's|^#define UA_ENABLE_ENCRYPTION_MBEDTLS|/* #undef UA_ENABLE_ENCRYPTION_MBEDTLS */|' gui/open62541.h
