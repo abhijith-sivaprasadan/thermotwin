@@ -132,3 +132,47 @@ jobs:
         run: make -j4 gui
       - name: Disclose remaining manual tests
         run: echo Compile only. Complete docs/GUI_ACCEPTANCE.md before distributing the GUI binary.
+
+  independent-rankine-fixture:
+    name: TESPy reference Rankine fixture (not model validation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install pinned TESPy reference solver
+        run: python -m pip install tespy==0.11.2
+      - name: Execute independently defined Rankine example
+        run: python scripts/tespy_rankine_reference.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-tespy-rankine
+          path: build/tespy_rankine_reference.json
+
+  legacy-report-smoke:
+    name: CLI report regeneration smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install CLI compiler and plotting dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y gfortran make
+          python -m pip install numpy==2.2.6 matplotlib==3.10.3
+      - name: Rebuild original CLI reporting pipeline
+        run: |
+          bash scripts/run_pipeline.sh
+          python -c "from pathlib import Path; p=Path('output/ThermoTwin-F_report.pdf'); assert p.exists() and p.stat().st_size > 1000"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regenerated-cli-report-smoke
+          path: |
+            output/ThermoTwin-F_report.pdf
+            output/figures/*.png

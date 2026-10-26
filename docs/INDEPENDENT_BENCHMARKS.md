@@ -42,3 +42,18 @@ Cantera for fuel/combustion consistency checks; ExerPy for exergy balances; inde
 4. Standards certification and industrial acceptance (not supported here).
 
 Cross-code agreement can reveal implementation errors but does not establish performance prediction for a particular machine.
+
+## Initial measured results — 26 October 2026
+
+The Linux CI run at [40412132403](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40412132403) executed the nine-pressure-point property comparison using CoolProp 8.0.0. All figures below are **errors of the approximate ThermoTwin helper functions against CoolProp**, not target accuracy claims.
+
+| Property | MAE | Maximum absolute error |
+|---|---:|---:|
+| Saturation temperature | 0.532268 K | 1.24018 K |
+| Saturated liquid enthalpy | 85.0034 kJ/kg | 293.014 kJ/kg |
+| Saturated vapour enthalpy | 103.987 kJ/kg | 303.232 kJ/kg |
+| Saturated liquid entropy | 0.139071 kJ/(kg K) | 0.453795 kJ/(kg K) |
+| Saturated vapour entropy | 0.182218 kJ/(kg K) | 0.470818 kJ/(kg K) |
+| Superheated enthalpy | 215.854 kJ/kg | 694.712 kJ/kg |
+
+**Interpretation:** temperature approximation is relatively close over the sampled grid; enthalpy, especially superheat, is not sufficiently accurate to justify a full IAPWS-IF97 claim. Source/version and the full numerical case table are in the `independent-if97-comparison` CI artifact. GitHub Actions artifact retention is finite; preserve the full artifact in the DOI release's durable research-data supplement if the numbers appear in a publication.
