@@ -48,7 +48,7 @@ GitHub CI as external scientific validation.
 (10/10 CI jobs passed on merged preparation commit `f89d03bad5d3304ead88c7420f510494940e5654`),
 [release acceptance gates](docs/RELEASE_GATE.md),
 [independent reference comparisons](docs/INDEPENDENT_BENCHMARKS.md),
-and [draft release notes](docs/RELEASE_NOTES_v2.0.0-beta.1_DRAFT.md).
+and [draft release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
 Verify the checks for the **exact tag commit** before citing any release.
 
 ## Results at a glance

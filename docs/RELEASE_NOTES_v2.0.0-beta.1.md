@@ -1,6 +1,6 @@
-# DRAFT — ThermoTwin-F v2.0.0-beta.1
+# ThermoTwin-F v2.0.0-beta.1 — Source-only research preview
 
-**Do not publish or describe this as released.** The version is proposed; a release tag and DOI do not exist yet.
+**Distribution:** source-code archive only. A Zenodo DOI must not be stated until the GitHub release is archived and the identifier verified.
 
 ## Summary
 
