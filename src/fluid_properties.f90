@@ -3,9 +3,9 @@
 !>
 !> Two property models are provided behind one interface:
 !>   * CONSTANT  - fixed cp, gamma (Rev A default; matches hand calculations)
-!>   * VARIABLE  - Revamp 7.0 P2 reference-style properties:
-!>                 NASA polynomial cp(T) for air / combustion products and
-!>                 compact IF97-region helper functions for water / steam.
+!>   * VARIABLE  - approximate temperature-dependent gas properties using
+!>                 NASA seven-coefficient cp(T) polynomial terms and compact
+!>                 correlations for water/steam. NOT full NASA-9 or IAPWS-IF97.
 !>
 !> Switching `property_model` changes the whole simulation without editing any
 !> component code. The constant model is the default so that the verification
@@ -34,9 +34,9 @@ module fluid_properties
     real(dp), parameter :: R_STEAM_KJ_KG_K = 0.4615_dp
     real(dp), parameter :: HFG_100C_KJ_KG = 2256.9_dp
 
-    ! NASA 7-coefficient cp/R polynomials (first five coefficients) used as
-    ! the compact P2 property kernel.  They are the same polynomial basis used
-    ! by the NASA-9 form; enthalpy/entropy constants are not needed for cp(T).
+    ! NASA seven-coefficient cp/R polynomial data (first five coefficients).
+    ! This is NOT a full NASA-9 formulation; fitted constant enthalpy/entropy
+    ! terms and two additional inverse-temperature terms are not implemented.
     real(dp), parameter :: NASA_N2_LOW(5)  = [3.53100528_dp, -1.23660987e-4_dp, -5.02999433e-7_dp, &
                                                2.43530612e-9_dp, -1.40881235e-12_dp]
     real(dp), parameter :: NASA_N2_HIGH(5) = [2.95257626_dp,  1.39690040e-3_dp, -4.92631603e-7_dp, &
@@ -204,9 +204,10 @@ contains
             0.25_dp*a(4)*T*T*T*T + 0.2_dp*a(5)*T*T*T*T*T)
     end function nasa_h_integral
 
-    !> Compact IF97-style saturation temperature [K] from pressure [bar].
-    !> Antoine coefficients are selected for the 1-220 bar power-plant range;
-    !> the function is clamped below the critical point for numerical robustness.
+    !> Approximate saturation temperature [K] from pressure [bar].
+    !> Legacy if97_* naming is retained for API compatibility, but this is an
+    !> Antoine-type correlation, NOT the published IAPWS-IF97 equations.
+    !> Accuracy is assessed externally against CoolProp's IF97 backend.
     pure function if97_saturation_T_K(p_bar) result(Tsat)
         real(dp), intent(in) :: p_bar
         real(dp) :: Tsat

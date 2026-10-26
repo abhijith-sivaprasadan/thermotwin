@@ -1,10 +1,26 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it using this metadata."
-title: "ThermoTwin-F"
+message: "If you use ThermoTwin-F in research or teaching, please cite the archived software version."
+title: "ThermoTwin-F: An Educational Gas-Turbine and Combined-Cycle Simulation Framework"
 type: software
+version: 2.0.0-beta.1
 authors:
   - family-names: Sivaprasadan
     given-names: Abhijith
+    orcid: "https://orcid.org/0000-0003-0299-5745"
+abstract: >-
+  Open-source Fortran software for educational gas-turbine and combined-cycle
+  performance studies, degradation and inverse diagnostics, exergy accounting,
+  uncertainty and sensitivity analyses, and experimental plant/grid scenarios.
+  Internal numerical and regression checks are provided; the software is not
+  validated against a particular commercial plant or certified for operations.
+keywords:
+  - gas turbine
+  - combined cycle
+  - thermodynamics
+  - exergy analysis
+  - uncertainty quantification
+  - modern Fortran
+  - research software
 repository-code: "https://github.com/abhijith-sivaprasadan/thermotwin"
+url: "https://github.com/abhijith-sivaprasadan/thermotwin"
 license: MIT
-

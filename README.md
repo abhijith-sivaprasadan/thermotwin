@@ -93,7 +93,7 @@ and a multi-page report at `output/ThermoTwin-F_report.pdf`.
 
 ### Optional Windows grid-balancing GUI
 
-The repository also includes an early native Windows GUI written in Fortran. It
+The repository also includes an optional native Windows GUI written in Fortran. It
 uses a custom-drawn Win32/GDI dashboard through `iso_c_binding`, links directly
 to the simulator modules, and lets you manipulate demand, renewables, storage,
 gas dispatch, ambient temperature, and firing temperature while watching live
@@ -215,12 +215,26 @@ thermotwin-f/
 
 ---
 
+## Scientific scope and independent benchmarking
+
+The variable-property mode uses NASA seven-coefficient gas heat-capacity terms
+and **approximate** water/steam correlations (the legacy `if97_*` function names
+are not a claim of IAPWS-IF97 compliance). These are useful engineering teaching
+models, not a substitute for a certified property package. See
+[the scientific accuracy and benchmarking protocol](docs/INDEPENDENT_BENCHMARKS.md)
+and [the release gates](docs/RELEASE_GATE.md). An optional external comparison
+uses CoolProp's actual IF97 backend without copying its source code.
+
+The advanced grid, ML, emissions and dispatch demonstrations use representative
+and/or synthetic inputs; passing scenario tests is not experimental validation.
+The historically generated PDF report must not be represented as results freshly
+reproduced from the current release candidate.
+
 ## Roadmap
 
-Natural extensions, each building on a stated limitation: real-gas properties by
-default · compressor/turbine performance maps · turbine cooling-air bookkeeping ·
-a first NOx correlation · a multi-node transient thermal model with stress
-output · a Bayesian/Kalman diagnostics formulation.
+Prioritize independent thermophysical and whole-cycle benchmarks, numerical
+sensitivity and conservation audits, verified GUI/OPC UA acceptance, and
+reproducible scientific reports before further expanding the model.
 
 ---
 
@@ -236,4 +250,4 @@ MIT — see [`LICENSE`](LICENSE).
 
 Optional OpenMP batch operating-point evaluation with serial equivalence checks and measured workstation scaling. See [docs/openmp_scaling.md](docs/openmp_scaling.md).
 
-CI runs on Ubuntu, Windows and macOS. ThermoTwin-F uses release/debug profiles and serial/OpenMP builds; PyNEXUS tests Python 3.10, 3.11 and 3.12 and runs a separate Linux MPI equivalence job. Weekly runs check dependency drift. Hosted run status is available in the repository’s Actions tab; documented local measurements are separate from hosted verification.
+CI runs on Ubuntu, Windows and macOS. ThermoTwin-F uses release/debug profiles and serial/OpenMP builds. Weekly runs check dependency drift. Hosted run status is available in the repository’s Actions tab; documented local measurements are separate from hosted verification.
