@@ -1,6 +1,9 @@
 # ThermoTwin-F v2.0.0-beta.1 — Source-only research preview
 
-**Distribution:** source-code archive only. A Zenodo DOI must not be stated until the GitHub release is archived and the identifier verified.
+**Distribution:** source-code archive only. **Post-archive metadata update:**
+[Zenodo v2 release DOI 10.5281/zenodo.23679426](https://doi.org/10.5281/zenodo.23679426)
+(confirmed October 27, 2026). The original GitHub tag and Zenodo ZIP remain
+unchanged; this documentation paragraph was added after publication.
 
 ## Summary
 
@@ -47,4 +50,14 @@ example is **not** a matched plant-model comparison. See
 
 ## Citing
 
-Cite the **specific Zenodo version DOI** after the integration successfully archives this release; before then cite the repository commit. Creator ORCID: https://orcid.org/0000-0003-0299-5745.
+**Version-specific DOI:** https://doi.org/10.5281/zenodo.23679426
+
+**Concept DOI (all versions):** https://doi.org/10.5281/zenodo.23679256
+
+Sivaprasadan, A. (2026). *ThermoTwin-F: An Educational Gas-Turbine and
+Combined-Cycle Simulation Framework* (Version v2.0.0-beta.1)
+[Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23679426
+
+**Creator ORCID:** https://orcid.org/0000-0003-0299-5745
+
+**OpenAIRE discovery:** https://explore.openaire.eu/search/result?pid=10.5281/zenodo.23679426

@@ -3,6 +3,8 @@ message: "If you use ThermoTwin-F in research or teaching, please cite the archi
 title: "ThermoTwin-F: An Educational Gas-Turbine and Combined-Cycle Simulation Framework"
 type: software
 version: 2.0.0-beta.1
+doi: "10.5281/zenodo.23679426"
+date-released: 2026-10-27
 authors:
   - family-names: Sivaprasadan
     given-names: Abhijith

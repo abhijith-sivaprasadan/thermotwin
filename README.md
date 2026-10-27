@@ -4,8 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Fortran 2008](https://img.shields.io/badge/Fortran-2008-blueviolet.svg)](https://fortran-lang.org)
 [![Latest release](https://img.shields.io/github/v/release/abhijith-sivaprasadan/thermotwin?include_prereleases&label=GitHub%20release)](https://github.com/abhijith-sivaprasadan/thermotwin/releases)
+[![Zenodo DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23679426.svg)](https://doi.org/10.5281/zenodo.23679426)
 
-> **Citation and DOI:** The software citation and researcher ORCID are in [`CITATION.cff`](CITATION.cff). Find the exact tagged source at [GitHub Releases](https://github.com/abhijith-sivaprasadan/thermotwin/releases). A Zenodo DOI badge/link will be added **only once an archived DOI has actually been issued**; the presence of this citation file alone is not a minted DOI.
+> **Archived and citable:** [ThermoTwin-F v2.0.0-beta.1 on Zenodo](https://doi.org/10.5281/zenodo.23679426) — **DOI: 10.5281/zenodo.23679426**. This is the archived source-only research beta, not validated industrial software. See [`CITATION.cff`](CITATION.cff) and the [release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
 
 **A Modern Fortran gas-turbine and combined-cycle performance simulator —
 design, degradation, transient thermal response, measurement uncertainty,
@@ -41,26 +42,38 @@ This is a **source-only prerelease** and does not include a Windows binary.
 passed all 10 jobs; the publishing workflow also
 [succeeded](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424777919).
 
-**Previously archived version:** [v1.0.0 on Zenodo](https://doi.org/10.5281/zenodo.23679257).
-That DOI points to the **old v1.0.0 snapshot**, *not* the new beta.
-The v2.0.0-beta.1 DOI will be added here after Zenodo archival is verified.
+**Zenodo archival:** The
+[v2.0.0-beta.1 archive](https://zenodo.org/records/23679426) is published
+as [DOI 10.5281/zenodo.23679426](https://doi.org/10.5281/zenodo.23679426),
+with MIT licensing, creator ORCID, and a 1.8 MB source ZIP.
+The [v1.0.0 DOI 10.5281/zenodo.23679257](https://doi.org/10.5281/zenodo.23679257)
+continues to identify the earlier version.
+Use the [concept DOI 10.5281/zenodo.23679256](https://doi.org/10.5281/zenodo.23679256)
+when referencing the evolving software across versions.
 
 **Creator:** Abhijith Sivaprasadan ·
 [ORCID 0000-0003-0299-5745](https://orcid.org/0000-0003-0299-5745)
 
-**How to cite:** Use the *version-specific* DOI shown on the corresponding
-[Zenodo record](https://zenodo.org/) once the GitHub release has been archived.
-The version-specific DOI identifies an immutable software snapshot, whereas
-the Zenodo concept DOI represents the evolving software. Until a DOI is minted,
-cite the precise [GitHub release tag](https://github.com/abhijith-sivaprasadan/thermotwin/releases)
-or Git commit, together with `CITATION.cff`. We do not invent a DOI or present
-GitHub CI as external scientific validation.
+**How to cite this beta:** Cite the **version-specific DOI**, not the concept DOI:
+
+> Sivaprasadan, A. (2026). *ThermoTwin-F: An Educational Gas-Turbine and
+> Combined-Cycle Simulation Framework* (Version v2.0.0-beta.1)
+> [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23679426
+
+The version DOI identifies the published source snapshot, whereas the concept
+DOI identifies the software family and resolves to the latest Zenodo version.
+The archived release corresponds to GitHub tag
+[`v2.0.0-beta.1`](https://github.com/abhijith-sivaprasadan/thermotwin/releases/tag/v2.0.0-beta.1)
+(commit `ee0461684dbad75c5ab28fe9a66a5f6b32317887`). Subsequent README
+and citation changes on `main` do **not** alter the archived release.
+The DOI records a software version; it does not imply peer review,
+measured-plant validation, or certification.
 
 **Version evidence:** [release verification run](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706)
 (10/10 CI jobs passed on exact prerelease commit `ee0461684dbad75c5ab28fe9a66a5f6b32317887`),
 [release acceptance gates](docs/RELEASE_GATE.md),
 [independent reference comparisons](docs/INDEPENDENT_BENCHMARKS.md),
-and [draft release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
+and [release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
 The checks above correspond to the **exact tagged source commit**. Scientific verification is not measured-plant validation.
 
 ## Results at a glance
