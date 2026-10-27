@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="930" height="455" viewBox="0 0 930 455" role="img" aria-label="ThermoTwin minus CoolProp reference errors"><rect width="930" height="455" fill="white"/>
+<text x="465" y="28" text-anchor="middle" font-family="sans-serif" font-size="17">ThermoTwin vs CoolProp IF97 — Saturation temperature</text>
+<line x1="112" y1="378" x2="890" y2="378" stroke="#ddd"/><text x="104" y="383" text-anchor="end" font-family="sans-serif" font-size="13">-1.5</text>
+<line x1="112" y1="312.8" x2="890" y2="312.8" stroke="#ddd"/><text x="104" y="317.8" text-anchor="end" font-family="sans-serif" font-size="13">-1</text>
+<line x1="112" y1="247.6" x2="890" y2="247.6" stroke="#ddd"/><text x="104" y="252.6" text-anchor="end" font-family="sans-serif" font-size="13">-0.5</text>
+<line x1="112" y1="182.4" x2="890" y2="182.4" stroke="#ddd"/><text x="104" y="187.4" text-anchor="end" font-family="sans-serif" font-size="13">0</text>
+<line x1="112" y1="117.2" x2="890" y2="117.2" stroke="#ddd"/><text x="104" y="122.2" text-anchor="end" font-family="sans-serif" font-size="13">0.5</text>
+<line x1="112" y1="52" x2="890" y2="52" stroke="#ddd"/><text x="104" y="57" text-anchor="end" font-family="sans-serif" font-size="13">1</text>
+<line x1="112" y1="52" x2="112" y2="378" stroke="#eee"/><text x="112" y="401" text-anchor="middle" font-family="sans-serif" font-size="13">0.1</text>
+<line x1="347.6840140870971" y1="52" x2="347.6840140870971" y2="378" stroke="#eee"/><text x="347.6840140870971" y="401" text-anchor="middle" font-family="sans-serif" font-size="13">1</text>
+<line x1="583.3680281741943" y1="52" x2="583.3680281741943" y2="378" stroke="#eee"/><text x="583.3680281741943" y="401" text-anchor="middle" font-family="sans-serif" font-size="13">10</text>
+<line x1="819.0520422612914" y1="52" x2="819.0520422612914" y2="378" stroke="#eee"/><text x="819.0520422612914" y="401" text-anchor="middle" font-family="sans-serif" font-size="13">100</text>
+<line x1="890" y1="52" x2="890" y2="378" stroke="#eee"/><text x="890" y="401" text-anchor="middle" font-family="sans-serif" font-size="13">200</text>
+<rect x="112" y="52" width="778" height="326" fill="none" stroke="#222"/><text x="465" y="435" text-anchor="middle" font-family="sans-serif" font-size="14">Pressure (bar; log scale)</text><text x="26" y="227.5" transform="rotate(-90 26 227.5)" text-anchor="middle" font-family="sans-serif" font-size="14">Signed saturation T error (K)</text>
+<polyline points="112.00,344.12 349.03,199.78 512.42,145.60 583.37,153.06 711.60,230.51 796.21,292.59 837.71,279.16 867.16,210.98 890.00,86.62" fill="none" stroke="#111" stroke-width="2.5" />
+<circle cx="112" cy="344.11894035898996" r="3.4" fill="white" stroke="#111"/>
+<circle cx="349.03132824774536" cy="199.7833342621873" r="3.4" fill="white" stroke="#111"/>
+<circle cx="512.4200704354857" cy="145.60435170958544" r="3.4" fill="white" stroke="#111"/>
+<circle cx="583.3680281741943" cy="153.05596484386857" r="3.4" fill="white" stroke="#111"/>
+<circle cx="711.5961688031841" cy="230.5147930394518" r="3.4" fill="white" stroke="#111"/>
+<circle cx="796.21190139032" cy="292.587196322808" r="3.4" fill="white" stroke="#111"/>
+<circle cx="837.7137961702138" cy="279.16195387830714" r="3.4" fill="white" stroke="#111"/>
+<circle cx="867.1598591290285" cy="210.98427670911522" r="3.4" fill="white" stroke="#111"/>
+<circle cx="890" cy="86.62056153899539" r="3.4" fill="white" stroke="#111"/>
+<line x1="127" y1="69" x2="155" y2="69" stroke="#111" stroke-width="2.5" /><text x="161" y="74" font-family="sans-serif" font-size="12">Saturation T</text>
+</svg>

@@ -1,0 +1,25 @@
+{
+  "state": "inferred unit correction; requires rerun and verification, not an independently reproduced result",
+  "fixture_source": "scripts/tespy_rankine_reference.py at ee0461684dbad75c5ab28fe9a66a5f6b32317887",
+  "evidence": "net.units.set_defaults(power=\"MW\"), while the script names `.P.val` outputs `_W_signed` and divides by 1e6",
+  "tespy_docs": "https://tespy.readthedocs.io/en/stable/building_blocks/networks.html",
+  "original_artifact": {
+    "study": "independent Rankine reference case, NOT ThermoTwin validation",
+    "inputs": {
+      "live_steam_C": 600,
+      "live_steam_bar": 150,
+      "steam_kg_per_s": 10,
+      "condenser_bar": 0.1,
+      "turbine_eta_s": 0.9,
+      "pump_eta_s": 0.75
+    },
+    "turbine_power_W_signed": -13.211041395361582,
+    "pump_power_W_signed": 0.22358522062704753,
+    "net_power_MW_magnitude": 1.2987456174734534e-05
+  },
+  "inferred_P_values_are_MW": true,
+  "inferred_net_power_MW": 12.987456174734534,
+  "published_raw_net_power_MW_labelled": 1.2987456174734534e-05,
+  "valid_as_independent_validation_of_ThermoTwin": false,
+  "paper_decision": "Exclude numerical TESPy power until independently corrected/re-executed and model boundaries matched."
+}
