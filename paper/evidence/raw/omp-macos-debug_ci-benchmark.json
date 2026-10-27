@@ -1,0 +1,45 @@
+{
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "processor": "arm",
+  "compiler": "GNU Fortran (Homebrew GCC 16.2.0) 16.2.0",
+  "core_count": 3,
+  "core_basis": "logical CPUs (physical count unavailable)",
+  "cases": 20000,
+  "repeats": 1,
+  "timing_scope": "run_cases only; setup and full serial verification excluded",
+  "rows": [
+    {
+      "mode": "serial",
+      "threads": 1,
+      "seconds": [
+        0.004472
+      ],
+      "median_seconds": 0.004472,
+      "max_relative_error": 0.0,
+      "speedup": 1.0,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 1,
+      "seconds": [
+        0.005875
+      ],
+      "median_seconds": 0.005875,
+      "max_relative_error": 0.0,
+      "speedup": 0.7611914893617022,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 2,
+      "seconds": [
+        0.004604
+      ],
+      "median_seconds": 0.004604,
+      "max_relative_error": 0.0,
+      "speedup": 0.9713292788879236,
+      "ideal_speedup": 2
+    }
+  ]
+}

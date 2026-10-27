@@ -1,0 +1,288 @@
+{
+  "case_count": 9,
+  "cases": [
+    {
+      "coolprop_if97": {
+        "T_sat_K": 318.95754820702314,
+        "h_liq_kJ_kg": 191.81229519356233,
+        "h_superheat_50K_kJ_kg": 2679.4425723651393,
+        "h_vap_kJ_kg": 2583.8869371734463,
+        "s_liq_kJ_kgK": 0.6492180830236322,
+        "s_vap_kJ_kgK": 8.148893282344275
+      },
+      "pressure_bar": 0.1,
+      "signed_error": {
+        "T_sat_K": -1.2401759229983895,
+        "h_liq_kJ_kg": -5.253274812634658,
+        "h_superheat_50K_kJ_kg": 31.721238387577614,
+        "h_vap_kJ_kg": 23.276873579270614,
+        "s_liq_kJ_kgK": -0.016694574452151945,
+        "s_vap_kJ_kgK": 0.10236625243316055
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 317.71737228402475,
+        "h_liq_kJ_kg": 186.55902038092768,
+        "h_superheat_50K_kJ_kg": 2711.163810752717,
+        "h_vap_kJ_kg": 2607.163810752717,
+        "s_liq_kJ_kgK": 0.6325235085714802,
+        "s_vap_kJ_kgK": 8.251259534777436
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 373.12430000048056,
+        "h_liq_kJ_kg": 418.99071780418984,
+        "h_superheat_50K_kJ_kg": 2776.443845199003,
+        "h_vap_kJ_kg": 2675.5314660419476,
+        "s_liq_kJ_kgK": 1.3067239783648374,
+        "s_vap_kJ_kgK": 7.354385113627649
+      },
+      "pressure_bar": 1.01325,
+      "signed_error": {
+        "T_sat_K": -0.13330777808425864,
+        "h_liq_kJ_kg": -1.0563243612388646,
+        "h_superheat_50K_kJ_kg": 2.8882523114821197,
+        "h_vap_kJ_kg": -0.199368531462369,
+        "s_liq_kJ_kgK": -0.0027993542545938777,
+        "s_vap_kJ_kgK": 0.0016902356710426503
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 372.9909922223963,
+        "h_liq_kJ_kg": 417.934393442951,
+        "h_superheat_50K_kJ_kg": 2779.3320975104853,
+        "h_vap_kJ_kg": 2675.3320975104853,
+        "s_liq_kJ_kgK": 1.3039246241102436,
+        "s_vap_kJ_kgK": 7.356075349298692
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 424.9862438768449,
+        "h_liq_kJ_kg": 640.1853353633849,
+        "h_superheat_50K_kJ_kg": 2859.830794612325,
+        "h_vap_kJ_kg": 2748.1076146579694,
+        "s_liq_kJ_kgK": 1.8605992790566883,
+        "s_vap_kJ_kgK": 6.8205807842240205
+      },
+      "pressure_bar": 5.0,
+      "signed_error": {
+        "T_sat_K": 0.28217521695103187,
+        "h_liq_kJ_kg": -3.4176330367548644,
+        "h_superheat_50K_kJ_kg": -36.080997471568026,
+        "h_vap_kJ_kg": -28.357817517212425,
+        "s_liq_kJ_kgK": -0.007612631608951759,
+        "s_vap_kJ_kgK": -0.06955327295490843
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 425.26841909379596,
+        "h_liq_kJ_kg": 636.76770232663,
+        "h_superheat_50K_kJ_kg": 2823.749797140757,
+        "h_vap_kJ_kg": 2719.749797140757,
+        "s_liq_kJ_kgK": 1.8529866474477366,
+        "s_vap_kJ_kgK": 6.751027511269112
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 453.0356323914666,
+        "h_liq_kJ_kg": 762.6828443354106,
+        "h_superheat_50K_kJ_kg": 2898.186227006012,
+        "h_vap_kJ_kg": 2777.119537684662,
+        "s_liq_kJ_kgK": 2.1384313508991273,
+        "s_vap_kJ_kgK": 6.58497899635217
+      },
+      "pressure_bar": 10.0,
+      "signed_error": {
+        "T_sat_K": 0.22503094444886074,
+        "h_liq_kJ_kg": -8.739607611268298,
+        "h_superheat_50K_kJ_kg": -61.34160505586033,
+        "h_vap_kJ_kg": -44.274915734510614,
+        "s_liq_kJ_kgK": -0.018600465353164175,
+        "s_vap_kJ_kgK": -0.09922460299139324
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 453.26066333591547,
+        "h_liq_kJ_kg": 753.9432367241423,
+        "h_superheat_50K_kJ_kg": 2836.8446219501516,
+        "h_vap_kJ_kg": 2732.8446219501516,
+        "s_liq_kJ_kgK": 2.119830885545963,
+        "s_vap_kJ_kgK": 6.485754393360777
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 515.7117115906151,
+        "h_liq_kJ_kg": 1049.7753295380724,
+        "h_superheat_50K_kJ_kg": 2958.262233045916,
+        "h_vap_kJ_kg": 2802.7435407002777,
+        "s_liq_kJ_kgK": 2.7253905793032684,
+        "s_vap_kJ_kgK": 6.1245136355348375
+      },
+      "pressure_bar": 35.0,
+      "signed_error": {
+        "T_sat_K": -0.3689784742289248,
+        "h_liq_kJ_kg": -35.956548712879794,
+        "h_superheat_50K_kJ_kg": -131.57371202690774,
+        "h_vap_kJ_kg": -80.05501968126919,
+        "s_liq_kJ_kgK": -0.06822462100918347,
+        "s_vap_kJ_kgK": -0.15136080019696418
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 515.3427331163862,
+        "h_liq_kJ_kg": 1013.8187808251926,
+        "h_superheat_50K_kJ_kg": 2826.6885210190085,
+        "h_vap_kJ_kg": 2722.6885210190085,
+        "s_liq_kJ_kgK": 2.657165958294085,
+        "s_vap_kJ_kgK": 5.973152835337873
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 568.1591212293102,
+        "h_liq_kJ_kg": 1317.0797886339565,
+        "h_superheat_50K_kJ_kg": 2971.230959870971,
+        "h_vap_kJ_kg": 2758.6110805215503,
+        "s_liq_kJ_kgK": 3.207651007777824,
+        "s_vap_kJ_kgK": 5.744848808660428
+      },
+      "pressure_bar": 80.0,
+      "signed_error": {
+        "T_sat_K": -0.8449938368313497,
+        "h_liq_kJ_kg": -85.70875136903965,
+        "h_superheat_50K_kJ_kg": -223.572029362821,
+        "h_vap_kJ_kg": -114.95215001340011,
+        "s_liq_kJ_kgK": -0.14829004054071193,
+        "s_vap_kJ_kgK": -0.19605945413024717
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 567.3141273924789,
+        "h_liq_kJ_kg": 1231.3710372649168,
+        "h_superheat_50K_kJ_kg": 2747.65893050815,
+        "h_vap_kJ_kg": 2643.65893050815,
+        "s_liq_kJ_kgK": 3.059360967237112,
+        "s_vap_kJ_kgK": 5.5487893545301805
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 597.8283043018162,
+        "h_liq_kJ_kg": 1491.3270522678633,
+        "h_superheat_50K_kJ_kg": 2958.1932191575397,
+        "h_vap_kJ_kg": 2685.5827342917346,
+        "s_liq_kJ_kgK": 3.4964594307521106,
+        "s_vap_kJ_kgK": 5.494116331844916
+      },
+      "pressure_bar": 120.0,
+      "signed_error": {
+        "T_sat_K": -0.7420395236066497,
+        "h_liq_kJ_kg": -135.32984790627825,
+        "h_superheat_50K_kJ_kg": -315.5892433767767,
+        "h_vap_kJ_kg": -146.9787585109716,
+        "s_liq_kJ_kgK": -0.22299112219264083,
+        "s_vap_kJ_kgK": -0.24001835353669954
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 597.0862647782095,
+        "h_liq_kJ_kg": 1355.997204361585,
+        "h_superheat_50K_kJ_kg": 2642.603975780763,
+        "h_vap_kJ_kg": 2538.603975780763,
+        "s_liq_kJ_kgK": 3.27346830855947,
+        "s_vap_kJ_kgK": 5.2540979783082165
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 620.5065344459691,
+        "h_liq_kJ_kg": 1649.6719434728373,
+        "h_superheat_50K_kJ_kg": 2935.455909976846,
+        "h_vap_kJ_kg": 2580.8044282594847,
+        "s_liq_kJ_kgK": 3.7456784228707107,
+        "s_vap_kJ_kgK": 5.246271001806977
+      },
+      "pressure_bar": 160.0,
+      "signed_error": {
+        "T_sat_K": -0.21920457599014753,
+        "h_liq_kJ_kg": -196.55508063710522,
+        "h_superheat_50K_kJ_kg": -445.2045754453902,
+        "h_vap_kJ_kg": -194.55309372802867,
+        "s_liq_kJ_kgK": -0.31263474645357414,
+        "s_vap_kJ_kgK": -0.3088688986405428
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 620.287329869979,
+        "h_liq_kJ_kg": 1453.116862835732,
+        "h_superheat_50K_kJ_kg": 2490.251334531456,
+        "h_vap_kJ_kg": 2386.251334531456,
+        "s_liq_kJ_kgK": 3.4330436764171366,
+        "s_vap_kJ_kgK": 4.937402103166434
+      }
+    },
+    {
+      "coolprop_if97": {
+        "T_sat_K": 638.8959115457054,
+        "h_liq_kJ_kg": 1827.1005374105016,
+        "h_superheat_50K_kJ_kg": 2906.8676789355027,
+        "h_vap_kJ_kg": 2411.3880120407875,
+        "s_liq_kJ_kgK": 4.015381450733756,
+        "s_vap_kJ_kgK": 4.9299052508857795
+      },
+      "pressure_bar": 200.0,
+      "signed_error": {
+        "T_sat_K": 0.7345048961733482,
+        "h_liq_kJ_kg": -293.01351418479703,
+        "h_superheat_50K_kJ_kg": -694.7119675838258,
+        "h_vap_kJ_kg": -303.2323006891106,
+        "s_liq_kJ_kgK": -0.45379521954506297,
+        "s_vap_kJ_kgK": -0.4708184109558884
+      },
+      "thermotwin_approx": {
+        "T_sat_K": 639.6304164418788,
+        "h_liq_kJ_kg": 1534.0870232257046,
+        "h_superheat_50K_kJ_kg": 2212.155711351677,
+        "h_vap_kJ_kg": 2108.155711351677,
+        "s_liq_kJ_kgK": 3.5615862311886928,
+        "s_vap_kJ_kgK": 4.459086839929891
+      }
+    }
+  ],
+  "coolprop_version": "8.0.0",
+  "description": "Cross-implementation verification, NOT physical validation",
+  "metrics": {
+    "T_sat_K": {
+      "max_absolute_error": 1.2401759229983895,
+      "mean_absolute_error": 0.5322679077014401,
+      "mean_signed_error": -0.2563321171296088
+    },
+    "h_liq_kJ_kg": {
+      "max_absolute_error": 293.01351418479703,
+      "mean_absolute_error": 85.00339807022185,
+      "mean_signed_error": -85.00339807022185
+    },
+    "h_superheat_50K_kJ_kg": {
+      "max_absolute_error": 694.7119675838258,
+      "mean_absolute_error": 215.85373566913438,
+      "mean_signed_error": -208.16273773601
+    },
+    "h_vap_kJ_kg": {
+      "max_absolute_error": 303.2323006891106,
+      "mean_absolute_error": 103.98669977613736,
+      "mean_signed_error": -98.81406120296612
+    },
+    "s_liq_kJ_kgK": {
+      "max_absolute_error": 0.45379521954506297,
+      "mean_absolute_error": 0.1390714194900039,
+      "mean_signed_error": -0.1390714194900039
+    },
+    "s_vap_kJ_kgK": {
+      "max_absolute_error": 0.4708184109558884,
+      "mean_absolute_error": 0.18221780905676077,
+      "mean_signed_error": -0.1590941450336045
+    }
+  },
+  "note": "Superheat is 50K above each implementation's own saturation temperature; its discrepancy includes temperature-definition error.",
+  "python_version": "3.11.17",
+  "sampler_stdout_sha256": "f973b10eda9950c12a560713b0cf33f2511a5580f7a11e878e506462ef2a9362",
+  "source_commit": "ee0461684dbad75c5ab28fe9a66a5f6b32317887",
+  "tool": "CoolProp IF97::Water",
+  "units": "K, kJ/kg and kJ/(kg K) per field"
+}

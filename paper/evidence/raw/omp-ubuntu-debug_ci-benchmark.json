@@ -1,0 +1,56 @@
+{
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "processor": "x86_64",
+  "compiler": "GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "core_count": 4,
+  "core_basis": "logical CPUs (physical count unavailable)",
+  "cases": 20000,
+  "repeats": 1,
+  "timing_scope": "run_cases only; setup and full serial verification excluded",
+  "rows": [
+    {
+      "mode": "serial",
+      "threads": 1,
+      "seconds": [
+        0.006153743
+      ],
+      "median_seconds": 0.006153743,
+      "max_relative_error": 0.0,
+      "speedup": 1.0,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 1,
+      "seconds": [
+        0.006252542
+      ],
+      "median_seconds": 0.006252542,
+      "max_relative_error": 0.0,
+      "speedup": 0.9841985867507967,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 2,
+      "seconds": [
+        0.003994366
+      ],
+      "median_seconds": 0.003994366,
+      "max_relative_error": 0.0,
+      "speedup": 1.5406056931187577,
+      "ideal_speedup": 2
+    },
+    {
+      "mode": "openmp",
+      "threads": 4,
+      "seconds": [
+        0.003951171
+      ],
+      "median_seconds": 0.003951171,
+      "max_relative_error": 0.0,
+      "speedup": 1.557447905949907,
+      "ideal_speedup": 4
+    }
+  ]
+}

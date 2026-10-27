@@ -1,0 +1,56 @@
+{
+  "platform": "Windows-10-10.0.26100-SP0",
+  "processor": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+  "compiler": "GNU Fortran (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0",
+  "core_count": 4,
+  "core_basis": "logical CPUs (physical count unavailable)",
+  "cases": 20000,
+  "repeats": 1,
+  "timing_scope": "run_cases only; setup and full serial verification excluded",
+  "rows": [
+    {
+      "mode": "serial",
+      "threads": 1,
+      "seconds": [
+        0.0038655
+      ],
+      "median_seconds": 0.0038655,
+      "max_relative_error": 0.0,
+      "speedup": 1.0,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 1,
+      "seconds": [
+        0.0039384
+      ],
+      "median_seconds": 0.0039384,
+      "max_relative_error": 0.0,
+      "speedup": 0.9814899451553931,
+      "ideal_speedup": 1
+    },
+    {
+      "mode": "openmp",
+      "threads": 2,
+      "seconds": [
+        0.0025855
+      ],
+      "median_seconds": 0.0025855,
+      "max_relative_error": 0.0,
+      "speedup": 1.4950686520982401,
+      "ideal_speedup": 2
+    },
+    {
+      "mode": "openmp",
+      "threads": 4,
+      "seconds": [
+        0.0021632
+      ],
+      "median_seconds": 0.0021632,
+      "max_relative_error": 0.0,
+      "speedup": 1.786936020710059,
+      "ideal_speedup": 4
+    }
+  ]
+}

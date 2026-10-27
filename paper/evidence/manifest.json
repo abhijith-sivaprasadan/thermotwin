@@ -1,0 +1,138 @@
+{
+  "artifacts": [
+    {
+      "github_reported_archive_digest": "sha256:d9ea6b805486dbebdf716f52f6f67508cb04ae0cc93489b6324dcec185681f20",
+      "id": 12699288029,
+      "name": "independent-if97-comparison"
+    },
+    {
+      "github_reported_archive_digest": "sha256:c2718813914fc2d84b2fdbfc0ab021c0f057733a5df333e050f29dfd48f6da14",
+      "id": 12698918203,
+      "name": "independent-tespy-rankine"
+    },
+    {
+      "github_reported_archive_digest": "sha256:0337e5eb190be9c8049c1ede1ef1fae4c13c056daf9a86e9cf0f684e61a5868d",
+      "id": 12699487507,
+      "name": "regenerated-cli-report-smoke"
+    },
+    {
+      "github_reported_archive_digest": "sha256:6d6e6b792366a938fa5784c3b3000913df446a39a19a390e407b09132b1da742",
+      "id": 12699387824,
+      "name": "openmp-ubuntu-latest-release"
+    },
+    {
+      "github_reported_archive_digest": "sha256:f5e7fc4137c5e036377b391e02a12ea5d19a8977f1f0b411efdbf608d790a98f",
+      "id": 12698418706,
+      "name": "openmp-ubuntu-latest-debug"
+    },
+    {
+      "github_reported_archive_digest": "sha256:9a206034ef87ed7fba5ea99e986a3d909db1777e90815d4961124059c5ec8712",
+      "id": 12699338467,
+      "name": "openmp-macos-latest-release"
+    },
+    {
+      "github_reported_archive_digest": "sha256:6fe0898f1b65e43a18ac3d769ed30101286bbfee8c7e140f2e8815001fd78c25",
+      "id": 12699418321,
+      "name": "openmp-macos-latest-debug"
+    },
+    {
+      "github_reported_archive_digest": "sha256:c82ae76b9506dfd2684c63b1c7272f08f6a5200a04f0524ff7d74370822216a5",
+      "id": 12699570075,
+      "name": "openmp-windows-latest-release"
+    },
+    {
+      "github_reported_archive_digest": "sha256:849dcf0907db82101941583081c5b02ca19dd6fb9da4075d05b035b7b782a95b",
+      "id": 12697939272,
+      "name": "openmp-windows-latest-debug"
+    }
+  ],
+  "ci_completed_jobs": 10,
+  "ci_run_id": 40424474706,
+  "ci_successful_jobs": 10,
+  "ci_url": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706",
+  "critical_caveats": [
+    "No measured plant validation",
+    "TESPy original output contains unit-label and 1e6 scaling error; only original kept plus conditional unit audit",
+    "OpenMP CI run times are 1 trial of 20,000 cases; no stable performance conclusions",
+    "Regenerated PDF is a functional smoke artifact, not independently validated research output"
+  ],
+  "extracted_files": {
+    "figures/figure1_property_enthalpy_errors.png": {
+      "bytes": 83999,
+      "sha256": "b6ec9263618860e0a8e68c55f3d90fbe7d604dd2d6b1bd4d6e5b826203cd6607"
+    },
+    "figures/figure2_temperature_errors.png": {
+      "bytes": 67676,
+      "sha256": "b07adf981c1343d750822ca644c8945301959e0f43ab40fae69e419dbbb6f186"
+    },
+    "raw/if97_benchmark.json": {
+      "bytes": 10071,
+      "sha256": "06dfd03e556212b93c210d8856046bf123026b16774f9e862cd894bfe6948df2"
+    },
+    "raw/omp-macos-debug_ci-benchmark.json": {
+      "bytes": 1018,
+      "sha256": "2358d7c737e8e4b2108b5b69f4a4e95bcd9c465784f8043d7cfb90fe3edf8e7b"
+    },
+    "raw/omp-macos-release_ci-benchmark.json": {
+      "bytes": 1017,
+      "sha256": "11866c9d2db032afcc90634fc454596444c8578eeef2828376ec8e09719c3f47"
+    },
+    "raw/omp-ubuntu-debug_ci-benchmark.json": {
+      "bytes": 1303,
+      "sha256": "a9f20c8770ecda8bebf7f812e0d75463da129e9504a05df3dea273ed5da9329f"
+    },
+    "raw/omp-ubuntu-release_ci-benchmark.json": {
+      "bytes": 1298,
+      "sha256": "04bc7dc55948cd1f8ae58b5a518fec8e321c491687be0df13eb2a881eb3e7476"
+    },
+    "raw/omp-windows-debug_ci-benchmark.json": {
+      "bytes": 1387,
+      "sha256": "24c857ed1a9d8a4023bcd30de0bd9cb51337d365dd3dd9afe12af1b0ec92b575"
+    },
+    "raw/omp-windows-release_ci-benchmark.json": {
+      "bytes": 1385,
+      "sha256": "74482f203660b2d2b2dc8c58b55dc3f863540b80c4bf871438fe0a95ec40af1e"
+    },
+    "raw/tespy_rankine_reference_original.json": {
+      "bytes": 398,
+      "sha256": "58460b93f5bf4281d6d1b2198aa061837e1fb3ce1ec83b0465dd45b5e3b38ed5"
+    },
+    "raw/tespy_unit_audit.json": {
+      "bytes": 1210,
+      "sha256": "f6494e0f7abe7eef82e054d028f4a80bae31992c35ca24dbb103984a125696ef"
+    },
+    "report/ThermoTwin-F_report.pdf": {
+      "bytes": 651130,
+      "sha256": "bc4014c5eab2992b848a1012f3cfd43bd1db946df30e586fb6b5e4dbc4bd6437"
+    },
+    "report/figures/degradation.png": {
+      "bytes": 124558,
+      "sha256": "956f760f56a3fcaa50d6fa41444f3db9e1741034e02a6aa5dc871565fe3e6e8a"
+    },
+    "report/figures/design_point.png": {
+      "bytes": 109952,
+      "sha256": "a275e105f2ce799211801d9f1cdd277509d56eed8cae95616e114a1a95ac6d18"
+    },
+    "report/figures/diagnostics.png": {
+      "bytes": 123797,
+      "sha256": "0f08f775268d3e8bf92ea1d06862bd0f9de407ea1117fa82b4947411313ceb3d"
+    },
+    "report/figures/sensitivity.png": {
+      "bytes": 191634,
+      "sha256": "6a05067ed585c66d14f89df73a9815969584c190fc0959f0f18eb43aea169a32"
+    },
+    "report/figures/transient.png": {
+      "bytes": 106945,
+      "sha256": "1c02458dbfedf571d57ce3f5609821302d8a4db1b7c40995171557070d7ddbad"
+    },
+    "report/figures/uncertainty.png": {
+      "bytes": 91414,
+      "sha256": "b268d2118109d62bd0afb839f6082f9a633a64919068e492455e55ef1ace838a"
+    }
+  },
+  "provenance": "Extracted directly from GitHub Actions artifacts for the exact tagged source commit; no simulated or fabricated experimental results",
+  "record_doi": "10.5281/zenodo.23679426",
+  "source_commit": "ee0461684dbad75c5ab28fe9a66a5f6b32317887",
+  "tag": "v2.0.0-beta.1",
+  "title": "ThermoTwin-F v2.0.0-beta.1 release evidence bundle"
+}
