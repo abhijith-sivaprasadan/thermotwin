@@ -26,12 +26,24 @@ independent scripts.
 
 ## Software release and citation
 
-ThermoTwin-F is **open research software** (MIT licensed). The `v2.0.0-beta.1`
-edition is intended as an **educational source-code prerelease**, not a qualified
+ThermoTwin-F is **open research software** (MIT licensed). The published `v2.0.0-beta.1`
+edition is an **educational source-code prerelease**, not a qualified
 industrial performance predictor. The native Windows GUI is **experimental**:
 its compilation is covered by CI, but end-to-end interaction, OPC UA operation
 and binary redistribution are not yet accepted. No new GUI executable is
 included in the source-only prerelease.
+
+**Published source beta:** [ThermoTwin-F v2.0.0-beta.1](https://github.com/abhijith-sivaprasadan/thermotwin/releases/tag/v2.0.0-beta.1)
+(27 October 2026; frozen release commit
+[`ee0461684dbad75c5ab28fe9a66a5f6b32317887`](https://github.com/abhijith-sivaprasadan/thermotwin/commit/ee0461684dbad75c5ab28fe9a66a5f6b32317887)).
+This is a **source-only prerelease** and does not include a Windows binary.
+[Release CI](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706)
+passed all 10 jobs; the publishing workflow also
+[succeeded](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424777919).
+
+**Previously archived version:** [v1.0.0 on Zenodo](https://doi.org/10.5281/zenodo.23679257).
+That DOI points to the **old v1.0.0 snapshot**, *not* the new beta.
+The v2.0.0-beta.1 DOI will be added here after Zenodo archival is verified.
 
 **Creator:** Abhijith Sivaprasadan ·
 [ORCID 0000-0003-0299-5745](https://orcid.org/0000-0003-0299-5745)
@@ -44,12 +56,12 @@ cite the precise [GitHub release tag](https://github.com/abhijith-sivaprasadan/t
 or Git commit, together with `CITATION.cff`. We do not invent a DOI or present
 GitHub CI as external scientific validation.
 
-**Version evidence:** [release verification run](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40416209807)
-(10/10 CI jobs passed on merged preparation commit `f89d03bad5d3304ead88c7420f510494940e5654`),
+**Version evidence:** [release verification run](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706)
+(10/10 CI jobs passed on exact prerelease commit `ee0461684dbad75c5ab28fe9a66a5f6b32317887`),
 [release acceptance gates](docs/RELEASE_GATE.md),
 [independent reference comparisons](docs/INDEPENDENT_BENCHMARKS.md),
 and [draft release notes](docs/RELEASE_NOTES_v2.0.0-beta.1.md).
-Verify the checks for the **exact tag commit** before citing any release.
+The checks above correspond to the **exact tagged source commit**. Scientific verification is not measured-plant validation.
 
 ## Results at a glance
 
