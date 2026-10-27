@@ -1,10 +1,10 @@
 # ThermoTwin-F — DOI release gate (working checklist)
 
-Target: proposed `v2.0.0-beta.1`, **not yet released**. This checklist is intentionally independent of the historical Revamp 5/6/7 marketing and development notes.
+**Post-publication status (27 October 2026):** [GitHub `v2.0.0-beta.1` prerelease](https://github.com/abhijith-sivaprasadan/thermotwin/releases/tag/v2.0.0-beta.1) is **published**, source-only, from verified commit `ee0461684dbad75c5ab28fe9a66a5f6b32317887`. [CI run 40424474706](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706) passed 10/10 jobs; [one-time publishing workflow 40424777919](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424777919) succeeded. Zenodo archival is enabled for this repository and v1.0.0 was archived as DOI `10.5281/zenodo.23679257`; **the v2 version DOI still requires independent confirmation**. This checklist preserves the pre-tag evidence boundaries and does not imply industrial validation.
 
-## Must pass before tagging
+## Pre-tag release gates (historical review record)
 
-- [ ] Zenodo Linked Accounts page shows GitHub + ORCID + OpenAIRE connected; **repository-specific Zenodo toggle is unverified** and needs account-owner action.
+- [x] Zenodo linked accounts and repository-specific archival were confirmed active on the account's ThermoTwin repository settings page; existing v1.0.0 DOI `10.5281/zenodo.23679257` was shown.
 - [x] Preparation PR #4 merged into `main` as `f89d03bad5d3304ead88c7420f510494940e5654` after green CI. Tag must reference the final, newly checked main commit.
 - [x] Metadata CI parses `CITATION.cff`, verifies author ORCID and version agreement with `fpm.toml`; DOI is not predeclared. Recheck exact tag before archive.
 - [x] All six OS/profile matrix jobs (serial/OpenMP), full scenarios and supplemental jobs passed: [10/10 on merged `main` preparation commit](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40416209807). Repeat for the final release source commit.
@@ -17,8 +17,8 @@ Target: proposed `v2.0.0-beta.1`, **not yet released**. This checklist is intent
 
 ## After the tag
 
-1. Publish a GitHub *release* for the exact tag. Zenodo's connected GitHub integration archives **new** releases; it does not automatically backfill old releases.
-2. Confirm the Zenodo *version DOI* and *concept DOI*, exact version, author/ORCID, MIT license, archive files and record URL.
+1. **Complete:** GitHub [source-only prerelease v2.0.0-beta.1](https://github.com/abhijith-sivaprasadan/thermotwin/releases/tag/v2.0.0-beta.1) published for exact CI-tested source commit. Zenodo's connected GitHub integration should archive new releases, but the DOI must be verified separately.
+2. **Pending verification:** Confirm the Zenodo *v2 version DOI* and *concept DOI*, exact version, creator/ORCID, MIT license, archive ZIP, and record URL. Do not mistake the old v1.0.0 DOI for the new prerelease.
 3. Only after the DOI exists: update README with a Zenodo badge, reference the DOI in the next metadata update, and link independent research outputs. Do **not** retroactively rewrite the tagged source snapshot merely to add a badge.
 4. Look for subsequent OpenAIRE indexing; an OpenAIRE account alone does not automatically submit or certify this software.
 
