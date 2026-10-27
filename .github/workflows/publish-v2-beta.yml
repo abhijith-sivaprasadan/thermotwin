@@ -1,0 +1,70 @@
+name: Publish ThermoTwin-F beta source release
+
+# This one-off, CI-gated workflow only publishes the v2 beta when the
+# specific release commit lands on main AND the complete CI workflow succeeds.
+# Zenodo archival depends on the user enabling this GitHub repository in Zenodo.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: thermotwin-f-v2.0.0-beta.1-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish verified source-only v2.0.0-beta.1
+    # Only trusted push-to-main events, not PRs, scheduled jobs or dispatches.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          startsWith(github.event.workflow_run.head_commit.message, 'Publish ThermoTwin-F v2.0.0-beta.1') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v2.0.0-beta.1
+      VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout exact fully tested commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.VERIFIED_SHA }}
+          persist-credentials: false
+      - name: Verify the release target, metadata and source-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
+          test "$(git log -1 --pretty=%s)" = "Publish ThermoTwin-F v2.0.0-beta.1 (source-only)"
+          test -f CITATION.cff
+          test -f docs/RELEASE_NOTES_v2.0.0-beta.1.md
+          grep -Fxq 'version = "2.0.0-beta.1"' fpm.toml
+          grep -Fxq 'version: 2.0.0-beta.1' CITATION.cff
+          grep -Fq 'https://orcid.org/0000-0003-0299-5745' CITATION.cff
+          grep -Fq 'Source-only research preview' docs/RELEASE_NOTES_v2.0.0-beta.1.md
+          echo "Source-only release metadata matches $VERIFIED_SHA"
+      - name: Publish prerelease without experimental Windows executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            actual="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            echo "Tag/release already exists (target: $actual); refusing duplicate publication."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$VERIFIED_SHA" \
+            --title "ThermoTwin-F v2.0.0-beta.1 — Source-only research preview" \
+            --notes-file docs/RELEASE_NOTES_v2.0.0-beta.1.md \
+            --prerelease \
+            --latest=false
+          echo "GitHub release published for $VERIFIED_SHA."
+          echo "Zenodo DOI is NOT confirmed by this workflow; verify Zenodo independently."
