@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Zenodo-ready CITATION.cff and version without inventing a DOI."""
+"""Validate current, now-archived beta DOI, ORCID and version metadata."""
 import re
 from pathlib import Path
 
@@ -28,8 +28,19 @@ def main():
     assert len(cff["abstract"])>=80
     orcid=cff["authors"][0]["orcid"]
     assert orcid=="https://orcid.org/0000-0003-0299-5745" and orcid_valid(orcid.split("/")[-1])
-    assert "doi" not in cff and not (ROOT/".zenodo.json").exists()
-    print("Citation valid: matching version, author ORCID, keywords, no invented DOI.")
+    # These identifiers were verified against the published Zenodo v2 record.
+    # Update the mapping deliberately on a new release; do not carry a stale
+    # previous-version DOI into a subsequent source snapshot.
+    published_version_dois = {
+        "2.0.0-beta.1": "10.5281/zenodo.23679426",
+    }
+    expected_doi = published_version_dois.get(cff["version"])
+    assert expected_doi, "New software version needs independently confirmed DOI metadata"
+    assert cff["doi"] == expected_doi, "Citation DOI does not match software version"
+    assert str(cff["date-released"]) == "2026-10-27", "Release date mismatch"
+    assert not (ROOT/".zenodo.json").exists(), "CITATION.cff remains canonical metadata"
+    print("Citation valid: version, author ORCID, Zenodo DOI, release date and metadata.")
+
 
 
 if __name__=="__main__":
