@@ -27,7 +27,7 @@ def main():
     assert cff["license"]=="MIT" and len(cff["keywords"])>=5
     assert len(cff["abstract"])>=80
     orcid=cff["authors"][0]["orcid"]
-    assert orcid=="https://orcid.org/0000-0003-0299-5745" and orcid_valid(orcid.split("/")[-1])
+    assert orcid=="https://orcid.org/0009-0009-8429-1266" and orcid_valid(orcid.split("/")[-1])
     # These identifiers were verified against the published Zenodo v2 record.
     # Update the mapping deliberately on a new release; do not carry a stale
     # previous-version DOI into a subsequent source snapshot.
