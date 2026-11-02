@@ -2,7 +2,7 @@
 
 **Working research manuscript — version 0.1 (27 October 2026). Not submitted or peer-reviewed.**
 
-**Author:** Abhijith Sivaprasadan ([ORCID 0000-0003-0299-5745](https://orcid.org/0000-0003-0299-5745))  
+**Author:** Abhijith Sivaprasadan ([ORCID 0009-0009-8429-1266](https://orcid.org/0009-0009-8429-1266))  
 **Software:** ThermoTwin-F v2.0.0-beta.1, [Zenodo DOI: 10.5281/zenodo.23679426](https://doi.org/10.5281/zenodo.23679426)  
 **Exact source:** `ee0461684dbad75c5ab28fe9a66a5f6b32317887`  
 **Release CI:** [GitHub Actions run 40424474706](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/40424474706)  

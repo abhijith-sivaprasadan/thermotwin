@@ -58,6 +58,8 @@ Sivaprasadan, A. (2026). *ThermoTwin-F: An Educational Gas-Turbine and
 Combined-Cycle Simulation Framework* (Version v2.0.0-beta.1)
 [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23679426
 
-**Creator ORCID:** https://orcid.org/0000-0003-0299-5745
+**Creator ORCID (corrected in current repository documentation):** https://orcid.org/0009-0009-8429-1266
+
+This post-archive correction does not alter the v2 release tag or archived source ZIP. Verify/update creator metadata on Zenodo and the GitHub release description independently.
 
 **OpenAIRE discovery:** https://explore.openaire.eu/search/result?pid=10.5281/zenodo.23679426

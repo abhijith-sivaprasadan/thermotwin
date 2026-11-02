@@ -45,14 +45,16 @@ passed all 10 jobs; the publishing workflow also
 **Zenodo archival:** The
 [v2.0.0-beta.1 archive](https://zenodo.org/records/23679426) is published
 as [DOI 10.5281/zenodo.23679426](https://doi.org/10.5281/zenodo.23679426),
-with MIT licensing, creator ORCID, and a 1.8 MB source ZIP.
+with MIT licensing and a 1.8 MB source ZIP.
 The [v1.0.0 DOI 10.5281/zenodo.23679257](https://doi.org/10.5281/zenodo.23679257)
 continues to identify the earlier version.
 Use the [concept DOI 10.5281/zenodo.23679256](https://doi.org/10.5281/zenodo.23679256)
 when referencing the evolving software across versions.
 
 **Creator:** Abhijith Sivaprasadan ·
-[ORCID 0000-0003-0299-5745](https://orcid.org/0000-0003-0299-5745)
+[ORCID 0009-0009-8429-1266](https://orcid.org/0009-0009-8429-1266)
+
+**Metadata correction (2 November 2026):** The creator's correct ORCID is listed above and in the current `CITATION.cff`. The previously published source tag and Zenodo ZIP are retained unchanged for provenance. Published Zenodo creator metadata and the GitHub release description must be checked and corrected separately where necessary.
 
 **How to cite this beta:** Cite the **version-specific DOI**, not the concept DOI:
 

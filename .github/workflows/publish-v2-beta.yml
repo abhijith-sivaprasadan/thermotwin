@@ -47,7 +47,7 @@ jobs:
           test -f docs/RELEASE_NOTES_v2.0.0-beta.1.md
           grep -Fxq 'version = "2.0.0-beta.1"' fpm.toml
           grep -Fxq 'version: 2.0.0-beta.1' CITATION.cff
-          grep -Fq 'https://orcid.org/0000-0003-0299-5745' CITATION.cff
+          grep -Fq 'https://orcid.org/0009-0009-8429-1266' CITATION.cff
           grep -Fq 'Source-only research preview' docs/RELEASE_NOTES_v2.0.0-beta.1.md
           echo "Source-only release metadata matches $VERIFIED_SHA"
       - name: Publish prerelease without experimental Windows executable
