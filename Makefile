@@ -15,7 +15,16 @@
 
 FC      = gfortran
 CXX     = g++
-BUILD   := build
+CC      = gcc
+PROFILE ?= release
+ifeq ($(OS),Windows_NT)
+PYTHON ?= python
+EXEEXT := .exe
+else
+PYTHON ?= python3
+EXEEXT :=
+endif
+BUILD   := $(if $(filter debug,$(PROFILE)),build/debug,build)
 SRC     := src
 APP     := app
 TEST    := test
@@ -24,6 +33,9 @@ FFLAGS_COMMON := -J $(BUILD) -I $(BUILD) -ffree-line-length-none -std=f2008
 FFLAGS_REL    := -O2
 FFLAGS_DBG    := -O0 -g -fcheck=all -fbacktrace -Wall -Wextra -fimplicit-none
 FFLAGS        := $(FFLAGS_COMMON) $(FFLAGS_REL)
+ifeq ($(PROFILE),debug)
+FFLAGS        := $(FFLAGS_COMMON) $(FFLAGS_DBG)
+endif
 CXXFLAGS_REL  := -O2 -std=c++17 -Wall -Wextra
 CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 
@@ -44,26 +56,30 @@ OPCUA_F_OBJ := $(BUILD)/opcua_bridge.o
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODS)))
 TEST_SRCS := $(wildcard $(TEST)/test_*.f90)
-TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
+TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%$(EXEEXT),$(TEST_SRCS))
 
-EXE := thermotwin
+EXE := $(if $(filter build,$(BUILD)),thermotwin,$(BUILD)/thermotwin)$(EXEEXT)
 GUI_EXE := thermotwin-gui.exe
 GUI_DEBUG_EXE := thermotwin-gui-debug.exe
 GUI_ICON := gui/app_icon.ico
 GUI_RES := $(BUILD)/gui_icon.res
 GUI_NATIVE_OBJ := $(BUILD)/hmi_native_draw.o
+WITH_OPCUA ?= 0
+ifeq ($(WITH_OPCUA),1)
 OPCUA_OBJ := $(BUILD)/open62541.o $(BUILD)/opcua_server.o
+else
+OPCUA_OBJ := $(BUILD)/opcua_stub.o
+endif
 
 OPCUA_VER := v1.5.4
-OPCUA_URL := https://github.com/open62541/open62541/releases/download/$(OPCUA_VER)
 
-.PHONY: all tests check debug run gui gui-debug clean download-opcua
+.PHONY: all tests check debug run gui gui-debug clean download-opcua scenarios pipeline help
 .SECONDEXPANSION:
 
 all: $(EXE)
 
 $(BUILD):
-	@python -c "import os; os.makedirs('$(BUILD)', exist_ok=True)"
+	@$(PYTHON) -c "from pathlib import Path; Path('$(BUILD)').mkdir(parents=True, exist_ok=True)"
 
 # Pattern rule: each module object depends on its source. Ordering is enforced
 # by the explicit prerequisite chain below.
@@ -143,7 +159,7 @@ $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.
                                   $(BUILD)/fault_classifier.o $(BUILD)/forecast_engine.o \
                                   $(BUILD)/p2x_electrolyser.o $(BUILD)/ccs_model.o \
                                   $(BUILD)/gfm_bess.o $(BUILD)/tie_line.o $(BUILD)/mpc_agc.o \
-                                  $(BUILD)/combustion_physics.o
+                                  $(BUILD)/combustion_physics.o $(BUILD)/h2_blend.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
 $(BUILD)/opcua_bridge.o:         $(BUILD)/precision_kinds.o
@@ -157,17 +173,25 @@ $(BUILD)/main.o: $(APP)/main.f90 $(OBJS) | $(BUILD)
 tests: $(TEST_BINS)
 
 $(BUILD)/tests: | $(BUILD)
-	@python -c "import os; os.makedirs('$(BUILD)/tests', exist_ok=True)"
+	@$(PYTHON) -c "from pathlib import Path; Path('$(BUILD)/tests').mkdir(parents=True, exist_ok=True)"
 
-$(BUILD)/tests/%: $(TEST)/%.f90 $(OBJS) | $(BUILD)/tests
+$(BUILD)/tests/%$(EXEEXT): $(TEST)/%.f90 $(TEST)/test_assert.inc $(OBJS) | $(BUILD)/tests
 	$(FC) $(FFLAGS) -I $(TEST) -c $< -o $(BUILD)/$*.o
 	$(FC) $(FFLAGS) $(OBJS) $(BUILD)/$*.o -o $@
 
 check: tests $(EXE)
-	@python scripts/run_tests.py
+	@$(PYTHON) scripts/run_tests.py --build-dir "$(BUILD)" --exe "$(EXE)"
+	@$(PYTHON) -m unittest discover -s scripts -p "test_*.py"
+	@$(PYTHON) scripts/check_cli.py --exe "$(EXE)"
 
-debug: FFLAGS := $(FFLAGS_COMMON) $(FFLAGS_DBG)
-debug: clean all
+debug:
+	$(MAKE) PROFILE=debug all
+
+scenarios: $(EXE)
+	@$(PYTHON) scripts/run_scenarios.py --exe "$(EXE)"
+
+pipeline: $(EXE)
+	@$(PYTHON) scripts/run_pipeline.py --exe "$(EXE)" --output-dir "$(BUILD)/analysis"
 
 run: $(EXE)
 	./$(EXE) run cases/design_point.csv output/results_design_point.csv
@@ -178,12 +202,15 @@ $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
 
 # open62541 amalgam — compiled once with -O1 (full optimisation is slow)
-$(BUILD)/open62541.o: gui/open62541.c | $(BUILD)
-	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
+$(BUILD)/open62541.o: gui/open62541.c gui/open62541.h | $(BUILD)
+	$(CC) -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
 
 # OPC UA server C wrapper
 $(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)
-	gcc -O2 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
+	$(CC) -O2 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
+
+$(BUILD)/opcua_stub.o: gui/opcua_stub.c | $(BUILD)
+	$(CC) -O2 -Wall -Wextra -c $< -o $@
 
 $(BUILD)/opcua_bridge.o: $(SRC)/engine/opcua_bridge.f90 | $(BUILD)
 	$(FC) $(FFLAGS) -c $< -o $@
@@ -200,14 +227,13 @@ $(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
 	windres $< -O coff -o $@
 
 $(GUI_ICON): scripts/generate_gui_icon.py
-	python scripts/generate_gui_icon.py $@
+	$(PYTHON) scripts/generate_gui_icon.py $@
 
 clean:
-	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)
+	$(PYTHON) scripts/clean.py "$(BUILD)" "$(EXE)" "$(GUI_EXE)" "$(GUI_DEBUG_EXE)"
 
 download-opcua:
-	curl -L $(OPCUA_URL)/open62541.c -o gui/open62541.c
-	curl -L $(OPCUA_URL)/open62541.h -o gui/open62541.h
-	sed -i 's|^#define UA_ARCHITECTURE_POSIX|/* #undef UA_ARCHITECTURE_POSIX */|' gui/open62541.h
-	sed -i 's|^\/\* #undef UA_ARCHITECTURE_WIN32 \*\/|#define UA_ARCHITECTURE_WIN32|' gui/open62541.h
-	sed -i 's|^#define UA_ENABLE_ENCRYPTION_MBEDTLS|/* #undef UA_ENABLE_ENCRYPTION_MBEDTLS */|' gui/open62541.h
+	$(PYTHON) scripts/download_opcua.py --version "$(OPCUA_VER)"
+
+help:
+	@$(PYTHON) -c "print('make [all | check | scenarios | pipeline | debug | gui | gui-debug | clean]\nOverrides: FC, CC, CXX, PYTHON, BUILD, EXE, PROFILE=debug, WITH_OPCUA=1\nmake pipeline writes fresh results to BUILD/analysis; see README.md.')"

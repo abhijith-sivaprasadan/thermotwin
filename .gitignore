@@ -23,11 +23,15 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Generated outputs are kept in this distribution as a demonstration.
-# If you prefer a clean repo, uncomment the lines below to ignore them:
-# output/*.csv
-# output/figures/
-# output/*.pdf
+# Existing tracked examples remain available; ignore newly generated runs.
+output/*
+!output/.gitkeep
+*.dll
+.venv/
+.pytest_cache/
+shift_data_*.csv
+shift_data_*.pdf
+check_out.txt
 output/gui_last_run.txt
 output/results_gui_run.csv
 output/gui_*.png

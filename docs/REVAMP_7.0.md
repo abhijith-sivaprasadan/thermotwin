@@ -23,7 +23,7 @@ palette / nav rail, so we are not bound by the 15 F-key slots.
 
 ## Principles
 1. **Conservation first** — every model closes mass / energy / exergy balances to a stated tolerance.
-2. **Reference-grade** — IAPWS-IF97, NASA-9 polynomials, ε-NTU; the formulation is named and cited.
+2. **Reference-grade** — NASA-9 polynomials, ε-NTU, and engineering-accuracy Antoine-style saturated water/steam correlations; the formulation is named and cited.
 3. **Quantified uncertainty** — every reported number carries an error bar and its provenance.
 4. **Falsifiable** — V&V residuals against reference data; assumptions stated explicitly.
 5. **Legible** — every result has a diagram and a one-line physical interpretation.
@@ -33,7 +33,7 @@ palette / nav rail, so we are not bound by the 15 F-key slots.
 | Phase | Scope | Workstream |
 |-------|-------|------------|
 | **7.0-P1** | **Exergy & second-law engine + Grassmann diagram** — new `exergy` module: physical + chemical flow exergy per station, exergy destruction & rational (2nd-law) efficiency per component; new **Exergy Analysis** screen with a live Grassmann/Sankey + destruction waterfall | B (flagship 1) |
-| **7.0-P2** | **Thermophysical fidelity** — IAPWS-IF97 water/steam for `steam_cycle`; NASA-9 real-gas combustion-product properties in `fluid_properties`/`cycle_solver`; ε-NTU multi-pressure HRSG with pinch/approach | A (flagship 2) |
+| **7.0-P2** | **Thermophysical fidelity** — engineering-accuracy Antoine-style saturated water/steam correlations for `steam_cycle` (not full IAPWS-IF97); NASA-9 real-gas combustion-product properties in `fluid_properties`/`cycle_solver`; ε-NTU multi-pressure HRSG with pinch/approach | A (flagship 2) |
 | **7.0-P3** | **Combustion chemistry & component physics** — adiabatic flame temperature, Zeldovich thermal NOx + CO, H₂ co-firing (Wobbe, flame-temp shift, flashback margin); turbine cooling-air accounting, tip-clearance, polytropic-loss breakdown | A |
 | **7.0-P4** | **Uncertainty quantification & sensitivity** — Monte-Carlo propagation of sensor/parameter uncertainty → error bars on every KPI; Sobol global sensitivity + tornado charts; new **UQ & Sensitivity** screen | B (flagship 3) |
 | **7.0-P5** | **Data reconciliation & V&V** — constrained reconciliation of sensors against mass/energy balances, redundancy + gross-error detection, conservation-closure metrics, formal validation residuals (extends `model_validation`) | B |
@@ -57,7 +57,7 @@ unit test to `make check` validated against a textbook/reference point (cited), 
   cycle points, that the balance closes (<2%), the **combustor dominates the destruction**,
   destructions are non-negative, and η_II is physical → `make check` **22 passed / 0 failed**.
   **Remaining P1:** the Exergy Analysis GUI screen (live Grassmann/Sankey + destruction waterfall),
-  reachable via the 6.0 command palette. Then P2 (IAPWS-IF97 + NASA-9 + ε-NTU) onward.
+  reachable via the 6.0 command palette. Then P2 (Antoine-style water/steam correlations + NASA-9 + ε-NTU) onward.
 - **2026-06-15** — **7.0-P1 GUI done.** Added **L3 Exergy Analysis** as screen 16, reachable through
   the nav rail/tabs and `Ctrl-K` command palette. The screen renders live fuel-exergy, useful-work,
   η_II, destruction, external-loss, and balance-closure KPIs; a Grassmann-style availability flow;

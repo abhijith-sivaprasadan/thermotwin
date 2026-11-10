@@ -29,27 +29,40 @@ program thermotwin
     use scenario_runner, only: Scenario, scenario_load, scenario_run
     implicit none
 
-    character(len=256) :: mode, infile, outfile
+    character(len=1024) :: mode, infile, outfile, output_dir
     integer :: nargs
 
     nargs = command_argument_count()
+    output_dir = "output"
+    block
+        integer :: env_status
+        call get_environment_variable("THERMOTWIN_OUTPUT_DIR", output_dir, status=env_status)
+        if (env_status == -1) then
+            write(*, '(A)') "ERROR: THERMOTWIN_OUTPUT_DIR is too long (maximum 1024 characters)."
+            error stop 2
+        end if
+        if (env_status /= 0 .or. len_trim(output_dir) == 0) output_dir = "output"
+    end block
     if (nargs < 1) then
         call print_usage()
         stop
     end if
 
-    call get_command_argument(1, mode)
+    call read_argument(1, mode)
 
     select case (trim(mode))
+    case ("--help", "-h", "help")
+        call print_usage()
+
     case ("run", "design")
-        if (nargs < 2) then
+        if (nargs < 2 .or. nargs > 3) then
             write(*, '(A)') "ERROR: 'run' needs an input CSV."; call print_usage(); error stop 2
         end if
-        call get_command_argument(2, infile)
+        call read_argument(2, infile)
         if (nargs >= 3) then
-            call get_command_argument(3, outfile)
+            call read_argument(3, outfile)
         else
-            outfile = "output/results_run.csv"
+            outfile = output_path("results_run.csv")
         end if
         call mode_run(trim(infile), trim(outfile))
 
@@ -70,6 +83,7 @@ program thermotwin
         call mode_diagnostics(trim(infile))
 
     case ("selftest")
+        if (nargs /= 1) error stop 2
         call mode_selftest()
 
     case ("scenario")
@@ -83,14 +97,25 @@ program thermotwin
 
 contains
 
+    subroutine read_argument(number, value)
+        integer, intent(in) :: number
+        character(len=*), intent(out) :: value
+        integer :: arg_status
+        call get_command_argument(number, value, status=arg_status)
+        if (arg_status /= 0 .or. len_trim(value) == 0) then
+            write(*, '(A,I0)') "ERROR: empty, unavailable, or overlong argument at position ", number
+            error stop 2
+        end if
+    end subroutine read_argument
+
     subroutine require_infile(nargs, infile)
         integer, intent(in) :: nargs
         character(len=*), intent(out) :: infile
-        if (nargs < 2) then
+        if (nargs /= 2) then
             write(*, '(A)') "ERROR: this mode needs a baseline CSV."
             call print_usage(); error stop 2
         end if
-        call get_command_argument(2, infile)
+        call read_argument(2, infile)
     end subroutine require_infile
 
     subroutine print_usage()
@@ -105,15 +130,33 @@ contains
         write(*, '(A)') "  thermotwin diagnostics <baseline.csv>"
         write(*, '(A)') "  thermotwin selftest"
         write(*, '(A)') "  thermotwin scenario run <file.scn> [--record out.csv]"
+        write(*, '(A)') "  thermotwin --help"
+        write(*, '(A)') "Set THERMOTWIN_OUTPUT_DIR to an existing directory for analysis outputs."
         write(*, '(A)') ""
     end subroutine print_usage
+
+    function output_path(name) result(path)
+        character(len=*), intent(in) :: name
+        character(len=:), allocatable :: path
+        path = trim(output_dir)//"/"//name
+    end function output_path
+
+    subroutine require_physical_baseline(base)
+        type(InputCase), intent(in) :: base
+        type(CycleResult) :: result
+        result = solve_cycle(base)
+        if (.not. result%converged) then
+            write(*, '(A)') "ERROR: invalid analysis baseline: "//trim(result%status_message)
+            error stop 7
+        end if
+    end subroutine require_physical_baseline
 
     !===================================================================
     ! MODE: scenario -- scripted grid/plant playback with assertions
     !===================================================================
     subroutine mode_scenario(nargs)
         integer, intent(in) :: nargs
-        character(len=256) :: sub, scn_path, arg, record_path
+        character(len=1024) :: sub, scn_path, arg, record_path
         type(Scenario) :: sc
         integer :: i, failures
         logical :: ok
@@ -122,19 +165,19 @@ contains
             write(*, '(A)') "ERROR: usage: thermotwin scenario run <file.scn> [--record out.csv]"
             error stop 2
         end if
-        call get_command_argument(2, sub)
+        call read_argument(2, sub)
         if (trim(sub) /= "run") then
             write(*, '(A)') "ERROR: unknown scenario subcommand '"//trim(sub)//"'"
             error stop 2
         end if
-        call get_command_argument(3, scn_path)
+        call read_argument(3, scn_path)
 
         record_path = ""
         i = 4
         do while (i <= nargs)
-            call get_command_argument(i, arg)
-            if (trim(arg) == "--record" .and. i + 1 <= nargs) then
-                call get_command_argument(i + 1, record_path)
+            call read_argument(i, arg)
+            if (trim(arg) == "--record" .and. i + 1 <= nargs .and. len_trim(record_path) == 0) then
+                call read_argument(i + 1, record_path)
                 i = i + 2
             else
                 write(*, '(A)') "ERROR: unknown scenario option '"//trim(arg)//"'"
@@ -166,6 +209,10 @@ contains
         call run_cases(cases, results)
         call write_results(outfile, results, n)
         call print_one_line_summary(results(1))
+        if (any(.not. results%converged)) then
+            write(*, '(A)') "ERROR: one or more operating points failed physical sanity checks; inspect CSV status."
+            error stop 7
+        end if
     end subroutine mode_run
 
     !===================================================================
@@ -188,6 +235,7 @@ contains
         call read_input_cases(infile, cases, n, ok)
         if (.not. ok) error stop 3
         base = cases(1)
+        call require_physical_baseline(base)
 
         do i = 1, 4
             d = make_preset(trim(presets(i)))
@@ -195,10 +243,10 @@ contains
         end do
         clean = res(1)
 
-        call write_results("output/results_degradation.csv", res, 4)
+        call write_results(output_path("results_degradation.csv"), res, 4)
 
         ! Deltas relative to clean.
-        open(newunit=unit, file="output/results_degradation_deltas.csv", &
+        open(newunit=unit, file=output_path("results_degradation_deltas.csv"), &
              status='replace', action='write', iostat=ios)
         if (ios == 0) then
             write(unit, '(A)') "mode,net_power_MW,thermal_efficiency,heat_rate_kJ_kWh,"// &
@@ -210,7 +258,7 @@ contains
                     res(i)%exhaust_temperature_K, dPow, dEff, dHR, dExhT, dFuel
             end do
             close(unit)
-            write(*, '(A)') "  wrote output/results_degradation_deltas.csv"
+            write(*, '(A)') "  wrote "//trim(output_dir)//"/results_degradation_deltas.csv"
         end if
 
         write(*, '(A)') ""
@@ -241,6 +289,7 @@ contains
         call read_input_cases(infile, cases, n, ok)
         if (.not. ok) error stop 3
         base = cases(1)
+        call require_physical_baseline(base)
         hot  = solve_cycle(base)
         T_exhaust_hot = hot%exhaust_temperature_K
         T_amb = base%ambient_T_K
@@ -257,7 +306,7 @@ contains
         comp%hA_W_K          = 4.0e3_dp
         comp%UA_loss_W_K     = 1.5e2_dp
 
-        open(newunit=unit, file="output/results_transient.csv", &
+        open(newunit=unit, file=output_path("results_transient.csv"), &
              status='replace', action='write', iostat=ios)
         if (ios /= 0) error stop 4
         write(unit, '(A)') "schedule,time_s,T_gas_K,T_metal_K"
@@ -295,7 +344,7 @@ contains
         call dump_transient(unit, "shutdown", t, Tgas, Tmetal, NT)
 
         close(unit)
-        write(*, '(A)') "  wrote output/results_transient.csv (startup, load_ramp, shutdown)"
+        write(*, '(A)') "  wrote "//trim(output_dir)//"/results_transient.csv (startup, load_ramp, shutdown)"
         write(*, '(A,F7.1,A)') "  hot exhaust drive temperature = ", T_exhaust_hot, " K"
     end subroutine mode_transient
 
@@ -330,6 +379,7 @@ contains
         call read_input_cases(infile, cases, n, ok)
         if (.not. ok) error stop 3
         base = cases(1)
+        call require_physical_baseline(base)
         nominal = solve_cycle(base)
 
         call seed_rng(20240601)   ! reproducible study
@@ -343,7 +393,7 @@ contains
                 n_samples      = NMC, &
                 seed_already_set = .true.)
 
-        open(newunit=unit, file="output/results_uncertainty.csv", &
+        open(newunit=unit, file=output_path("results_uncertainty.csv"), &
              status='replace', action='write', iostat=ios)
         if (ios /= 0) error stop 4
         write(unit, '(A)') "quantity,nominal,mean,sigma,p2_5,p97_5"
@@ -359,7 +409,7 @@ contains
         channels = [character(len=16) :: "T_ambient", "T_turbine_inlet", &
                                          "pressure_ratio", "mdot_air"]
         biases   = [2.0_dp, 10.0_dp, 0.3_dp, 2.0_dp]
-        open(newunit=unit, file="output/results_bias_sensitivity.csv", &
+        open(newunit=unit, file=output_path("results_bias_sensitivity.csv"), &
              status='replace', action='write', iostat=ios)
         if (ios /= 0) error stop 4
         write(unit, '(A)') "channel,applied_bias,dPower_MW,dEfficiency,dHeatRate_kJ_kWh"
@@ -374,7 +424,7 @@ contains
         write(*, '(A,F8.2,A,F6.2,A)') "  net power = ", u%power_mean, " +/- ", &
             u%power_sigma, " MW (1-sigma)"
         write(*, '(A,F8.3,A,F6.3)') "  efficiency = ", u%eff_mean, " +/- ", u%eff_sigma
-        write(*, '(A)') "  wrote output/results_uncertainty.csv, output/results_bias_sensitivity.csv"
+        write(*, '(A)') "  wrote uncertainty and bias sensitivity CSVs to "//trim(output_dir)
     end subroutine mode_uncertainty
 
     !===================================================================
@@ -396,6 +446,7 @@ contains
         call read_input_cases(infile, cases, n, ok)
         if (.not. ok) error stop 3
         base = cases(1)
+        call require_physical_baseline(base)
 
         ! Synthetic ground truth: a known degradation we will try to recover.
         true_deg%mode = "synthetic_truth"
@@ -415,7 +466,7 @@ contains
         w = default_weights()
         dr = diagnose(base, obs, w, n_grid=8)
 
-        open(newunit=unit, file="output/results_diagnostics.csv", &
+        open(newunit=unit, file=output_path("results_diagnostics.csv"), &
              status='replace', action='write', iostat=ios)
         if (ios /= 0) error stop 4
         write(unit, '(A)') "parameter,true_value,estimated_value,abs_error"
@@ -444,7 +495,7 @@ contains
             true_deg%delta_eta_turbine, dr%estimate%delta_eta_turbine
         write(*, '(2x,A,2F11.5)') "delta_dP_combustor   ", &
             true_deg%delta_dP_combustor, dr%estimate%delta_dP_combustor
-        write(*, '(A)') "  wrote output/results_diagnostics.csv"
+        write(*, '(A)') "  wrote "//trim(output_dir)//"/results_diagnostics.csv"
     end subroutine mode_diagnostics
 
     !===================================================================
@@ -456,7 +507,7 @@ contains
         logical :: pass
 
         write(*, '(A)') "== ThermoTwin-F : selftest =="
-        ! Canonical verification case (see docs/verification.md).
+        ! Canonical verification case (see docs/verification_matrix.md).
         ic%case_name = "verification_baseline"
         ic%ambient_T_K = 288.15_dp
         ic%ambient_P_Pa = 101325.0_dp

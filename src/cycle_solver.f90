@@ -19,7 +19,8 @@ module cycle_solver
     use turbine, only: solve_turbine
     use shaft_generator, only: solve_shaft_generator
     use fluid_properties, only: cp_gas_at
-    use utilities, only: safe_divide
+    use utilities, only: safe_divide, assert_positive, assert_in_range
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
     public :: solve_cycle
@@ -41,6 +42,8 @@ contains
 
         res%case_name        = ic%case_name
         res%degradation_mode = ic%degradation_mode
+        call assert_positive(ic%mdot_air_kg_s, "mdot_air_kg_s")
+        call assert_in_range(ic%relative_humidity, 0.0_dp, 1.0_dp, "relative_humidity")
 
         ! ---- Station 1: inlet -------------------------------------------------
         call inlet_state(ic, T1, P1)
@@ -112,7 +115,9 @@ contains
         ! ---- Basic physical sanity flags -------------------------------------
         res%converged = .true.
         res%status_message = "ok"
-        if (T2 <= T1) then
+        if (.not. all(ieee_is_finite([T1, P1, T2, P2, P3, T4, P4, f, net_W, Q_fuel_W]))) then
+            res%converged = .false.; res%status_message = "non-finite cycle result"
+        else if (T2 <= T1) then
             res%converged = .false.; res%status_message = "compressor outlet <= inlet"
         else if (T4 <= ic%ambient_T_K) then
             res%converged = .false.; res%status_message = "exhaust <= ambient (unphysical)"

@@ -1,0 +1,9 @@
+* text=auto
+*.sh text eol=lf
+*.f90 text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
+*.png binary
+*.pdf binary
+*.ico binary

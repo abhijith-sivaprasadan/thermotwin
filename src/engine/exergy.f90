@@ -12,8 +12,11 @@
 !>     Ex_fuel = W_net + (D_comp + D_comb + D_turb + D_hrsg) + Ex_stack + Ex_cond
 !>
 !> P1 derives gas-side stations from cycle quantities and lumps the bottoming
-!> cycle; 7.0-P2 refines the steam side with IAPWS-IF97 exergy.  All property
-!> assumptions are named constants below.
+!> cycle; 7.0-P2 refines the steam side using the engineering-accuracy
+!> saturated-water/steam correlations in `fluid_properties` (Antoine-equation
+!> saturation, constant liquid/vapour cp, Watson-style latent heat -- NOT the
+!> full IAPWS-IF97 formulation).  All property assumptions are named
+!> constants below.
 module exergy
     use precision_kinds, only: dp
     use engine_state,    only: GridState

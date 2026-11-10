@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import sys
+import textwrap
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -42,13 +43,10 @@ FIGURES = [
 
 
 def _regenerate_all():
-    """Best-effort regeneration of all figures; skip any with missing inputs."""
+    """Regenerate every figure; missing inputs fail instead of reusing stale PNGs."""
     for fn in (plot_design_point, plot_sensitivity, plot_degradation,
                plot_transient, plot_uncertainty, plot_diagnostics):
-        try:
-            fn.main([fn.__name__])
-        except FileNotFoundError as e:
-            print(f"  (skipping {fn.__name__}: {e})")
+        fn.main([fn.__name__])
 
 
 def _cover_page(pdf):
@@ -65,7 +63,7 @@ def _cover_page(pdf):
     lines = [
         ("Model", "Open/simple Brayton cycle, single-shaft"),
         ("Working fluid", "Air-standard with separate hot-gas properties"),
-        ("Analyses", "Design - off-design - degradation - transient - uncertainty - diagnostics"),
+        ("Analyses", "Design, sweeps, degradation, transients, uncertainty, diagnostics"),
         ("Implementation", "Modern Fortran (2008), modular, unit-tested"),
         ("Post-processing", "Python / matplotlib"),
         ("Generated", today),
@@ -73,11 +71,11 @@ def _cover_page(pdf):
     y = 0.66
     for k, v in lines:
         ax.text(0.07, y, k, fontsize=11, fontweight="bold", color=utils.PALETTE["ink"])
-        ax.text(0.32, y, v, fontsize=11, color=utils.PALETTE["ink"])
+        ax.text(0.32, y, v, fontsize=10, color=utils.PALETTE["ink"])
         y -= 0.038
 
     disclaimer = (
-        "Scope and honesty note\n"
+        "Model scope\n"
         "This is a non-proprietary educational simulator. It uses standard textbook "
         "thermodynamics and representative property values. It is NOT calibrated or "
         "validated against any specific commercial engine, and it is NOT compliant with "
@@ -86,7 +84,7 @@ def _cover_page(pdf):
     )
     ax.add_patch(plt.Rectangle((0.07, 0.13), 0.86, 0.20, fill=True,
                                color=utils.PALETTE["grid"], alpha=0.5))
-    ax.text(0.09, 0.305, disclaimer, fontsize=9.5, color=utils.PALETTE["ink"],
+    ax.text(0.09, 0.305, "\n".join(textwrap.fill(p, 90) for p in disclaimer.split("\n")), fontsize=9.5, color=utils.PALETTE["ink"],
             va="top", wrap=True)
 
     ax.text(0.07, 0.06, "ThermoTwin-F", fontsize=9, color=utils.PALETTE["muted"])
@@ -140,8 +138,8 @@ def _summary_table_page(pdf):
             cell.set_facecolor("#F4F6F8")
 
     ax.text(0, -0.02,
-            "Values from the constant-property model; see docs/verification.md for the "
-            "independent hand calculation these reproduce.",
+            "Constant-property model with inlet/exhaust losses.\n"
+            "The separate hand selftest removes these losses; see docs/verification_matrix.md.",
             transform=ax.transAxes, fontsize=8.5, color=utils.PALETTE["muted"])
     pdf.savefig(fig); plt.close(fig)
 
@@ -151,7 +149,7 @@ def _image_page(pdf, image_path, caption):
         return
     img = plt.imread(image_path)
     h, w = img.shape[0], img.shape[1]
-    fig = plt.figure(figsize=(8.27, 11.69))
+    fig = plt.figure(figsize=(11.69, 8.27))
     ax_img = fig.add_axes([0.06, 0.12, 0.88, 0.78]); ax_img.axis("off")
     ax_img.imshow(img)
     fig.text(0.06, 0.93, caption, fontsize=14, fontweight="bold", color=utils.PALETTE["ink"])
@@ -163,9 +161,10 @@ def _image_page(pdf, image_path, caption):
 def _limitations_page(pdf):
     fig = plt.figure(figsize=(8.27, 11.69))
     ax = fig.add_axes([0.08, 0.08, 0.84, 0.86]); ax.axis("off")
-    ax.text(0, 1.0, "Assumptions & limitations", fontsize=15, fontweight="bold",
+    ax.text(0, 1.0, "Scope of this CLI report", fontsize=15, fontweight="bold",
             color=utils.PALETTE["ink"], va="top")
     items = [
+        "This report covers the analysis CLI. Live-engine, HMI and scenario extensions have separate outputs.",
         "Single-shaft open/simple Brayton cycle; no regeneration, intercooling or reheat.",
         "Constant specific heats by default (separate cold-air and hot-gas values). A "
         "temperature-dependent property option exists but is not the default.",
@@ -185,12 +184,11 @@ def _limitations_page(pdf):
     y = 0.93
     for it in items:
         ax.text(0.0, y, "-", fontsize=11, color=utils.PALETTE["secondary"], va="top")
-        ax.text(0.03, y, it, fontsize=10.3, color=utils.PALETTE["ink"], va="top", wrap=True)
+        ax.text(0.03, y, textwrap.fill(it, 88), fontsize=10.3, color=utils.PALETTE["ink"], va="top", wrap=True)
         y -= 0.085
     ax.text(0, 0.04,
-            "These limitations are intentional for a transparent teaching/portfolio tool. "
-            "Each is a natural avenue for extension (maps, real-gas properties, cooling "
-            "flows, emissions, FE thermal models).",
+            "Record the input configuration and run_manifest.json with this report.\n"
+            "A synthetic reference is not independent validation against plant measurements.",
             fontsize=9.5, color=utils.PALETTE["muted"], va="top")
     pdf.savefig(fig); plt.close(fig)
 
@@ -203,7 +201,7 @@ def main():
     out_pdf = os.path.join(utils.OUTPUT_DIR, "ThermoTwin-F_report.pdf")
     os.makedirs(utils.OUTPUT_DIR, exist_ok=True)
     print("Assembling PDF report...")
-    with PdfPages(out_pdf) as pdf:
+    with plt.rc_context({"savefig.bbox": None}), PdfPages(out_pdf) as pdf:
         _cover_page(pdf)
         _summary_table_page(pdf)
         for fn, caption in FIGURES:

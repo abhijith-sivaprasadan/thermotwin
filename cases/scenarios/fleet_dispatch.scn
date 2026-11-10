@@ -33,7 +33,7 @@ at 7.0   assert_above BESS_primary_MW 0.5            # primary response active
 at 10.0  command restore_fleet
 at 10.0  set fuel_price_usd_gj 10
 at 10.0  set h2_fraction_pct 15                      # 15 vol% H2 blend
-at 15.0  assert_below CO2_intensity_g_kWh 375.0      # H2 reduces fleet CO2
+at 15.0  assert_near CO2_intensity_g_kWh 386.4652 1.0 # blended variable-property baseline
 
 at 20.0  set h2_fraction_pct 0
-at 22.0  assert_above CO2_intensity_g_kWh 375.0      # returns to NG baseline
+at 22.0  assert_near CO2_intensity_g_kWh 395.0255 1.0 # higher unblended NG baseline

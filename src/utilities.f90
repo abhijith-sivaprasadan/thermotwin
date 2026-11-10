@@ -7,6 +7,7 @@
 module utilities
     use precision_kinds, only: dp, i4, i8
     use constants, only: TINY_DP, PI
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
 
@@ -26,6 +27,10 @@ contains
     subroutine assert_positive(x, name)
         real(dp), intent(in) :: x
         character(len=*), intent(in) :: name
+        if (.not. ieee_is_finite(x)) then
+            write(*, '(A)') "FATAL: expected finite value for '"//trim(name)//"'."
+            error stop 1
+        end if
         if (x <= 0.0_dp) then
             write(*, '(A)') "FATAL: expected positive value for '"//trim(name)//"'."
             error stop 1
@@ -36,6 +41,10 @@ contains
     subroutine assert_in_range(x, lo, hi, name)
         real(dp), intent(in) :: x, lo, hi
         character(len=*), intent(in) :: name
+        if (.not. ieee_is_finite(x)) then
+            write(*, '(A)') "FATAL: expected finite value for '"//trim(name)//"'."
+            error stop 1
+        end if
         if (x < lo .or. x > hi) then
             write(*, '(A,3(1x,ES12.4))') "FATAL: '"//trim(name)// &
                 "' out of range. value, lo, hi =", x, lo, hi

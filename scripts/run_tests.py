@@ -14,15 +14,19 @@ import sys
 from pathlib import Path
 
 
-def run_binary(path: Path) -> tuple[bool, str]:
-    completed = subprocess.run(
-        [str(path)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
+def run_binary(path: Path, *args: str) -> tuple[bool, str]:
+    try:
+        completed = subprocess.run(
+            [str(path), *args],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
     return completed.returncode == 0, completed.stdout
 
 
@@ -32,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
+    parser.add_argument("--exe", type=Path, help="Exact CLI executable to verify")
     args = parser.parse_args(argv)
     build_dir = args.build_dir.resolve()
     print("Running unit tests")
@@ -62,24 +67,17 @@ def main(argv: list[str] | None = None) -> int:
 
     print()
     print("Also running application selftest (physics verification)...")
-    exe = build_dir / ("thermotwin" + suffix)
-    if build_dir == ROOT / "build":
+    exe = args.exe.resolve() if args.exe else build_dir / ("thermotwin" + suffix)
+    if args.exe is None and build_dir == ROOT / "build":
         exe = ROOT / ("thermotwin" + suffix)
     if exe.exists():
-        completed = subprocess.run(
-            [str(exe), "selftest"],
-            cwd=ROOT,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if completed.returncode == 0:
+        ok, output = run_binary(exe, "selftest")
+        if ok:
             print("  PASS  selftest")
             passed += 1
         else:
             print("  FAIL  selftest")
-            for line in completed.stdout.splitlines():
+            for line in output.splitlines():
                 print(f"        {line}")
             failed += 1
     else:

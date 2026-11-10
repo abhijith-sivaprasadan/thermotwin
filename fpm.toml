@@ -14,7 +14,7 @@ description = "Modern Fortran gas-turbine performance simulator (design, degrada
 #   fpm run -- run cases/design_point.csv
 #   fpm test                  # run the full unit-test suite
 #
-# Older convenience scripts are not substitutes for the verified Make workflow.
+# Convenience scripts delegate to Make; they do not verify FPM parity.
 
 [build]
 auto-executables = true

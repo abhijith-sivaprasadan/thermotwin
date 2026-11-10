@@ -14,6 +14,7 @@
 module csv_io
     use precision_kinds, only: dp
     use types, only: InputCase, CycleResult, NAME_LEN, TAG_LEN
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
     public :: read_input_cases, write_results, write_results_header, write_result_row
@@ -22,6 +23,11 @@ module csv_io
     integer, parameter :: N_INPUT_COLUMNS = 18
     integer, parameter :: MAX_LINE = 4096
     integer, parameter :: MAX_FIELDS = 64
+    character(len=32), parameter :: INPUT_HEADERS(N_INPUT_COLUMNS) = [character(len=32) :: &
+        "case_name", "ambient_T_K", "ambient_P_Pa", "relative_humidity", "inlet_pressure_loss", &
+        "mdot_air_kg_s", "pressure_ratio", "eta_compressor", "T_turbine_inlet_K", "eta_combustor", &
+        "combustor_pressure_loss", "LHV_J_kg", "eta_turbine", "exhaust_pressure_loss", &
+        "eta_mechanical", "eta_generator", "auxiliary_load_fraction", "degradation_mode"]
 
 contains
 
@@ -60,6 +66,11 @@ contains
                 if (ios /= 0) exit
                 if (is_blank_or_comment(line)) cycle
                 if (.not. header_seen) then
+                    if (.not. valid_header(line)) then
+                        write(*, '(A)') "ERROR: CSV header must match the 18 columns in cases/README.md: "//trim(filename)
+                        close(unit)
+                        return
+                    end if
                     header_seen = .true.   ! consume the header line
                     cycle
                 end if
@@ -108,9 +119,18 @@ contains
         integer :: nf
 
         call split_csv(line, fields, nf)
-        if (nf < N_INPUT_COLUMNS) then
-            write(*, '(A,I0,A,I0)') "WARNING: row has ", nf, &
+        if (nf /= N_INPUT_COLUMNS) then
+            write(*, '(A,I0,A,I0)') "ERROR: row has ", nf, &
                 " fields; expected ", N_INPUT_COLUMNS
+            error stop 3
+        end if
+        if (len_trim(fields(1)) == 0 .or. len_trim(fields(18)) == 0) then
+            write(*, '(A)') "ERROR: case_name and degradation_mode must be non-empty."
+            error stop 3
+        end if
+        if (len_trim(fields(1)) > NAME_LEN .or. len_trim(fields(18)) > TAG_LEN .or. index(line, '"') > 0) then
+            write(*, '(A)') "ERROR: labels exceed their length limit or contain unsupported CSV quoting."
+            error stop 3
         end if
 
         ic%case_name              = adjustl_name(get_field(fields, nf, 1))
@@ -132,6 +152,20 @@ contains
         ic%auxiliary_load_fraction= to_real(get_field(fields, nf, 17))
         ic%degradation_mode       = adjustl_tag(get_field(fields, nf, 18))
     end subroutine parse_case_line
+
+    function valid_header(line) result(ok)
+        character(len=*), intent(in) :: line
+        logical :: ok
+        character(len=MAX_LINE) :: fields(MAX_FIELDS)
+        integer :: nf, i
+        call split_csv(line, fields, nf)
+        ok = .false.
+        if (nf /= N_INPUT_COLUMNS) return
+        do i = 1, N_INPUT_COLUMNS
+            if (trim(fields(i)) /= trim(INPUT_HEADERS(i))) return
+        end do
+        ok = .true.
+    end function valid_header
 
     !-------------------------------------------------------------------
     ! Writing
@@ -178,7 +212,7 @@ contains
         open(newunit=unit, file=filename, status='replace', action='write', iostat=ios)
         if (ios /= 0) then
             write(*, '(A)') "ERROR: cannot write results file: "//trim(filename)
-            return
+            error stop 4
         end if
         call write_results_header(unit)
         do i = 1, n
@@ -227,21 +261,25 @@ contains
         end if
     end function get_field
 
-    !> Convert a string to real; returns 0 on blank, stops on garbage.
+    !> Required finite numeric cell; never silently replace missing data by zero.
     function to_real(s) result(x)
         character(len=*), intent(in) :: s
         real(dp) :: x
         integer :: ios
         character(len=:), allocatable :: t
         t = trim(adjustl(s))
-        if (len(t) == 0) then
-            x = 0.0_dp
-            return
+        if (len(t) == 0 .or. verify(t, '0123456789+-.eEdD') /= 0) then
+            write(*, '(A)') "ERROR: expected a finite numeric cell, got '"//t//"'"
+            error stop 3
         end if
         read(t, *, iostat=ios) x
         if (ios /= 0) then
             write(*, '(A)') "FATAL: could not parse number from '"//t//"'"
             error stop 1
+        end if
+        if (.not. ieee_is_finite(x)) then
+            write(*, '(A)') "ERROR: non-finite numeric input: '"//t//"'"
+            error stop 3
         end if
     end function to_real
 

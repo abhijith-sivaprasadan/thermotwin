@@ -1,73 +1,66 @@
-# ThermoTwin-F GUI
+# Native Windows engineering HMI
 
-This folder contains the optional native Windows grid-balancing GUI.
+The HMI runs the Fortran plant/grid engine in-process. It does not shell out to the CLI for each tick. A small C++/GDI+ helper handles drawing; Fortran owns the controls, plant state and calculations.
 
-The GUI is a single native Windows executable. The application lifecycle and
-solver integration are written in Fortran through `iso_c_binding`, and the
-dashboard links to the existing ThermoTwin-F solver modules. It does not shell
-out to `thermotwin.exe`; every timer tick calls `solve_cycle` in the GUI process
-to estimate gas-turbine output from the current controls.
+## Build and run
 
-The drawing stack now uses a small C++/GDI+ helper linked into the same
-`thermotwin-gui.exe`. That helper only handles anti-aliased rendering primitives
-such as text, lines, and panel shapes; Fortran remains the owner of the plant
-state, controls, and thermodynamic calculations.
-
-The HMI launches as a borderless work-area console so it fills the usable
-desktop without being hidden behind the Windows taskbar. The current skin is a
-true OLED-black plant-console theme with beveled gauges, inset faceplates, and
-high-contrast alarm colors.
-
-## Build
-
-From the repository root on Windows with MinGW/gfortran:
+Use Windows with a matching MinGW-w64 GCC/G++/gfortran toolchain, GNU Make, `windres`, and Python 3.10+. From the repository root:
 
 ```powershell
-make gui
+mingw32-make gui
+.\thermotwin-gui.exe
 ```
 
-The Makefile links the GUI against the existing solver object files, compiles
-the native drawing helper, generates the application icon, compiles the icon
-resource with `windres`, and links the needed Win32 libraries (`gdiplus`,
-`user32`, `gdi32`, `comctl32`, `kernel32`).
+If your GNU Make is named `make`, substitute that name. Python generates the icon without third-party packages. The build links GDI+, Win32 and compiler runtime libraries; keep the matching MinGW runtime DLLs on `PATH` or alongside a packaged executable.
 
-Run `thermotwin-gui.exe` from the repository root.
+The default build uses an offline OPC UA backend and reports the integration as inactive. No vendor downloads are required for `make gui`.
 
-If the GUI closes immediately, build the console-attached diagnostic version:
+For a console and engine runtime checks:
 
 ```powershell
-make gui-debug
+mingw32-make PROFILE=debug gui-debug
 .\thermotwin-gui-debug.exe
 ```
 
-The GUI also writes a short startup trace to `gui_debug.log`.
+The startup trace is `gui_debug.log`. Run from the repository root so scenario files, optional neural weights and report helpers can be found. Do not run an old root executable after building an isolated target: use the exact path emitted by Make.
 
-## Current scope
+## Views
 
-- Live demand slider.
-- Live renewable supply slider.
-- Signed storage slider for charge/discharge.
-- Battery energy state with capacity, round-trip efficiency and state of charge.
-- Gas-turbine dispatch slider.
-- Ambient-temperature and firing-temperature sliders.
-- Auto-balance mode that ramps gas dispatch toward supply/demand balance.
-- Balance, frequency, reserve, battery SOC, power-flow and KPI visuals drawn as
-  one custom native HMI surface.
-- C++/GDI+ rendering assist for smoother text, lines, and panel shapes while
-  still producing a single `.exe`.
-- Custom-drawn controls instead of native trackbars, so the full UI paints as
-  one stable instrument panel.
-- Rolling live traces for frequency, demand and gas dispatch.
-- Double-buffered dashboard repainting to avoid timer flicker.
-- ROI/economics panel with revenue, fuel cost, storage cycling cost, imbalance
-  penalty, net margin, heat input, fuel flow, heat rate, and a simple battery
-  payback estimate.
-- Generated Windows icon embedded into `thermotwin-gui.exe`.
+| Views | Working context |
+|---|---|
+| Overview, Grid Dispatch, Gas Turbine, Combined Cycle | Demand/supply balance, storage, frequency, turbine and steam performance |
+| Market, Trends, Alarms | Market profiles, live history and event/alarm context |
+| Diagnostics, Day-Ahead MINLP, Fleet UC + Economic Dispatch | Condition, scheduling and fleet studies |
+| DNN Diagnostics, Carbon & Sustainability | Synthetic surrogate behavior, hydrogen and process extensions |
+| AI Forecast, Operator Advisory | Forecast and advisory model outputs |
+| Scenario Builder, Exergy Analysis | Scenario comparison and thermodynamic analysis/reporting |
 
-## Likely next steps
+These are the 16 current views, not a future roadmap. They include experimental algorithms and illustrative economic/market inputs; screen labels do not establish standards compliance or external validation.
 
-- Add load-shed/curtailment actions and event logging.
-- Add multiple generators with unit commitment constraints.
-- Add CSV export for time-series scenarios.
-- Add operator presets for stress events such as renewable drop, demand spike
-  and generator trip.
+## Navigation and exports
+
+- Use the navigation bar/rail; F1-F15 select the first 15 views. Select Exergy through navigation.
+- `?` opens shortcuts, `H` opens the guided help, and `S` opens settings.
+- `T` cycles themes, `D` cycles display density, and `C` toggles the color-blind-safe palette.
+- `E` exports shift CSV data; `P` exports a screen image. Export files are local run artifacts.
+- The scenario view supports replay/comparison; the standalone CLI is the repeatable regression entry point.
+
+Test the actual display scale, window size, navigation, inputs and exported files when changing the HMI. A successful link or a headless scenario test does not verify every interactive path.
+
+## Optional OPC UA
+
+The real backend uses `gui/opcua_server.c`, `src/engine/opcua_bridge.f90`, and a matching open62541 amalgamation (`gui/open62541.c` and `.h`). These vendor files are intentionally not committed. The retained downloader requests the configured release assets and fails explicitly if unavailable:
+
+```powershell
+mingw32-make download-opcua
+mingw32-make WITH_OPCUA=1 BUILD=build/opcua GUI_EXE=build/opcua/thermotwin-gui.exe gui
+.\build\opcua\thermotwin-gui.exe
+```
+
+Use a separate build directory and executable when switching backends to avoid reusing a previously linked GUI. If the release does not supply matching Windows amalgamation assets, provide the source pair from an open62541 build configured for Windows; check compatibility before claiming support. The optional download and server integration are outside core CI.
+
+When included, the GUI starts the minimal server on TCP port 4840. Tags are read-only Double nodes grouped by category under `Objects/ThermoTwin`; unit strings are stored as node descriptions. The current wrapper does not implement typed `EngineeringUnits` metadata, authentication policy, or certificate provisioning. Treat this as a laboratory integration and configure deployment/network security explicitly before connecting real systems.
+
+## Engineering boundaries
+
+The GUI selects temperature-dependent gas properties and simplified water/steam correlations. Its reference outputs differ from the constant-property CLI examples. Markets, forecasts, AI diagnostics, dispatch strategies and process extensions are engineering demonstrations. Review the [engineering guide](../docs/ENGINEERING_GUIDE.md) and [verification matrix](../docs/verification_matrix.md) before interpreting a result.

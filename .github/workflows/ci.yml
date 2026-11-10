@@ -5,36 +5,68 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
-    name: Build & test (gfortran, Ubuntu)
+  linux:
+    name: Linux / ${{ matrix.profile }}
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [release, debug]
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install gfortran and g++
-        run: sudo apt-get install -y gfortran g++
-
-      - name: Build engine + CLI
-        run: make -j$(nproc)
-
-      - name: Build unit tests
-        run: make tests -j$(nproc)
-
-      - name: Run unit tests and physics selftest
-        run: python3 scripts/run_tests.py
-
-      - name: Test runner completeness checks
-        run: python3 scripts/test_run_tests.py
-
-      - name: Scenario regression suite
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+      - name: Install compiler and reporting dependencies
         run: |
-          for scn in cases/scenarios/*.scn; do
-            echo "--- $scn"
-            ./thermotwin scenario run "$scn"
-          done
+          sudo apt-get update
+          sudo apt-get install -y gfortran make
+          python -m pip install -r requirements.txt
+      - name: Build and verify
+        run: make -j4 PROFILE=${{ matrix.profile }} PYTHON=python check scenarios
+      - name: Analysis pipeline
+        run: make PROFILE=${{ matrix.profile }} PYTHON=python pipeline
+      - name: Upload reproducible study outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-linux-${{ matrix.profile }}
+          path: |
+            build/analysis/
+            build/debug/analysis/
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows / MinGW-w64
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python
+      - name: Build and verify native CLI and offline GUI
+        run: make -j4 check scenarios gui
+      - name: CSV pipeline without optional plotting libraries
+        run: python scripts/run_pipeline.py --skip-report

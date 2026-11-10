@@ -8,8 +8,8 @@
  * Address space layout:
  *   Root > Objects > ThermoTwin > <CATEGORY> > <TAG>
  * where <CATEGORY> is the first component of the dot-separated tag name
- * (e.g. "GRID" from "GRID.FREQ_HZ").  Tags are Double AnalogItems with
- * EngineeringUnits populated from the units string.
+ * (e.g. "GRID" from "GRID.FREQ_HZ"). Tags are read-only Double variables
+ * with unit strings stored in their descriptions (not EngineeringUnits).
  *
  * Tested with MinGW-w64 / gfortran on Windows 10/11.
  * Link flags required: -lws2_32 -liphlpapi

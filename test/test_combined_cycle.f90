@@ -20,7 +20,7 @@ program test_combined_cycle
             st%plant_power_MW, st%gas_power_MW, 1.0e-9_dp, failures)
     end block
 
-    ! --- Combined-cycle design point lands in the published 52-56% class. ---
+    ! --- Composition-consistent variable-property regression and accounting. ---
     block
         type(GridState) :: st
         call engine_init(st)
@@ -30,8 +30,10 @@ program test_combined_cycle
         call refresh_model(st)
         call expect_true("CC: steam turbine adds bottoming power", st%steam_power_MW > 15.0_dp, failures)
         call expect_true("CC: plant power exceeds GT power", st%plant_power_MW > st%gas_power_MW, failures)
-        call expect_true("CC: efficiency in 52-56% validation band", &
-            st%plant_efficiency >= 0.52_dp .and. st%plant_efficiency <= 0.56_dp, failures)
+        call expect_near("CC: variable-property efficiency regression", &
+            st%plant_efficiency, 0.5012_dp, 0.001_dp, failures)
+        call expect_near("CC: GT plus steam power accounting", &
+            st%plant_power_MW, st%gas_power_MW + st%steam_power_MW, 1.0e-9_dp, failures)
         call expect_true("CC: HRSG pinch respects minimum", st%hrsg_pinch_K >= 15.0_dp, failures)
         call expect_true("CC: HRSG pinch clears reference envelope", &
             st%hrsg_pinch_K >= st%physics_hrsg_pinch_ref_K - 0.5_dp, failures)

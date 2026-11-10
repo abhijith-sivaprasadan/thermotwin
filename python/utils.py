@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 # ---------------------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-OUTPUT_DIR = os.path.join(ROOT, "output")
+OUTPUT_DIR = os.path.abspath(os.environ.get("THERMOTWIN_OUTPUT_DIR", os.path.join(ROOT, "output")))
 FIGURE_DIR = os.path.join(OUTPUT_DIR, "figures")
 
 

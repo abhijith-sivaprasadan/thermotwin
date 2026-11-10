@@ -4,7 +4,8 @@
 !>        behaviour, ambient derate, and the minimum-load floor.
 program test_off_design
     use precision_kinds, only: dp
-    use types, only: InputCase
+    use types, only: InputCase, CycleResult
+    use cycle_solver, only: solve_cycle
     use fluid_properties, only: set_property_model, PROP_VARIABLE
     use off_design, only: OffDesignPoint, solve_off_design, IGV_MIN_FLOW_FRAC, TIT_MIN_K
     implicit none
@@ -19,13 +20,19 @@ program test_off_design
     ! --- Design point: full load recovers the design operating point. ---
     block
         type(OffDesignPoint) :: od
+        type(CycleResult) :: direct
         call solve_off_design(base, 1.0_dp, 0.0_dp, od)
+        direct = solve_cycle(base)
         call expect_near("full load: design PR", od%PR_op, base%pressure_ratio, 0.10_dp, failures)
         call expect_near("full load: IGVs fully open", od%flow_frac, 1.0_dp, 1.0e-9_dp, failures)
         call expect_near("full load: firing at setpoint", od%TIT_K, base%T_turbine_inlet_K, 1.0e-9_dp, failures)
         call expect_near("full load: design surge margin 20%", od%surge_margin_pct, 20.0_dp, 1.0_dp, failures)
-        call expect_true("full load: ~30 MW class machine", &
-            od%cyc%net_power_MW > 28.0_dp .and. od%cyc%net_power_MW < 32.0_dp, failures)
+        call expect_near("full load: recovers the same-property direct cycle", &
+            od%cyc%net_power_MW, direct%net_power_MW, 0.01_dp, failures)
+        ! Regression reference for the composition-consistent gas properties.
+        ! This is a software baseline, not a commercial-engine validation band.
+        call expect_near("full load: variable-property regression", &
+            od%cyc%net_power_MW, 32.2876_dp, 0.05_dp, failures)
     end block
 
     ! --- Load tracking: requested fraction of capacity is delivered. ---
