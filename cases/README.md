@@ -39,7 +39,9 @@ plain unquoted CSV tokens (quoted CSV fields are not implemented). The
 
 | File | Purpose | Used by mode |
 |---|---|---|
-| `design_point.csv` | single reference operating point | `run` |
+| `design_point.csv` | legacy design operating point with modelled inlet/exhaust losses; **not** the ISO flange reference | `run` |
+| `site_iso_flange_reference.csv` | fixed educational machine at ISO flange reference with zero inlet/exhaust boundary losses | `site` |
+| `site_sweep.csv` | 26 equation-based regression scenarios around the ISO flange reference (not empirical measurements) | `site` |
 | `ambient_sweep.csv` | ambient temperature −20 °C → +45 °C | `run` |
 | `pressure_ratio_sweep.csv` | pressure ratio 6 → 30 | `run` |
 | `TIT_sweep.csv` | firing temperature 1200 → 1600 K | `run` |

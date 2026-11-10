@@ -45,6 +45,16 @@ contains
             c%status = "reference case must specify 288.15 K and 101325 Pa ISO ambient"
             return
         end if
+        ! ISO 3977-2 defines 101325 Pa at the compressor intake flange
+        ! and turbine exhaust flange, NOT at an upstream boundary after
+        ! additionally applying filter/backpressure losses. Reference losses
+        ! therefore vanish in this explicit, separate flange-reference deck.
+        if (.not. near(reference_machine%inlet_pressure_loss, 0.0_dp) .or. &
+            .not. near(reference_machine%exhaust_pressure_loss, 0.0_dp)) then
+            c%status = "ISO flange reference requires zero inlet and exhaust losses"
+            return
+        end if
+
         if (installed_conditions%ambient_T_K < 250.0_dp .or. &
             installed_conditions%ambient_T_K > 325.0_dp .or. &
             installed_conditions%ambient_P_Pa < 75000.0_dp .or. &
@@ -87,6 +97,13 @@ contains
                               c%reference, reference_machine)
         call solve_off_design(installed_conditions, 1.0_dp, 0.0_dp, &
                               c%installed, reference_machine)
+
+        if (abs(c%reference%cyc%P1_Pa - 101325.0_dp) > 1.0e-3_dp .or. &
+            abs(c%reference%cyc%P4_Pa - 101325.0_dp) > 1.0e-3_dp .or. &
+            abs(c%reference%cyc%T1_K - 288.15_dp) > 1.0e-6_dp) then
+            c%status = "ISO compressor/exhaust flange station-state mismatch"
+            return
+        end if
 
         if (.not. c%reference%cyc%converged .or. &
             .not. c%installed%cyc%converged) then

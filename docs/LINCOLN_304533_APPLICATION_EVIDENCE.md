@@ -14,7 +14,7 @@ identifies the work that must not be claimed as completed.
 make all tests
 ./thermotwin selftest
 python scripts/generate_site_cases.py --output cases/site_sweep.csv
-./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
+./thermotwin site cases/site_iso_flange_reference.csv cases/site_sweep.csv output/results_site.csv
 python scripts/test_site_pipeline.py --executable ./thermotwin
 ```
 

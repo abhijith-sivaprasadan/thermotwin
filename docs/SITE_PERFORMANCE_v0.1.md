@@ -1,6 +1,6 @@
 # Site performance correction — first implemented research demonstration
 
-**Status:** Feature-branch implementation for PR verification (not an OEM predictor).
+**Status:** Experimental research method, with ISO 3977-2 flange-reference boundary repaired after initial release (not an OEM predictor).
 **Scope:** Simple-cycle, **full-load** ISO-to-site correction using one fixed
 reference hardware calibration. This is a modest subset of
 [TTF-PE-PMP-001](TTF_PE_MASTER_PLAN_v1.0.md), issue [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13).
@@ -11,7 +11,7 @@ Build `make` then run:
 
 ```bash
 python scripts/generate_site_cases.py --output cases/site_sweep.csv
-./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
+./thermotwin site cases/site_iso_flange_reference.csv cases/site_sweep.csv output/results_site.csv
 python scripts/test_site_pipeline.py --executable ./thermotwin
 ```
 
@@ -21,8 +21,8 @@ operating data, or installed customer site. Existing core `InputCase` values
 are demonstration constants; the base case is a roughly 30 MW-class machine
 without a licensed performance map.
 
-The reference is the single row in `cases/design_point.csv`: 288.15 K,
-101325 Pa, 60% RH (the latter is stored but **not physically modelled**).
+The reference is the single row in `cases/site_iso_flange_reference.csv`: 288.15 K,
+101325 Pa, zero reference inlet/exhaust pressure losses and 60% RH (the latter is stored but **not physically modelled**). This establishes **compressor-inlet flange total pressure P1 = 101325 Pa** and **turbine-exhaust flange static pressure P4 = 101325 Pa** within the simplified pressure-boundary model.
 `site_sweep.csv` varies ambient temperature, absolute pressure, filter/inlet
 losses, exhaust backpressure and an illustrative scalar LHV. It does not
 calculate altitude independently, gas mixture physics or humidity response.
@@ -42,12 +42,7 @@ fixed compressor/turbine component settings and firing setpoint:
 These are model-derived **ratios/offsets**, not empirical engine-family
 correction maps. No measurement data or contractual guarantee is involved.
 
-The reference point itself includes the representative inlet and exhaust
-pressure losses contained in the baseline `InputCase`; it is not a
-loss-free ideal-gas ISO rating. Site-case ambient pressure is upstream of
-the inlet loss fraction; the current cycle models the exhaust as ambient
-pressure times `(1 + exhaust_loss)`. These simplified lumped conventions
-are *not* measurement-flange corrections for a specific product.
+The ISO reference deck uses zero inlet and exhaust losses **at the defined intake and exhaust flanges**. A site case separately applies its actual or assumed upstream inlet-loss fraction and exhaust backpressure using the simplified model: `P1 = ambient_P_Pa × (1 - inlet_loss)` and `P4 = ambient_P_Pa × (1 + exhaust_loss)`. Site loss values must come from documented test/engineering conditions; weather API alone does not supply them. The old baseline `cases/design_point.csv` retains 1% inlet and 2% exhaust losses for historical educational cycle verification but is now explicitly **rejected as an ISO flange reference**. A correct reference boundary is not evidence of an industrially calibrated compressor map or test-code compliance.
 
 ## Input and validity
 

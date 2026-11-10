@@ -180,23 +180,20 @@ jobs:
         run: |
           python -c "from pathlib import Path; import hashlib,json; p=Path('build/weather/lincoln_era5_raw.json'); m=json.loads(Path('build/weather/lincoln_era5_boundary.manifest.json').read_text()); assert m['raw_response_sha256']==hashlib.sha256(p.read_bytes()).hexdigest(); assert m['meteo_type']=='reanalysis' and not m['flange_condition_measured']"
       - name: Install Fortran compiler for source-backed model integration
-        if: github.ref == 'refs/heads/main'
         run: sudo apt-get update && sudo apt-get install -y gfortran make
       - name: Replay verified weather through declared dry-air approximation
-        if: github.ref == 'refs/heads/main'
         run: |
           python scripts/open_meteo_boundary.py \
             --source archive --model era5 \
             --latitude 53.23 --longitude -0.54 \
             --valid-time 2025-10-01T12:00:00Z \
             --response-json build/weather/lincoln_era5_raw.json \
-            --reference-case cases/design_point.csv --dry-air-approximation \
+            --reference-case cases/site_iso_flange_reference.csv --dry-air-approximation \
             --output build/weather/lincoln_era5_model_boundary.csv
       - name: Evaluate off-design Fortran site physics at actual ERA5 T and surface P
-        if: github.ref == 'refs/heads/main'
         run: |
           make -j4
-          ./thermotwin site cases/design_point.csv \
+          ./thermotwin site cases/site_iso_flange_reference.csv \
             build/weather/lincoln_era5_model_boundary_case.csv \
             build/weather/lincoln_era5_site_model.csv
           python -c "import csv; d=next(csv.DictReader(open('build/weather/lincoln_era5_site_model.csv'))); assert d['valid']=='1' and 0.5<float(d['power_derate_ratio'])<1.5; print('Model-derived power ratio:',d['power_derate_ratio'],'HR correction:',d['heat_rate_correction_ref_per_site'])"

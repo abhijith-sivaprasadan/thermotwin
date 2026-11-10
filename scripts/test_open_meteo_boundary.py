@@ -135,7 +135,7 @@ class WeatherBoundaryTests(unittest.TestCase):
                 "--latitude", "53.23", "--longitude", "-0.54",
                 "--valid-time", "2025-10-01T12:00Z",
                 "--response-json", str(snapshot),
-                "--reference-case", "cases/design_point.csv",
+                "--reference-case", "cases/site_iso_flange_reference.csv",
                 "--dry-air-approximation", "--output", str(out),
             ])
             model_rows = list(csv.DictReader(out.with_name("boundary_case.csv").open()))
