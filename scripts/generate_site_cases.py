@@ -12,7 +12,7 @@ import csv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE = ROOT / "cases" / "design_point.csv"
+REFERENCE = ROOT / "cases" / "site_iso_flange_reference.csv"
 
 
 def build_rows():
