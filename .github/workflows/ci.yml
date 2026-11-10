@@ -159,6 +159,21 @@ jobs:
           name: independent-tespy-rankine
           path: build/tespy_rankine_reference.json
 
+  passoff-equations:
+    name: Physics-based pass-off correction and instrument covariance tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Independent analytic and negative-input correction tests
+        run: python -m unittest scripts.test_passoff_correction -v
+      - name: Assert no fabricated production test cases are distributed
+        run: |
+          python -c "from pathlib import Path; p=Path('scripts/passoff_correction.py'); assert p.is_file(); assert not any(Path('cases').glob('*passoff*'))"
+
   real-weather-archive:
     name: Real ERA5 weather boundary integration (reanalysis, not GT test data)
     runs-on: ubuntu-latest
