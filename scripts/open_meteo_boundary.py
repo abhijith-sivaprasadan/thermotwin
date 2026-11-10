@@ -213,7 +213,6 @@ def write_outputs(boundary: dict, args, url: str, retrieved: str, raw: bytes):
         reference["ambient_T_K"] = format(boundary["temperature_K"], ".10g")
         reference["ambient_P_Pa"] = format(boundary["surface_pressure_Pa"], ".10g")
         if args.dry_air_approximation:
-            reference["relative_humidity"] = reference["relative_humidity"]
             manifest["humidity_mode"] = "dry_air_approximation_requested_by_operator"
             manifest["actual_weather_relative_humidity_fraction"] = boundary["relative_humidity_fraction"]
             manifest["model_input_relative_humidity_fraction"] = float(reference["relative_humidity"])
