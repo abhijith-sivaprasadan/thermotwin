@@ -160,8 +160,9 @@ def draw(points, path):
     def element(tag,**attrs):
         return ET.SubElement(root,f"{{{ns}}}{tag}",{k:str(v) for k,v in attrs.items()})
     def title(x,y,value,size=18):
-        element("text",x=x,y=y,fill="#23364e",font_size=size,
-                font_family="Arial,Helvetica,sans-serif").text=value
+        ET.SubElement(root,f"{{{ns}}}text",{"x":str(x),"y":str(y),
+             "fill":"#23364e","font-size":str(size),
+             "font-family":"Arial,Helvetica,sans-serif"}).text=value
     ET.SubElement(root,f"{{{ns}}}title").text="Measured turbine power and unrelated generic model: exploratory shapes only"
     element("rect",x=0,y=0,width=1100,height=600,fill="#f7f9fc")
     title(40,58,"Observed turbine power vs generic model shape",30)
