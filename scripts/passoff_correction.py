@@ -106,6 +106,9 @@ def compute_corrected(measurements, power_factor, heat_rate_factor, precision, c
     hr_site = 3600.0 * (mf * lhv / 1.0e6) / p
     corrected_power = p * cp
     corrected_hr = hr_site * ch
+    if not all(math.isfinite(v) and v > 0.0
+               for v in (hr_site, corrected_power, corrected_hr)):
+        raise ValueError("Nonfinite or nonpositive derived energy-balance KPI")
     jac_p = (cp, 0.0, 0.0)
     jac_h = (-corrected_hr/p, corrected_hr/mf, corrected_hr/lhv)
     components = {
@@ -136,6 +139,7 @@ def compute_corrected(measurements, power_factor, heat_rate_factor, precision, c
             "variance_components_precision": list(components["precision"]),
             "variance_components_calibration": list(components["calibration"]),
             "variable_order": list(ORDER),
+            "variance_component_output_order": ["power_MW_squared", "heat_rate_kJ_kWh_squared"],
             "jacobian_power_MW": list(jac_p),
             "jacobian_heat_rate_kJ_kWh": list(jac_h),
         },
