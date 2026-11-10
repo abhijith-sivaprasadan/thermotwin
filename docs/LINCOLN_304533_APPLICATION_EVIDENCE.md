@@ -84,6 +84,22 @@ python scripts/analyze_uci_gt551.py \
   --output build/uci551/condition_residual_report.json
 ~~~
 
+**Revised real-source validation audit ([UCI CI run 42798697940](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/42798697940)):**
+the **14,542** original held-out 2014–2015 measurements retain TEY
+RMSE **4.4771** in source-reported units; the 2011–2013 **training-mean
+baseline RMSE is 14.9756** in the same units. This is an out-of-sample
+statistical fit comparison, **not** proof of accurately predicted turbine
+net MW or calibrated plant conditions. The corrected within-year,
+year-demeaned training residual lag-1 is **0.9151**; **4.2360%** of
+held-out points fall outside at least one training marginal feature range.
+A 64-consecutive-published-row moving-block resampling has a
+**descriptive** RMSE percentile range **4.2814–4.6597**. These samples are
+not independent events; missing exact timestamps and nonstationarity
+preclude claiming formal 95% coverage or known physical faults. The
+development-only forward-origin checks (2011→2012, 2011–2012→2013)
+and three block lengths (32/64/128 rows) are generated from the real
+original files with original annual boundaries preserved.
+
 See [equations, results and limitations](UCI551_REAL_OPERATIONS.md); immutable original-data and computed-source artifacts in [UCI CI](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/42777201516). **This is one turbine, not a production engine population.** These empirical residuals do not validate ThermoTwin-F's generic 30 MW-class physics against the observed plant.
 
 ## 4. Pass-off method — what is and is not supported
@@ -94,7 +110,7 @@ A separate correction and instrument-uncertainty method is implemented and CI-ve
 HR_s = \frac{3600\,\dot m_f LHV}{10^6 P_s}.
 \]
 
-For conditional **instrument-only** uncertainty, it propagates supplied precision and calibration covariance, including correlations, with \(\Sigma_y=J\Sigma_xJ^\top\), where \(J\) is the analytical Jacobian of corrected power and heat rate. It requires recorded test/source ID, instrument calibration ID, UTC acquisition interval, physical operating-point match and steady-state confirmation. The software **does not supply** actual production test readings, fitted OEM-model uncertainty, or a contractual guarantee. It reports \`NOT ASSESSED\`, not an invented acceptance result. A complete pass-off workflow remains blocked on genuine releasable test/guarantee records and model-validation evidence.
+For conditional **instrument-only** uncertainty, it propagates supplied precision and calibration covariance, including correlations, with \(\Sigma_y=J\Sigma_xJ^\top\), where \(J\) is the analytical Jacobian of corrected power and heat rate. Its mathematical regression suite additionally compares exact analytical derivatives with central finite differences and checks first-order covariance against seeded mathematical Monte Carlo; **none of these test values are measured engine records**. It requires recorded test/source ID, instrument calibration ID, UTC acquisition interval, physical operating-point match and steady-state confirmation. The software **does not supply** actual production test readings, fitted OEM-model uncertainty, or a contractual guarantee. It reports \`NOT ASSESSED\`, not an invented acceptance result. A complete pass-off workflow remains blocked on genuine releasable test/guarantee records and model-validation evidence.
 
 ## 5. Mapping to the actual Lincoln responsibilities
 
@@ -103,7 +119,7 @@ For conditional **instrument-only** uncertainty, it propagates supplied precisio
 | Predict installed site performance | Real weather inputs + fixed-hardware Fortran site model; equation-based power, heat rate and exhaust corrections | Actual OEM compressor/turbine maps, humidity physics and field validation for bid-grade prediction |
 | Validate production pass-off and development tests | Instrument correction method, documented covariance/jacobian (PR #28) | Actual measured/test-stand data, sensor calibration, full uncertainty and contractual acceptance |
 | Thermodynamics and R&D test validation | Existing Brayton/simple-cycle component modules, fixed-boundary audit, Fortran numerical regressions | Model-form uncertainty and independent measured-engine comparisons |
-| Analyse large technical datasets | 36,733 **real** single-turbine observations and chronological residual evaluation | Engine-population records and confirmed fault/maintenance labels |
+| Analyse large technical datasets | 36,733 **real** single-turbine observations; held-out 2014–2015 OLS vs training-mean baseline, source-adjacent dependence and covariate support (PR #31) | Engine-population records, uniform time stamps and confirmed fault/maintenance labels |
 | Improve software and automate analysis | Fortran modules, Python data tools, source hashes, UTC/API validation and cross-platform CI | Industrial software integrations and production/test lab interfaces |
 | Communicate technical results | Reproducible technical notes, limitation reports, measured vs modelled distinction | Customer-facing engineering guarantees require OEM review |
 
