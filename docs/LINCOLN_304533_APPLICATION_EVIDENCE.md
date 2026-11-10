@@ -135,6 +135,10 @@ Do **not** say “delivered validated Siemens SGT performance”, “completed p
 
 The [predeclared seasonal model study](ERA5_SEASONAL_SITE_STUDY.md) acquires 672 original ERA5 reanalysis hours across four seven-day 2025 windows near Lincoln, and evaluates 2,688 fixed-machine model scenarios spanning 0/1% assumed inlet and 0/2% assumed exhaust losses. It archives four original raw responses, request URLs, SHA-256s, verified hourly T/P/RH, every input and model output row, descriptive summaries and an SVG visualization. These are **reanalysis model estimates** plus **model-derived calculations**, not a measured installation, OEM correction map, calibrated uncertainty budget, annual climatology, or real pass-off test. Engineering parametric spread **must not** be called a statistical interval.
 
+## Independent real external turbine observations (additional experimental-evidence layer)
+
+A separate public [SMART-GTPP measured operational dataset](INDEPENDENT_MEASURED_TURBINE_EVIDENCE.md), DOI [10.17632/6sk3mhm7hb.1](https://doi.org/10.17632/6sk3mhm7hb.1), provides **7,893 observed active electrical-power records** from one combined-cycle gas turbine. An exact original-source SHA256 and the observed measurement schema are verified; the actual recorded power/ambient relationship, measured compressor-ratio pressure-unit alternatives and *unrelated generic teaching-machine* Fortran ambient shape are independently analyzed. The actual measured AT-EP association is Pearson r=-0.9032, but it is **noncausal** and is NOT validation that ThermoTwin predicts that machine's power. With no original source-unit-labelled AP/CPD, authenticated UTC, metered fuel mass flow/LHV, component maps or actual fixed hardware reference, quantitative physical power/heat-rate accuracy, ISO pass-off and OEM acceptance remain **NOT ESTABLISHED**. The [measurement readiness code](../scripts/check_gt_validation_readiness.py) explicitly blocks a false validation verdict.
+
 ## 7. Remaining research tasks
 
 - [#12](https://github.com/abhijith-sivaprasadan/thermotwin/issues/12): full model limitation/provenance and dataset-rights audit.

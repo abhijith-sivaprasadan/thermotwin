@@ -329,6 +329,56 @@ jobs:
           path: build/era5-seasonal/
           if-no-files-found: error
 
+  observed-smart-gtpp-source-audit:
+    name: Independent observed SMART-GTPP original-source examination
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Check pressure-algebra alternatives, CSV integrity and non-validation labels
+        run: python -m unittest scripts.test_independent_smart_gtpp_checks -v
+      - name: Download original measured file, pin raw source SHA and exact 7,893 fields
+        run: python -m scripts.fetch_smart_gtpp --out build/smart-gtpp
+      - name: Prepare generic fixed-reference Fortran boundary analogues from measured AT/AP
+        run: |
+          python -m scripts.independent_smart_gtpp_checks prepare \
+            --original build/smart-gtpp/smart_gtpp_original.csv \
+            --reference cases/site_iso_flange_reference.csv \
+            --out build/smart-gtpp
+      - name: Install Fortran compiler
+        run: sudo apt-get update && sudo apt-get install -y gfortran make
+      - name: Run original source-boundary analogues through unchanged generic Fortran model
+        run: |
+          make -j4
+          ./thermotwin site cases/site_iso_flange_reference.csv \
+            build/smart-gtpp/model_input_cases.csv \
+            build/smart-gtpp/model_site_results.csv
+      - name: Audit all original measured/model pairs and clearly reject OEM physical-validation claims
+        run: |
+          python -m scripts.independent_smart_gtpp_checks assess \
+            --original build/smart-gtpp/smart_gtpp_original.csv \
+            --reference cases/site_iso_flange_reference.csv \
+            --out build/smart-gtpp
+          python -c "import json;from pathlib import Path;r=json.loads(Path('build/smart-gtpp/measured_partial_check.json').read_text());assert r['original_measured_rows']==7893 and r['generic_model_case_count']==7893 and not r['physical_model_validation_success_claimed'] and not r['genuine_independent_power_prediction_accuracy_assessed']"
+      - name: Test fail-closed independent-measurement and source traceability contract
+        run: python -m unittest scripts.test_check_gt_validation_readiness -v
+      - name: Document specifically missing metrology and machine identity from the actual measured source
+        run: |
+          python -m scripts.check_gt_validation_readiness \
+            --csv build/smart-gtpp/smart_gtpp_original.csv \
+            --output build/smart-gtpp/measurement_validation_readiness.json
+          python -c "import json;from pathlib import Path;r=json.loads(Path('build/smart-gtpp/measurement_validation_readiness.json').read_text()); assert not r['experimentally_traceable_validation_ready'] and not r['engine_accuracy_verified'] and not r['OEM_or_contractual_passoff_established']; assert any(x['field']=='fuel_mass_flow_kg_s' for x in r['missing_measured_fields']) and any(x['field']=='timestamp_utc' for x in r['missing_measured_fields'])"
+      - name: Preserve original external measured source and provenance-only metadata
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smart-gtpp-original-measurements-provenance
+          path: build/smart-gtpp/
+          if-no-files-found: error
+
   legacy-report-smoke:
     name: CLI report regeneration smoke test
     runs-on: ubuntu-latest
