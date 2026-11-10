@@ -56,7 +56,7 @@ class MeasuredEvidenceGates(unittest.TestCase):
             draw(pts,p)
             text=p.read_text()
             self.assertIn("NOT predicted MW accuracy",text)
-            self.assertIn("Source ambient T",text)
+            self.assertIn("Source ambient temperature",text)
 
 
 if __name__=="__main__":
