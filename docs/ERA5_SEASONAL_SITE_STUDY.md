@@ -100,9 +100,9 @@ After a successful CI run, download the artifact named
 **era5-four-seasons-source-backed-site-study** from
 [Actions CI runs](https://github.com/abhijith-sivaprasadan/thermotwin/actions/workflows/ci.yml).
 It contains original per-week HTTP JSON, verified source manifest,
-672-hour weather CSV, **2688 Fortran input and output case rows**, the derived
-study_report.json and seasonal_summary.csv, a four-season SVG graph and the
-recruiter-readable STUDY.md.
+672-hour weather CSV, **2688 Fortran input and output case rows**, the derived study_report.json and seasonal_summary.csv, a 672-row
+hourly_model_ratios.csv, an hourly four-panel source-driven SVG curve, a
+seasonal summary SVG graph, and the recruiter-readable STUDY.md.
 
 From the repository root, replay existing original JSON (NO live API needed)
 by running:
