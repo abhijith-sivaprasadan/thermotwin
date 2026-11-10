@@ -305,7 +305,7 @@ jobs:
         run: python -m unittest scripts.test_study_era5_site_windows -v
       - name: Acquire four genuine seven-day 2025 ERA5 windows, source hashes and audited input cases
         run: |
-          python scripts/study_era5_site_windows.py acquire \
+          python -m scripts.study_era5_site_windows acquire \
             --out build/era5-seasonal \
             --reference cases/site_iso_flange_reference.csv
       - name: Install the generic Fortran engineering model compiler
@@ -318,7 +318,7 @@ jobs:
             build/era5-seasonal/site_results.csv
       - name: Verify original sources, boundary equations, every Fortran record and seasonal statistics
         run: |
-          python scripts/study_era5_site_windows.py summarize \
+          python -m scripts.study_era5_site_windows summarize \
             --out build/era5-seasonal \
             --reference cases/site_iso_flange_reference.csv
           python -c "import json; from pathlib import Path; r=json.loads(Path('build/era5-seasonal/study_report.json').read_text()); assert r['source_hours']==672 and r['model_cases']==2688 and r['model_form_uncertainty_not_quantified'] and not r['engine_specific_validation']; assert len(r['seasonal'])==4 and all(s['original_reanalysis_hours']==168 for s in r['seasonal'])"
