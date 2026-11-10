@@ -75,9 +75,9 @@ def build_url(source: str, latitude: float, longitude: float,
         if not valid_time:
             raise ValueError("--valid-time required for archive source")
         iso = utc_iso(valid_time)
-        if iso[-1] != "Z" or iso[11:19] != "00:00:00" and iso[14:19] != "00:00":
-            # The ERA5 archive is hourly; user-specified valid time must be exact.
-            pass
+        instant = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if instant.minute or instant.second or instant.microsecond:
+            raise ValueError("Archive requires an exact UTC hourly timestamp")
         day = iso[:10]
         params = {
             "latitude": latitude, "longitude": longitude,
