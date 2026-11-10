@@ -291,6 +291,44 @@ jobs:
           path: build/lincoln-dossier/
           if-no-files-found: error
 
+
+  historical-era5-seasonal-site-study:
+    name: Original ERA5 four-season fixed-engine site sensitivity
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Reject incomplete weather, wrong units and false model identities
+        run: python -m unittest scripts.test_study_era5_site_windows -v
+      - name: Acquire four genuine seven-day 2025 ERA5 windows, source hashes and audited input cases
+        run: |
+          python -m scripts.study_era5_site_windows acquire \
+            --out build/era5-seasonal \
+            --reference cases/site_iso_flange_reference.csv
+      - name: Install the generic Fortran engineering model compiler
+        run: sudo apt-get update && sudo apt-get install -y gfortran make
+      - name: Compute every ERA5 hour under four declared, assumed pressure-loss boundaries
+        run: |
+          make -j4
+          ./thermotwin site cases/site_iso_flange_reference.csv \
+            build/era5-seasonal/site_cases.csv \
+            build/era5-seasonal/site_results.csv
+      - name: Verify original sources, boundary equations, every Fortran record and seasonal statistics
+        run: |
+          python -m scripts.study_era5_site_windows summarize \
+            --out build/era5-seasonal \
+            --reference cases/site_iso_flange_reference.csv
+          python -c "import json; from pathlib import Path; r=json.loads(Path('build/era5-seasonal/study_report.json').read_text()); assert r['source_hours']==672 and r['model_cases']==2688 and r['model_form_uncertainty_not_quantified'] and not r['engine_specific_validation']; assert len(r['seasonal'])==4 and all(s['original_reanalysis_hours']==168 for s in r['seasonal'])"
+      - name: Upload original ERA5 JSON, source manifests, all solver CSVs and validated study
+        uses: actions/upload-artifact@v4
+        with:
+          name: era5-four-seasons-source-backed-site-study
+          path: build/era5-seasonal/
+          if-no-files-found: error
+
   legacy-report-smoke:
     name: CLI report regeneration smoke test
     runs-on: ubuntu-latest

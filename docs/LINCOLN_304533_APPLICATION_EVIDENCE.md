@@ -131,6 +131,10 @@ Suitable project language for CV/cover letter **after confirming the referenced 
 
 Do **not** say “delivered validated Siemens SGT performance”, “completed pass-off test acceptance”, “certified ASME PTC 22 predictor”, “detected proven engine failures”, or “analyzed a production fleet” without the underlying genuine source evidence.
 
+## Four-season ERA5 sensitivity expansion (new source-backed study)
+
+The [predeclared seasonal model study](ERA5_SEASONAL_SITE_STUDY.md) acquires 672 original ERA5 reanalysis hours across four seven-day 2025 windows near Lincoln, and evaluates 2,688 fixed-machine model scenarios spanning 0/1% assumed inlet and 0/2% assumed exhaust losses. It archives four original raw responses, request URLs, SHA-256s, verified hourly T/P/RH, every input and model output row, descriptive summaries and an SVG visualization. These are **reanalysis model estimates** plus **model-derived calculations**, not a measured installation, OEM correction map, calibrated uncertainty budget, annual climatology, or real pass-off test. Engineering parametric spread **must not** be called a statistical interval.
+
 ## 7. Remaining research tasks
 
 - [#12](https://github.com/abhijith-sivaprasadan/thermotwin/issues/12): full model limitation/provenance and dataset-rights audit.
