@@ -25,6 +25,16 @@ The whole project is built around a single shared data model — one `InputCase`
 KPI) flows out — so the advanced modules compose coherently instead of being
 independent scripts.
 
+## Performance-engineering development work package (November 2026)
+
+The [Lincoln performance engineering master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md)
+tracks repository hygiene, ISO-to-site prediction, synthetic production pass-off
+correction/uncertainty, and synthetic multi-engine trend analysis against a
+published Performance Engineer role. **This is a development plan, not a claim
+that these new workflows already exist.** New modules must preserve the frozen
+v2 beta, disclose unsupported humidity/fuel-composition corrections and pass
+independent CI gates before inclusion in application evidence.
+
 ## Software release and citation
 
 ThermoTwin-F is **open research software** (MIT licensed). The published `v2.0.0-beta.1`
