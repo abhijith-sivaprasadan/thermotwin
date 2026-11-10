@@ -30,16 +30,19 @@ independent scripts.
 The [Lincoln performance engineering master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md)
 tracks repository hygiene, ISO-to-site prediction, synthetic production pass-off
 correction/uncertainty, and synthetic multi-engine trend analysis against a
-published Performance Engineer role. **This is a development plan, not a claim
-that these new workflows already exist.** New modules must preserve the frozen
-v2 beta, disclose unsupported humidity/fuel-composition corrections and pass
-independent CI gates before inclusion in application evidence.
+published Performance Engineer role. The fixed-reference ISO-to-site
+**v0.1 prototype is implemented**; production pass-off correction, uncertainty
+reporting and multi-engine population analysis are **planned, not yet implemented**.
+All work preserves the frozen v2 beta and explicitly discloses unsupported
+humidity and fuel-composition corrections.
 
-### Experimental ISO-to-site demonstration (under review)
+### Experimental ISO-to-site demonstration (implemented v0.1)
 
 The [site performance v0.1 implementation guide](docs/SITE_PERFORMANCE_v0.1.md)
-documents the fixed-hardware full-load correction prototype. With the
-experimental branch built:
+documents the fixed-hardware full-load correction prototype. For a
+requirement-by-requirement account of evidence and limitations, see the
+[Siemens Energy Lincoln engineering evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md).
+Build with `make`, then:
 
 ```bash
 ./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
