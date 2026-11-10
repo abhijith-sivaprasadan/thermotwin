@@ -184,8 +184,8 @@ def draw(points, path):
         element("line",x1=xx,y1=top,x2=xx,y2=bottom,stroke="#e3eaf0")
         title(xx-12,bottom+25,str(C),14)
     title(120,526,"Source ambient temperature, °C assumed | medians in 5°C bins; no temporal holdout",17)
-    title(120,545,"Orange: measured turbine power / measured sample median",17)
-    title(120,570,"Teal: unrelated generic model / its own sample median; no OEM, fuel or load matching",16)
+    title(120,552,"Orange: measured turbine EP / observed median",17)
+    title(120,578,"Teal: unrelated generic model / own median | NOT predictive model validation",16)
     ET.ElementTree(root).write(path,encoding="utf-8",xml_declaration=True)
 
 
