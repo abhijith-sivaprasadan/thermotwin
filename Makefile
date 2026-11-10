@@ -215,7 +215,7 @@ $(GUI_ICON): scripts/generate_gui_icon.py
 	python scripts/generate_gui_icon.py $@
 
 clean:
-	rm -rf $(BUILD) $(EXE) $(GUI_EXE) $(GUI_DEBUG_EXE)
+	@python scripts/clean.py "$(BUILD)" "$(EXE)" "thermotwin.exe" "$(GUI_EXE)" "$(GUI_DEBUG_EXE)"
 
 download-opcua:
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.c -o gui/open62541.c
