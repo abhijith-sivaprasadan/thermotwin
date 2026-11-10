@@ -43,7 +43,14 @@ def main() -> None:
             raise AssertionError(f"site CLI failed: {proc.stdout[-1500:]} {proc.stderr[-1500:]}")
 
         with result.open(newline="", encoding="utf-8") as file:
-            rows = list(csv.DictReader(file))
+            reader = csv.DictReader(file)
+            rows = list(reader)
+            if len(reader.fieldnames or []) != 21:
+                raise AssertionError("site-result CSV header must have exactly 21 columns")
+        if any(None in row or any(value is None for value in row.values()) for row in rows):
+            raise AssertionError("malformed site CSV: unquoted comma or incomplete fields")
+        if any("not OEM validated" not in row["status"] for row in rows):
+            raise AssertionError("site-model disclosure/status field lost in CSV")
         if len(rows) != 26 or any(row["valid"] != "1" for row in rows):
             raise AssertionError("expected all 26 synthetic site cases to be accepted")
 
@@ -94,6 +101,8 @@ def main() -> None:
                 raise AssertionError(f"invalid {label} unexpectedly accepted or not logged")
             with bad_output.open(newline="", encoding="utf-8") as file:
                 rejected = list(csv.DictReader(file))
+            if any(None in row or any(v is None for v in row.values()) for row in rejected):
+                raise AssertionError("malformed rejected-case site status CSV")
             if len(rejected) != 1 or rejected[0]["valid"] != "0":
                 raise AssertionError(f"invalid {label} did not get a rejection status")
         print("PASS site: 26 deterministic cases, ISO identity, fixed hardware, "
