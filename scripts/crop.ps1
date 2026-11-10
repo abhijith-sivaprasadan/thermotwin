@@ -7,7 +7,7 @@ param(
     [double] $Scale = 1.0
 )
 Add-Type -AssemblyName System.Drawing
-$src = "C:\Users\prasa\Downloads\tt_caps\tab{0:00}.png" -f $Tab
+$src = Join-Path (Join-Path $PSScriptRoot '..\build\gui-captures') ("tab{0:00}.png" -f $Tab)
 $img = [System.Drawing.Image]::FromFile($src)
 $W = [Math]::Min($W, $img.Width - $X)
 $H = [Math]::Min($H, $img.Height - $Y)
@@ -19,7 +19,7 @@ $g = [System.Drawing.Graphics]::FromImage($dst)
 $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
 $g.DrawImage($crop, 0, 0, $ow, $oh)
 $g.Dispose()
-$outpath = Join-Path "C:\Users\prasa\Downloads\tt_caps" $Out
+$outpath = Join-Path (Join-Path $PSScriptRoot '..\build\gui-captures') $Out
 $dst.Save($outpath, [System.Drawing.Imaging.ImageFormat]::Png)
 $img.Dispose(); $crop.Dispose(); $dst.Dispose()
 Write-Output ("CROP {0} {1}x{2}" -f $outpath, $ow, $oh)
