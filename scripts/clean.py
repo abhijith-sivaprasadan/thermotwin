@@ -12,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 REPO_EXECUTABLES = frozenset((
     "thermotwin", "thermotwin.exe", "thermotwin-gui.exe",
-    "thermotwin-gui-debug.exe",
+    "thermotwin-gui-debug.exe", "thermotwin-gui-offline.exe",
 ))
 
 

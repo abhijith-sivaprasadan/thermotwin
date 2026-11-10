@@ -40,6 +40,20 @@ resource with `windres`, and links the needed Win32 libraries (`gdiplus`,
 
 Run `thermotwin-gui.exe` from the repository root.
 
+To compile a **separate fully offline GUI** without downloading or exposing
+the OPC UA server, use:
+
+```powershell
+make gui-offline
+.\thermotwin-gui-offline.exe
+```
+
+The offline executable uses `gui/opcua_stub.c`, reports its OPC UA status
+as **inactive**, and does not open a telemetry endpoint. The regular
+`make gui` target **still links real pinned open62541**; its behavior is
+unchanged. Neither CI compile proves the GUI's interactive acceptance;
+follow [the GUI acceptance checklist](../docs/GUI_ACCEPTANCE.md).
+
 If the GUI closes immediately, build the console-attached diagnostic version:
 
 ```powershell
