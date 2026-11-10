@@ -71,7 +71,7 @@ F_{\rm inlet,avail}=\frac{p_{\rm amb}-\Delta p_{\rm filter}}{101325}
 \delta_T=\frac{T_{\rm IT,K}-T_{\rm AT,K}}{T_{\rm IT,K}}.
 \]
 
-These are corrected-flow/pressure-loss and temperature-state proxies, not claims of measured engine mass flow or thermal efficiency. A transparent OLS residual baseline uses the **2011–2013** records for fitting and keeps **2014–2015** untouched. A source-backed CI run found **14,542 held-out recorded observations**, TEY **RMSE 4.4771 and MAE 4.1798 in its source-labelled units**, and training adjacent-row residual correlation **0.9156**. This large residual autocorrelation prevents treating independent three-sigma flags as confirmed turbine faults. No engine maintenance/fault ground truth or production engine IDs are present.
+These are corrected-flow/pressure-loss and temperature-state proxies, not claims of measured engine mass flow or thermal efficiency. A transparent OLS residual baseline uses the **2011–2013** records for fitting and keeps **2014–2015** untouched. A source-backed CI run found **14,542 held-out recorded observations**, TEY **RMSE 4.4771 and MAE 4.1798 in its source-labelled units**, and an initial concatenated-year training residual lag-1 value **0.9156** (legacy diagnostic spanning artificial year-boundary pairs). The later corrected within-year, de-meaned lag-1 is **0.9151**; neither value establishes physical-hour spacing. This strong residual dependence prevents treating independent three-sigma flags as confirmed turbine faults. No engine maintenance/fault ground truth or production engine IDs are present.
 
 Reproduce:
 
