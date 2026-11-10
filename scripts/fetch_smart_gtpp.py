@@ -18,6 +18,8 @@ DOI = "10.17632/6sk3mhm7hb.1"
 URL = ("https://data.mendeley.com/public-files/datasets/6sk3mhm7hb/files/"
        "1b4d93cf-964d-4680-bd58-d9c5a5e5fe09/file_downloaded")
 FIELDS = ("AT", "AP", "DF", "CH", "GP", "CPR", "CPD", "TTXM", "EP")
+ORIGINAL_SHA256 = "bcfd39b0a5663add458e12cb6f7333436e1bd4206d8e79777d5878f596b0e9fa"
+ORIGINAL_RECORDS = 7893
 
 
 def acquire(out: Path, original: Path | None = None):
@@ -42,8 +44,20 @@ def acquire(out: Path, original: Path | None = None):
     rows = list(data)
     if not rows or any(None in r or None in r.values() for r in rows):
         raise ValueError("Truncated or incomplete original dataset CSV")
-    (out/"smart_gtpp_original.csv").write_bytes(raw)
     digest = sha256(raw).hexdigest()
+    if digest != ORIGINAL_SHA256:
+        raise ValueError("Original SMART-GTPP fixed-version checksum mismatch; refuse changed upstream bytes")
+    if columns != list(FIELDS) or len(rows) != ORIGINAL_RECORDS:
+        raise ValueError("Original SMART-GTPP fixed-version column and row identity mismatch")
+    for row in rows:
+        for field in FIELDS:
+            try:
+                value = float(row[field])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Original measured source has missing/nonnumeric field: {field}") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"Original measured source has nonfinite field: {field}")
+    (out/"smart_gtpp_original.csv").write_bytes(raw)
     summary = {"source_doi":DOI, "original_url":URL,
        "source_file_sha256":digest, "byte_length":len(raw),
        "records":len(rows), "raw_source_columns":columns,
