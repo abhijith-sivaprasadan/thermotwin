@@ -233,6 +233,7 @@ def summarize(folder: Path, ref_file: Path):
         raise ValueError("Incomplete Fortran site scenario results")
     windows = {label: {"T": [], "P": [], "RH": [], "z": [], "i": [], "e": [], "b": [],
                        "span": []} for label, _ in WINDOWS}
+    hourly_results = []
     refpower = None
     for k, w in enumerate(weather):
         label, start = WINDOWS[k//168]
@@ -287,6 +288,16 @@ def summarize(folder: Path, ref_file: Path):
             window[tag].append(ratio)
         window["span"].append(max(window[short][-1] for short, *_ in LOSSES) -
                               min(window[short][-1] for short, *_ in LOSSES))
+        hourly_results.append({
+            "window": label, "UTC": w["valid_time_utc"],
+            "era5_T_K": t, "era5_surface_P_Pa": p,
+            "era5_RH_not_used_in_physics": rh,
+            "model_zero_loss_ratio": window["z"][-1],
+            "model_one_pct_inlet_ratio": window["i"][-1],
+            "model_two_pct_exhaust_ratio": window["e"][-1],
+            "model_combined_loss_ratio": window["b"][-1],
+            "span_four_assumed_loss_scenarios_not_uncertainty": window["span"][-1],
+        })
     summaries = []
     for label, _ in WINDOWS:
         x = windows[label]
@@ -330,7 +341,9 @@ def summarize(folder: Path, ref_file: Path):
     }
     (folder/"study_report.json").write_text(json.dumps(report, indent=2,sort_keys=True)+"\n")
     save_csv(folder/"seasonal_summary.csv", list(summaries[0]), summaries)
+    save_csv(folder/"hourly_model_ratios.csv", list(hourly_results[0]), hourly_results)
     render(summaries, folder/"seasonal_era5_site_model.svg")
+    render_hourly(hourly_results, folder/"hourly_site_model.svg")
     lines = [
         "# Four-season real ERA5 reanalysis -> generic Fortran site model",
         "",
@@ -343,6 +356,12 @@ def summarize(folder: Path, ref_file: Path):
         "per hour yield 2,688 genuine equation-based solver outputs.",
         "",
         "![Seasonal model comparison](seasonal_era5_site_model.svg)",
+        "",
+        "## Complete seven-day source-driven model trajectories",
+        "Each trace is an exact-UTC sequence of 168 Fortran model predictions;",
+        "the curves are not turbine power measurements or confidence bounds.",
+        "",
+        "![Hourly model ratios and deterministic loss scenario comparison](hourly_site_model.svg)",
         "",
         "| Window | ERA5 T range (K) | Model zero-loss median power ratio | Model 1% inlet plus 2% exhaust loss median ratio |",
         "|:--|--:|--:|--:|",
@@ -369,7 +388,8 @@ def summarize(folder: Path, ref_file: Path):
         "  were used. Actual site performance accuracy is NOT validated and",
         "  no contract pass-off, emissions or production fleet result is claimed.",
         "- The original 672-row weather CSV, 2688-row input and result CSVs,",
-        "  SHA256 provenance, study JSON and graph permit strict replay.",
+        "  SHA256 provenance, study JSON, hourly ratios and two SVG figures",
+        "  permit strict replay.",
     ]
     (folder/"STUDY.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
     print("Audited real reanalysis: 672 UTC hours; 2688 physical solver outputs")
@@ -409,6 +429,71 @@ def render(rows: list[dict], out: Path):
     label(42,567,"Bars use a fixed horizontal 0–1.30 reference-power ratio scale.",17)
     label(42,596,"Assumed loss spread is NOT measurement/model uncertainty. No OEM calibration.",17)
     ET.ElementTree(root).write(out,encoding="utf-8",xml_declaration=True)
+
+
+def render_hourly(hourly: list[dict], target: Path):
+    """Source-backed 672-hour traces; no interpolation and no error-band claim."""
+    ns = "http://www.w3.org/2000/svg"
+    ET.register_namespace("", ns)
+    root = ET.Element(f"{{{ns}}}svg", {
+        "width": "1170", "height": "890", "viewBox": "0 0 1170 890",
+        "role": "img", "aria-label": "Historical ERA5 driven hourly model ratios"})
+    ET.SubElement(root,f"{{{ns}}}title").text = (
+        "Four seven-day real ERA5 windows: normalized Fortran model site power")
+    ET.SubElement(root,f"{{{ns}}}desc").text = (
+        "Two scenario-model trajectories per window: zero assumed pressure loss "
+        "and 1% inlet plus 2% exhaust assumed loss. No measured engine power "
+        "or uncertainty interval; UTC source hours in January April July October 2025.")
+    def elem(t, attrs):
+        return ET.SubElement(root, f"{{{ns}}}{t}", {k:str(v) for k,v in attrs.items()})
+    def text(x,y,content,size=17):
+        elem("text",{"x":x,"y":y,"font-family":"Arial,Helvetica,sans-serif",
+                     "font-size":size,"fill":"#273c55"}).text=str(content)
+    elem("rect",{"x":0,"y":0,"width":1170,"height":890,"fill":"#f7f9fc"})
+    text(42,54,"Hourly ERA5 weather -> generic turbine model response",30)
+    text(42,91,"672 original reanalysis hours | model power normalized to its ISO reference (not observed MW)",18)
+    text(42,122,"Dark: 0% inlet/0% exhaust | teal: assumed 1% inlet/2% exhaust loss",18)
+    q = [float(r[key]) for r in hourly for key in
+         ("model_zero_loss_ratio","model_combined_loss_ratio")]
+    lo = math.floor((min(q)-0.015)*20)/20
+    hi = math.ceil((max(q)+0.015)*20)/20
+    if not math.isfinite(lo) or not math.isfinite(hi) or hi <= lo:
+        raise ValueError("Invalid hourly model ratio display range")
+    left, right, plot_h = 226, 1095, 126
+    for k,(label,start) in enumerate(WINDOWS):
+        block=hourly[k*168:(k+1)*168]
+        if len(block)!=168 or any(r["window"] != label for r in block):
+            raise ValueError("Incomplete hourly model plot window")
+        top = 173 + 165*k
+        text(43,top+42,label.capitalize(),22)
+        text(43,top+67,start+" UTC",15)
+        elem("rect",{"x":left,"y":top,"width":right-left,
+                    "height":plot_h,"fill":"#e9eff5"})
+        for fraction in (0,0.5,1):
+            y=top+plot_h*(1-fraction)
+            elem("line",{"x1":left,"x2":right,"y1":y,"y2":y,
+                         "stroke":"#cad5df","stroke-width":1})
+            text(left-63,y+5,f"{lo+(hi-lo)*fraction:.2f}",15)
+        for day in range(8):
+            x=left+(right-left)*(day*24)/168
+            elem("line",{"x1":x,"x2":x,"y1":top,"y2":top+plot_h,
+                         "stroke":"#d2dce5","stroke-width":1})
+        for key,color in (("model_zero_loss_ratio","#25598c"),
+                          ("model_combined_loss_ratio","#19969e")):
+            pts=[]
+            for h,r in enumerate(block):
+                v=float(r[key])
+                if not math.isfinite(v):
+                    raise ValueError("Nonfinite hourly graph prediction")
+                x=left+(right-left)*h/167
+                y=top+plot_h*(hi-v)/(hi-lo)
+                pts.append(f"{x:.2f},{y:.2f}")
+            elem("polyline",{"points":" ".join(pts),"fill":"none",
+                             "stroke":color,"stroke-width":2,
+                             "stroke-linejoin":"round"})
+    text(42,842,"UTC hours are shown in source order, 168 per panel. Y axis is identical across panels.",17)
+    text(42,869,"Assumed pressure-loss scenario spread is NOT confidence or model uncertainty. No OEM calibration.",16)
+    ET.ElementTree(root).write(target,encoding="utf-8",xml_declaration=True)
 
 
 def main():
