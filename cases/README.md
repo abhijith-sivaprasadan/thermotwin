@@ -7,8 +7,12 @@ non-comment line is a data row.
 
 ## Column order (fixed)
 
-The reader parses **by position**, so the 18 columns must appear in this exact
-order:
+The reader parses **by position** and checks the exact header. Every data row
+must contain exactly 18 fields, with all numeric fields finite and nonempty;
+missing values and altered column order cause a nonzero error exit rather
+than being interpreted as zero or a different physical input. Fields are
+plain unquoted CSV tokens (quoted CSV fields are not implemented). The
+18 columns must appear in this exact order:
 
 | # | Column | Unit | Notes |
 |---|---|---|---|
