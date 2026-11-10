@@ -119,6 +119,8 @@ class WeatherStudyTests(unittest.TestCase):
             self.assertFalse(report["engine_specific_validation"])
             self.assertTrue(report["model_form_uncertainty_not_quantified"])
             self.assertTrue((out/"seasonal_era5_site_model.svg").exists())
+            self.assertTrue((out/"hourly_site_model.svg").exists())
+            self.assertEqual(len(csv_rows(out/"hourly_model_ratios.csv")), 672)
             self.assertNotIn("measured turbine", (out/"STUDY.md").read_text().lower().split("no matched real turbine power")[0])
 
     def test_analytical_solver_identity_guard(self):
