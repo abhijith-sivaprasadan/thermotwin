@@ -1,0 +1,40 @@
+name: UCI 551 source provenance
+
+on:
+  push:
+    paths:
+      - 'scripts/fetch_uci_gt551.py'
+      - 'scripts/test_fetch_uci_gt551.py'
+      - '.github/workflows/uci551-source.yml'
+  pull_request:
+    paths:
+      - 'scripts/fetch_uci_gt551.py'
+      - 'scripts/test_fetch_uci_gt551.py'
+      - '.github/workflows/uci551-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquire-audit-real-operations:
+    name: Acquire original CC-BY UCI 551 operational data (one turbine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Check annual source schema and chronology assumptions
+        run: python -m unittest scripts.test_fetch_uci_gt551 -v
+      - name: Download canonical original UCI annual CSV archive
+        run: python scripts/fetch_uci_gt551.py --output-dir build/uci551
+      - name: Verify physical source counts and provenance
+        run: |
+          python -c "import json; from pathlib import Path; p=Path('build/uci551/manifest.json'); m=json.loads(p.read_text()); assert m['total_rows']==36733 and m['number_of_turbines']==1; assert set(m['years'])==set(map(str,range(2011,2016))); assert not m['actual_utc_timestamps_present'] and not m['is_passoff_test_dataset']"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: uci551-original-annual-data-with-provenance
+          path: build/uci551/
