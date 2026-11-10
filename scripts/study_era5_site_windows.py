@@ -212,13 +212,17 @@ def summarize(folder: Path, ref_file: Path):
             manifest.get("model_and_weather_uncertainty_not_quantified") is not True or
             digest(ref_file) != manifest.get("fixed_hardware_reference_sha256")):
         raise ValueError("Required source provenance and model disclaimers missing")
+    original_values = []
+    if len(manifest["original_sources"]) != 4:
+        raise ValueError("Wrong original ERA5 source window count")
     for n, (label, start) in enumerate(WINDOWS, 1):
         x = manifest["original_sources"][n-1]
         path = folder / x["original_raw_file"]
         if (x["window"] != label or x["start_date_utc"] != start or
-                digest(path) != x["original_raw_sha256"] or
-                len(verified_window(path.read_bytes(), start, HOURS)) != HOURS):
+                x["requested_url"] != source_url(start, HOURS) or
+                digest(path) != x["original_raw_sha256"]):
             raise ValueError("Original raw ERA5 source identity/UTC mismatch")
+        original_values.extend(verified_window(path.read_bytes(), start, HOURS))
     weather_file, cases_file = folder/"weather_hours.csv", folder/"site_cases.csv"
     if (digest(weather_file) != manifest["weather_csv_sha256"] or
             digest(cases_file) != manifest["input_cases_sha256"]):
@@ -239,6 +243,14 @@ def summarize(folder: Path, ref_file: Path):
         t, p, rh = (fnum(w, "air_temperature_2m_K", True),
                     fnum(w, "surface_pressure_Pa", True),
                     fnum(w, "relative_humidity_source_fraction"))
+        actual = original_values[k]
+        if (w["source_raw_sha256"] != actual["raw_sha256"] or
+                abs(fnum(w,"grid_latitude")-actual["model_grid_latitude"]) > 1e-9 or
+                abs(fnum(w,"grid_longitude")-actual["model_grid_longitude"]) > 1e-9):
+            raise ValueError("Source raw hash/grid identity inconsistent with weather CSV")
+        close(t, actual["temperature_K"], "temperature rederived from original ERA5 JSON")
+        close(p, actual["surface_pressure_Pa"], "pressure rederived from original ERA5 JSON")
+        close(rh, actual["relative_humidity_fraction"], "RH rederived from original ERA5 JSON")
         if not (250 <= t <= 325 and 75000 <= p <= 110000 and 0 <= rh <= 1):
             raise ValueError("Reanalysis outside declared educational solver model envelope")
         window = windows[label]
