@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, qa/report3-wip-ci-20261110]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
