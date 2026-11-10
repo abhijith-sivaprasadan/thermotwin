@@ -212,7 +212,17 @@ def write_outputs(boundary: dict, args, url: str, retrieved: str, raw: bytes):
         reference["case_name"] = "open_meteo_site_model"
         reference["ambient_T_K"] = format(boundary["temperature_K"], ".10g")
         reference["ambient_P_Pa"] = format(boundary["surface_pressure_Pa"], ".10g")
-        reference["relative_humidity"] = format(boundary["relative_humidity_fraction"], ".10g")
+        if args.dry_air_approximation:
+            reference["relative_humidity"] = reference["relative_humidity"]
+            manifest["humidity_mode"] = "dry_air_approximation_requested_by_operator"
+            manifest["actual_weather_relative_humidity_fraction"] = boundary["relative_humidity_fraction"]
+            manifest["model_input_relative_humidity_fraction"] = float(reference["relative_humidity"])
+            manifest["humidity_correction_performed"] = False
+        else:
+            reference["relative_humidity"] = format(boundary["relative_humidity_fraction"], ".10g")
+            manifest["humidity_mode"] = "weather_RH_passed_to_model_which_may_reject_it"
+            manifest["actual_weather_relative_humidity_fraction"] = boundary["relative_humidity_fraction"]
+            manifest["humidity_correction_performed"] = False
         site_file = path.with_name(path.stem + "_case.csv")
         with site_file.open("w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=ENGINE_FIELDS)
@@ -240,10 +250,14 @@ def main(argv=None):
     parser.add_argument("--model", choices=("era5", "era5_land", "best_match"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reference-case", type=Path, help="Existing, separately validated engine-input deck")
+    parser.add_argument("--dry-air-approximation", action="store_true",
+                        help="Explicitly hold model RH at reference while retaining observed RH in manifest; no humidity correction")
     parser.add_argument("--snapshot", type=Path, help="Optional exact raw HTTP response snapshot")
     parser.add_argument("--response-json", type=Path,
                         help="Replay a previously collected raw API response; never treated as live retrieval")
     args = parser.parse_args(argv)
+    if args.dry_air_approximation and args.reference_case is None:
+        parser.error("--dry-air-approximation requires --reference-case")
     if args.source == "archive" and args.model == "best_match":
         parser.error("Archive must select explicit ERA5 or ERA5-Land")
     if args.source == "forecast-current" and args.model != "best_match":
