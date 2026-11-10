@@ -147,7 +147,7 @@ class PassoffPhysicsTests(unittest.TestCase):
     def test_no_steady_state_rejected(self):
         data = analytic_record()
         data["steady_state_verified"] = False
-        with self.assertRaisesRegex(ValueError, "steady state"):
+        with self.assertRaisesRegex(ValueError, "Steady state"):
             evaluate(data, analytic_model_row(), (1.05, 0.98), "x", "y")
 
     def test_missing_calibration_source_rejected(self):
