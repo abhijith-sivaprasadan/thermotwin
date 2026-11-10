@@ -30,6 +30,8 @@ def main():
     run(["python", "scripts/test_run_tests.py"])
     run(["python", "scripts/test_csv_validation.py", "--executable",
          str(ROOT / build / ("thermotwin" + suffix))])
+    run(["python", "scripts/test_site_pipeline.py", "--executable",
+         str(ROOT / build / ("thermotwin" + suffix))])
     # Exercise all existing scenario fixtures with the built profile executable.
     for case in sorted((ROOT / "cases/scenarios").glob("*.scn")):
         run([str(ROOT / build / ("thermotwin" + suffix)), "scenario", "run", str(case)])
