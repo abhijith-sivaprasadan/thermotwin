@@ -17,7 +17,7 @@
 !>     Turbine Power Plants).
 !>   * Component efficiencies fall quadratically with distance from the
 !>     design point on their maps (representative penalty coefficients,
-!>     not engine-specific data — see docs/assumptions_limitations.md).
+!>     not engine-specific data — see docs/TTF_PE_MASTER_PLAN_v1.0.md).
 !>   * Ambient corrections: at fixed shaft speed and IGV setting the
 !>     compressor swallows constant CORRECTED flow, so physical flow scales
 !>     with delta/sqrt(theta). Hot days genuinely derate the machine.
