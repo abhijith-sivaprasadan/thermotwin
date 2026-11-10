@@ -109,7 +109,7 @@ by running:
 
 ~~~sh
 python -m unittest scripts.test_study_era5_site_windows -v
-python scripts/study_era5_site_windows.py acquire \
+python -m scripts.study_era5_site_windows acquire \
   --out build/era5-seasonal-replay \
   --reference cases/site_iso_flange_reference.csv \
   --replay-dir build/era5-seasonal-original
@@ -117,7 +117,7 @@ make -j4
 ./thermotwin site cases/site_iso_flange_reference.csv \
   build/era5-seasonal-replay/site_cases.csv \
   build/era5-seasonal-replay/site_results.csv
-python scripts/study_era5_site_windows.py summarize \
+python -m scripts.study_era5_site_windows summarize \
   --out build/era5-seasonal-replay \
   --reference cases/site_iso_flange_reference.csv
 ~~~
