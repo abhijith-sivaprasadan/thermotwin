@@ -27,6 +27,7 @@ module scenario_runner
     use engine_core, only: engine_init, engine_step, refresh_model, apply_market_profile
     use dispatch_agc, only: balance_now, reset_controls, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
 
@@ -128,8 +129,28 @@ contains
             end if
         end do
         close(unit)
-        ok = .true.
+        ok = valid_timing(sc)
+        if (.not. ok) write(*, '(A)') "ERROR: invalid scenario timing, tolerance, or unreachable event: "//trim(path)
     end subroutine scenario_load
+
+    logical function valid_timing(sc) result(ok)
+        type(Scenario), intent(in) :: sc
+        integer :: i
+        real(dp) :: last_input_time
+        ok = .false.
+        if (.not. ieee_is_finite(sc%duration_s) .or. .not. ieee_is_finite(sc%dt_s)) return
+        if (sc%duration_s <= 0.0_dp .or. sc%dt_s <= 1.0e-6_dp) return
+        if (sc%duration_s / sc%dt_s > 1.0e7_dp) return
+        last_input_time = real(ceiling(sc%duration_s / sc%dt_s) - 1, dp) * sc%dt_s
+        do i = 1, sc%n_events
+            associate(ev => sc%events(i))
+                if (ev%t_s < 0.0_dp .or. ev%t_s > sc%duration_s .or. ev%tol < 0.0_dp) return
+                if ((ev%kind == KIND_SET .or. ev%kind == KIND_COMMAND) .and. &
+                    ev%t_s > last_input_time + 1.0e-9_dp) return
+            end associate
+        end do
+        ok = .true.
+    end function valid_timing
 
     !> Run a scenario from the standard initial operating point.
     !> n_failures counts failed assertions (0 = scenario passes).
@@ -144,6 +165,11 @@ contains
 
         n_failures = 0
         n_asserts = 0
+        if (.not. valid_timing(sc)) then
+            n_failures = 1
+            write(*, '(A)') "ERROR: invalid scenario timing."
+            return
+        end if
         sc%events(1:sc%n_events)%done = .false.
 
         write(*, '(A)') "== scenario: "//trim(sc%name)//" =="
@@ -154,13 +180,17 @@ contains
         if (present(record_path)) then
             if (len_trim(record_path) > 0) then
                 call open_recorder(record_path, rec_unit, recording)
+                if (.not. recording) then
+                    n_failures = 1
+                    return
+                end if
             end if
         end if
 
-        nsteps = max(1, nint(sc%duration_s / sc%dt_s))
+        nsteps = max(1, ceiling(sc%duration_s / sc%dt_s))
         t = 0.0_dp
         do k = 1, nsteps
-            call apply_due_inputs(sc, st, t)
+            call apply_due_inputs(sc, st, t, n_failures)
             call engine_step(st, sc%dt_s)
             t = real(k, dp) * sc%dt_s
             call eval_due_assertions(sc, st, t, n_failures, n_asserts)
@@ -206,18 +236,23 @@ contains
         tr%name = sc%name
         tr%duration_s = sc%duration_s
         tr%dt_s = sc%dt_s
+        if (.not. valid_timing(sc)) then
+            tr%assertion_failures = 1
+            if (present(n_failures)) n_failures = 1
+            return
+        end if
 
         call engine_init(st)
-        call apply_due_inputs(sc, st, 0.0_dp)
+        call apply_due_inputs(sc, st, 0.0_dp, failures)
         call update_trace_metrics(tr, st)
         call sample_trace_point(tr, 0.0_dp, st)
 
-        nsteps = max(1, nint(sc%duration_s / sc%dt_s))
+        nsteps = max(1, ceiling(sc%duration_s / sc%dt_s))
         sample_stride = max(1, int(ceiling(real(nsteps + 1, dp) / &
             real(SCENARIO_TRACE_N, dp))))
         t = 0.0_dp
         do k = 1, nsteps
-            call apply_due_inputs(sc, st, t)
+            call apply_due_inputs(sc, st, t, failures)
             call engine_step(st, sc%dt_s)
             t = real(k, dp) * sc%dt_s
             call eval_due_assertions(sc, st, t, failures, n_asserts)
@@ -284,6 +319,10 @@ contains
         case default
             ok = .false.
         end select
+        if (ok) then
+            call next_token(line, pos, tok, has)
+            ok = .not. has
+        end if
     end function parse_line
 
     function parse_event(line, pos, sc) result(ok)
@@ -373,8 +412,10 @@ contains
         value = 0.0_dp
         call next_token(line, pos, tok, has)
         if (.not. has) return
+        if (verify(trim(tok), "0123456789+-.eEdD") /= 0) return
         read(tok, *, iostat=ios) value
         ok = ios == 0
+        if (ok) ok = ieee_is_finite(value)
     end function next_real
 
     subroutine replace_tabs(line)
@@ -389,10 +430,11 @@ contains
     ! Execution
     ! ------------------------------------------------------------------
 
-    subroutine apply_due_inputs(sc, st, t_now)
+    subroutine apply_due_inputs(sc, st, t_now, n_failures)
         type(Scenario), intent(inout) :: sc
         type(GridState), intent(inout) :: st
         real(dp), intent(in) :: t_now
+        integer, intent(inout), optional :: n_failures
         integer :: i
         logical :: touched, ok
 
@@ -408,15 +450,18 @@ contains
                         write(*, '(A,F8.2,A,F10.3)') "   t=", t_now, &
                             "  set "//trim(ev%target)//" =", ev%value
                     else
-                        write(*, '(A)') "   WARNING: unknown set target '"//trim(ev%target)//"'"
+                        write(*, '(A)') "   ERROR: unknown set target '"//trim(ev%target)//"'"
                     end if
                 else
                     call run_command(st, ev%target, ok)
                     if (ok) then
                         write(*, '(A,F8.2,A)') "   t=", t_now, "  command "//trim(ev%target)
                     else
-                        write(*, '(A)') "   WARNING: unknown command '"//trim(ev%target)//"'"
+                        write(*, '(A)') "   ERROR: unknown command '"//trim(ev%target)//"'"
                     end if
+                end if
+                if (.not. ok .and. present(n_failures)) then
+                    n_failures = n_failures + 1
                 end if
                 ev%done = .true.
                 touched = .true.
@@ -768,7 +813,7 @@ contains
         open(newunit=unit, file=path, status='replace', action='write', iostat=ios)
         ok = ios == 0
         if (.not. ok) then
-            write(*, '(A)') "   WARNING: cannot open recorder file '"//trim(path)//"'"
+            write(*, '(A)') "   ERROR: cannot open recorder file '"//trim(path)//"'"
             return
         end if
         write(unit, '(A)') "time_s,frequency_Hz,nominal_frequency_Hz,ROCOF_Hz_s,"// &
