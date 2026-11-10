@@ -363,6 +363,14 @@ jobs:
             --reference cases/site_iso_flange_reference.csv \
             --out build/smart-gtpp
           python -c "import json;from pathlib import Path;r=json.loads(Path('build/smart-gtpp/measured_partial_check.json').read_text());assert r['original_measured_rows']==7893 and r['generic_model_case_count']==7893 and not r['physical_model_validation_success_claimed'] and not r['genuine_independent_power_prediction_accuracy_assessed']"
+      - name: Test fail-closed independent-measurement and source traceability contract
+        run: python -m unittest scripts.test_check_gt_validation_readiness -v
+      - name: Document specifically missing metrology and machine identity from the actual measured source
+        run: |
+          python -m scripts.check_gt_validation_readiness \
+            --csv build/smart-gtpp/smart_gtpp_original.csv \
+            --output build/smart-gtpp/measurement_validation_readiness.json
+          python -c "import json;from pathlib import Path;r=json.loads(Path('build/smart-gtpp/measurement_validation_readiness.json').read_text()); assert not r['experimentally_traceable_validation_ready'] and not r['engine_accuracy_verified'] and not r['OEM_or_contractual_passoff_established']; assert any(x['field']=='fuel_mass_flow_kg_s' for x in r['missing_measured_fields']) and any(x['field']=='timestamp_utc' for x in r['missing_measured_fields'])"
       - name: Preserve original external measured source and provenance-only metadata
         uses: actions/upload-artifact@v4
         if: always()
