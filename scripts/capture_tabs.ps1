@@ -2,7 +2,7 @@
 # Switches tabs by posting WM_KEYDOWN/WM_KEYUP for VK_F1..VK_F15 directly to the hwnd.
 param(
     [int[]] $Screens = (1..15),
-    [string] $OutDir = "C:\Users\prasa\Downloads\tt_caps"
+    [string] $OutDir = (Join-Path $PSScriptRoot '..\build\gui-captures')
 )
 
 Add-Type @"
