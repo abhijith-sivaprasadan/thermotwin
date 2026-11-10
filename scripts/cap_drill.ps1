@@ -1,6 +1,6 @@
 # Open flagship drill-downs by posting clicks at cached tile locations, capturing each.
 # Click coords are CLIENT coords = captured-image coords minus the window frame (~8, ~31).
-param([string]$OutDir = "C:\Users\prasa\Downloads\tt_caps")
+param([string]$OutDir = (Join-Path $PSScriptRoot '..\build\gui-captures'))
 
 Add-Type @"
 using System;
