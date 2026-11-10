@@ -74,6 +74,47 @@ The first successful [original-data analysis job](https://github.com/abhijith-si
 
 These preliminary numbers measure how an empirical conditional baseline generalizes across years in one real recorded turbine, not the numerical accuracy of ThermoTwin-F's original 30 MW example engine. A scientific follow-up should inspect residual distribution shift, physically unexplained modes, original instrument definitions and possible autocorrelation-aware monitoring, without overclaiming causal degradation.
 
+## Dependence/holdout audit (PR #31)
+
+The initial version calculated an adjacent-row training correlation from annual
+arrays joined end-to-start. This inadvertently introduced **two artificial
+year-boundary pairs**. The revised output preserves that initial statistic
+under a clearly named legacy key, and instead reports a **within-year,
+year-demeaned pooled lag-1 correlation** plus individual within-year estimates.
+Neither is a calibrated physical-hour autocorrelation: the original records
+have no exact interval/timestamp sequence.
+
+The revised real-data report also includes:
+
+- Development-only **forward-origin evaluation**: train on 2011, test on
+  2012; then train on 2011–2012, test on 2013. The final 2014–2015
+  observations cannot influence model fitting, standardization or this
+  development comparison.
+- Actual 2014–2015 **OLS versus training-mean baseline** RMSE and MAE.
+  A low error has value only relative to baseline and operating-state drift.
+  Do not imply condition adjustment improved prediction before comparing
+  the numerical outputs.
+- Fractions of held-out measured points outside the **2011–2013 observed
+  min/max** of each dimensionless physical covariate and outside *any*
+  training marginal range. This warns about extrapolation; it is not a
+  confirmed fault or multivariate OOD probability.
+- **Year-stratified moving-block resampling** of actual held-out residuals.
+  For each of 32/64/128 **published consecutive rows** and 400 numerical
+  draws, the algorithm samples blocks strictly inside each original annual
+  file, preserving that file's record count, then calculates mean error and
+  RMSE. The 2.5–97.5th resampling percentiles are reported as
+  **dependence-sensitive descriptive ranges**, **not** formally calibrated
+  95% confidence intervals. Unknown sampling gaps, regime changes and
+  nonstationarity may invalidate even their nominal interpretation. The
+  fixed PRNG seed controls reproducible resampling *of genuine records*;
+  it does not fabricate engine observations.
+
+The checked CI source artifact contains the complete new report; the
+initial numerical results in the preceding section remain labelled as the
+**initial source-backed baseline** rather than silently changing values.
+See the [evidence maturity audit](ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md)
+for what has and has not been verified.
+
 ## Limitations and next evidence steps
 
 1. No instrument-level calibration/uncertainty budget, pass-off conditions, fuel rate, inlet-air mass flow, turbine mechanical power or OEM component maps are supplied.
