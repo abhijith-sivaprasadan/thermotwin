@@ -329,6 +329,25 @@ jobs:
           path: build/era5-seasonal/
           if-no-files-found: error
 
+  observed-smart-gtpp-source-audit:
+    name: Independent observed SMART-GTPP original-source examination
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Download measured source and report exact file columns with dataset hash
+        run: python -m scripts.fetch_smart_gtpp --out build/smart-gtpp
+      - name: Preserve original external measured source and provenance-only metadata
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smart-gtpp-original-measurements-provenance
+          path: build/smart-gtpp/
+          if-no-files-found: error
+
   legacy-report-smoke:
     name: CLI report regeneration smoke test
     runs-on: ubuntu-latest
