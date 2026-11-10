@@ -3,7 +3,8 @@
 !>
 !> CSV is chosen deliberately: inputs and outputs are human-auditable, diffable
 !> in git, and trivially consumed by the Python post-processing. The input
-!> column order is fixed and documented in cases/README and docs/equations.md.
+!> column order is fixed and documented in cases/README.md. The parser
+!> verifies the exact header and refuses malformed, blank and nonfinite fields.
 !>
 !> Input header (exact order expected):
 !>   case_name, ambient_T_K, ambient_P_Pa, relative_humidity,
