@@ -32,9 +32,16 @@ def main():
          str(ROOT / build / ("thermotwin" + suffix))])
     run(["python", "scripts/test_site_pipeline.py", "--executable",
          str(ROOT / build / ("thermotwin" + suffix))])
-    # Exercise all existing scenario fixtures with the built profile executable.
+    # Exercise all scenario fixtures and retain evidence about *every* failure.
+    # One broken scenario must not hide other regression failures.
+    failures = []
     for case in sorted((ROOT / "cases/scenarios").glob("*.scn")):
-        run([str(ROOT / build / ("thermotwin" + suffix)), "scenario", "run", str(case)])
+        try:
+            run([str(ROOT / build / ("thermotwin" + suffix)), "scenario", "run", str(case)])
+        except subprocess.CalledProcessError:
+            failures.append(case.name)
+    if failures:
+        raise SystemExit("Failed scenarios: " + ", ".join(failures))
     run(["python", "scripts/test_scenario_validation.py", "--executable",
          str(ROOT / build / ("thermotwin" + suffix))])
 
