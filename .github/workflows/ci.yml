@@ -254,6 +254,43 @@ jobs:
           name: real-era5-boundary-and-source
           path: build/weather/*
 
+
+  lincoln-source-backed-dossier:
+    name: Recruiter evidence dossier from UCI + ERA5 source artifacts
+    needs: [real-turbine-uci551, real-weather-archive]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Check fail-closed evidence/figure generator against mathematical fixtures only
+        run: python -m unittest scripts.test_build_lincoln_dossier -v
+      - name: Retrieve audited original UCI source and holdout JSON from this exact run
+        uses: actions/download-artifact@v4
+        with:
+          name: real-uci551-source-and-evaluation
+          path: build/uci551
+      - name: Retrieve original ERA5 reanalysis and actual Fortran site-model outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: real-era5-boundary-and-source
+          path: build/weather
+      - name: Generate actual-source dossier, two SVG figures and SHA-256 audit ledger
+        run: |
+          python scripts/build_lincoln_dossier.py \
+            --uci-dir build/uci551 \
+            --weather-dir build/weather \
+            --reference-case cases/site_iso_flange_reference.csv \
+            --output-dir build/lincoln-dossier
+      - name: Make the dossier and figures inspectable as one source-locked artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lincoln-source-backed-engineering-dossier
+          path: build/lincoln-dossier/
+          if-no-files-found: error
+
   legacy-report-smoke:
     name: CLI report regeneration smoke test
     runs-on: ubuntu-latest
