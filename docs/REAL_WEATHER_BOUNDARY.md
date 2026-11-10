@@ -47,7 +47,7 @@ python scripts/open_meteo_boundary.py \
   --output build/weather/replayed_boundary.csv
 ```
 
-The importer can optionally copy a separately documented existing 18-field engine model deck into a compatible case file (`--reference-case path.csv`), changing only atmospheric T/P/RH. This does **not** establish the validity of the hardware deck. A complete fixed-reference off-design power/heat-rate correction is tracked separately under [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13). **Do not use the generic simple-cycle `run` results at fixed air flow and pressure ratio as a substitute for site-performance prediction.**
+The importer can optionally copy a separately documented existing 18-field engine model deck into a compatible case file (`--reference-case path.csv`), changing only atmospheric T/P/RH. This does **not** establish the validity of the hardware deck. A fixed-reference full-load performance model is implemented under [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13), using `thermotwin site` and the explicit `cases/site_iso_flange_reference.csv` deck. **Do not use the generic simple-cycle `run` results at fixed air flow and pressure ratio as a substitute for site-performance prediction.**
 
 ## Data and fail-closed constraints
 
@@ -78,3 +78,9 @@ python -m unittest scripts.test_open_meteo_boundary -v
 ```
 
 The tests construct **mathematical/schema fixtures only** and are not presented as real weather or turbine measurements. The CI integration test uses a genuine Open-Meteo API response and retains the original response file; the API connection and successful execution must be verified from the specific workflow run before claiming real ingestion works.
+
+## Reference-flange clarification (10 November 2026)
+
+Use `--reference-case cases/site_iso_flange_reference.csv --dry-air-approximation` when preparing site-model input. The separate reference deck sets *zero reference inlet/exhaust losses*, ensuring `P1 = P4 = 101325 Pa` at the simplified ISO intake/exhaust flanges. The legacy `cases/design_point.csv` is retained for historical educational results but **must not** be used for the new ISO flange correction because it has 1% inlet and 2% exhaust pressure losses. The new regression test checks these actual station-state pressures. Reanalysis T/P remain weather-model estimates, true observed RH stays in the provenance manifest, and the model remains a dry-air educational approximation without OEM calibration.
+
+A previously recorded 1.01604715 power site/reference ratio came from the *legacy non-ISO-flange reference* and is retained only as historical integration evidence. **Do not quote it as the corrected ISO flange result.**
