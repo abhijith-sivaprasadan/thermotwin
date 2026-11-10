@@ -179,7 +179,11 @@ def draw(points, path):
     for key,color in (("observed_EP_ratio","#c07836"),("generic_model_power_ratio","#17808a")):
         pairs=" ".join(f"{xmap(p['bin_center_C']):.1f},{ymap(p[key]):.1f}" for p in points)
         element("polyline",points=pairs,fill="none",stroke=color,stroke_width=4)
-    title(120,510,"Source ambient T, °C assumed | median within 5°C bins | no temporal holdout",17)
+    for C in range(-5,51,5):
+        xx=xmap(C)
+        element("line",x1=xx,y1=top,x2=xx,y2=bottom,stroke="#e3eaf0")
+        title(xx-12,bottom+25,str(C),14)
+    title(120,526,"Source ambient temperature, °C assumed | medians in 5°C bins; no temporal holdout",17)
     title(120,545,"Orange: measured turbine power / measured sample median",17)
     title(120,570,"Teal: unrelated generic model / its own sample median; no OEM, fuel or load matching",16)
     ET.ElementTree(root).write(path,encoding="utf-8",xml_declaration=True)
