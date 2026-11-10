@@ -54,6 +54,7 @@ TEST_BINS := $(patsubst $(TEST)/%.f90,$(BUILD)/tests/%,$(TEST_SRCS))
 EXE := thermotwin
 GUI_EXE := thermotwin-gui.exe
 GUI_DEBUG_EXE := thermotwin-gui-debug.exe
+GUI_OFFLINE_EXE := thermotwin-gui-offline.exe
 GUI_ICON := gui/app_icon.ico
 GUI_RES := $(BUILD)/gui_icon.res
 GUI_NATIVE_OBJ := $(BUILD)/hmi_native_draw.o
@@ -62,7 +63,7 @@ OPCUA_OBJ := $(BUILD)/open62541.o $(BUILD)/opcua_server.o
 OPCUA_VER := v1.5.4
 OPCUA_URL := https://github.com/open62541/open62541/releases/download/$(OPCUA_VER)
 
-.PHONY: all tests check debug run gui gui-debug clean download-opcua property-reference-grid
+.PHONY: all tests check debug run gui gui-offline gui-debug clean download-opcua property-reference-grid
 .SECONDEXPANSION:
 
 all: $(EXE)
@@ -186,12 +187,18 @@ $(BUILD)/property_reference_grid: scripts/property_reference_grid.f90 $(OBJS) | 
 
 gui: $(GUI_EXE)
 
+# Offline executable is intentionally distinct; make gui retains real OPC UA.
+gui-offline: $(GUI_OFFLINE_EXE)
+
 $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
 
 # open62541 amalgam — compiled once with -O1 (full optimisation is slow)
 $(BUILD)/open62541.o: gui/open62541.c | $(BUILD)
 	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
+
+$(BUILD)/opcua_stub.o: gui/opcua_stub.c | $(BUILD)
+	gcc -O2 -Wall -Wextra -std=c99 -c $< -o $@
 
 # OPC UA server C wrapper
 $(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)
@@ -202,6 +209,9 @@ $(BUILD)/opcua_bridge.o: $(SRC)/engine/opcua_bridge.f90 | $(BUILD)
 
 $(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
 	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+
+$(GUI_OFFLINE_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(BUILD)/opcua_stub.o
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(BUILD)/opcua_stub.o $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 gui-debug: $(GUI_DEBUG_EXE)
 
@@ -215,7 +225,7 @@ $(GUI_ICON): scripts/generate_gui_icon.py
 	python scripts/generate_gui_icon.py $@
 
 clean:
-	@python scripts/clean.py "$(BUILD)" "$(EXE)" "thermotwin.exe" "$(GUI_EXE)" "$(GUI_DEBUG_EXE)"
+	@python scripts/clean.py "$(BUILD)" "$(EXE)" "thermotwin.exe" "$(GUI_EXE)" "$(GUI_DEBUG_EXE)" "thermotwin-gui-offline.exe"
 
 download-opcua:
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.c -o gui/open62541.c
