@@ -14,6 +14,8 @@ program test_site_performance
     call set_property_model(PROP_VARIABLE)
 
     hardware%case_name = "ISO_fixed_hardware"
+    hardware%inlet_pressure_loss = 0.0_dp
+    hardware%exhaust_pressure_loss = 0.0_dp
     site = hardware
     ref = evaluate_site(hardware, site)
     call expect_true("ISO baseline valid", ref%valid, failures)
@@ -21,6 +23,12 @@ program test_site_performance
         print *, trim(ref%status)
         error stop 1
     end if
+    call expect_near("ISO compressor intake flange pressure = 101325 Pa", &
+         ref%reference%cyc%P1_Pa, 101325.0_dp, 1.0e-3_dp, failures)
+    call expect_near("ISO turbine exhaust flange pressure = 101325 Pa", &
+         ref%reference%cyc%P4_Pa, 101325.0_dp, 1.0e-3_dp, failures)
+    call expect_near("ISO intake flange temperature = 288.15 K", &
+         ref%reference%cyc%T1_K, 288.15_dp, 1.0e-6_dp, failures)
     call expect_near("ISO reference/site net power equality", &
          ref%reference%cyc%net_power_MW, ref%installed%cyc%net_power_MW, 1.0e-9_dp, failures)
     call expect_near("ISO power multiplier unity", ref%power_correction_ref_per_site, 1.0_dp, 1.0e-10_dp, failures)
@@ -84,6 +92,20 @@ program test_site_performance
         candidate = evaluate_site(hardware, site)
         call expect_true("pressure sweep site valid", candidate%valid, failures)
     end do
+
+    block
+        type(InputCase) :: invalid_ref
+        invalid_ref = hardware
+        invalid_ref%inlet_pressure_loss = 0.01_dp
+        candidate = evaluate_site(invalid_ref, invalid_ref)
+        call expect_true("upstream atmospheric reference is not ISO flange", &
+             .not. candidate%valid, failures)
+        invalid_ref = hardware
+        invalid_ref%exhaust_pressure_loss = 0.02_dp
+        candidate = evaluate_site(invalid_ref, invalid_ref)
+        call expect_true("nonzero ISO exhaust backpressure rejected", &
+             .not. candidate%valid, failures)
+    end block
 
     site = hardware
     site%relative_humidity = 0.90_dp
