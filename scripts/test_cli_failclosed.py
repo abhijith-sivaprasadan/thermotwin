@@ -28,6 +28,7 @@ def check(exe: Path):
         invalid_out = root / "invalid-results.csv"
         scenario = ROOT / "cases/scenarios/load_step.scn"
         cases = [
+            ("no command", [], False),
             ("help", ["--help"], True),
             ("normal run", ["run", str(source), str(valid_out)], True),
             ("missing arguments", ["run"], False),
