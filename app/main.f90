@@ -264,7 +264,14 @@ contains
             do j = 1, size(v)
                 write(unit, '(",",ES16.8)', advance='no') v(j)
             end do
-            write(unit, '(",",I0,",",A)') merge(1,0,c%valid), trim(c%status)
+            ! Status strings may contain commas; write a properly quoted CSV field.
+            ! All internal status messages have no embedded quote marks.
+            if (index(c%status, achar(34)) /= 0) then
+                write(*, '(A)') "ERROR: unsupported quote in site model CSV status"
+                error stop 7
+            end if
+            write(unit, '(",",I0,",",A)') merge(1,0,c%valid), &
+                 achar(34)//trim(c%status)//achar(34)
         end do
         close(unit)
         write(*, '(A,I0,A,I0,A)') "Site comparison: ", nsite-nbad, &
