@@ -36,7 +36,7 @@ CXXFLAGS_DBG  := -O0 -g -std=c++17 -Wall -Wextra
 MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
-        csv_io sensitivity_driver off_design hrsg steam_cycle \
+        csv_io sensitivity_driver off_design site_performance hrsg steam_cycle \
         tag_bus h2_blend combustion_physics engine_state physics_fidelity exergy exergy_uq exergy_sobol thermo_limits data_reconciliation scientific_report market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics \
         dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
         anomaly_detector rl_dispatch fault_classifier forecast_engine \
@@ -99,6 +99,7 @@ $(BUILD)/diagnostics_solver.o:   $(BUILD)/cycle_solver.o $(BUILD)/degradation.o
 $(BUILD)/csv_io.o:               $(BUILD)/types.o $(BUILD)/utilities.o
 $(BUILD)/sensitivity_driver.o:   $(BUILD)/cycle_solver.o
 $(BUILD)/off_design.o:           $(BUILD)/cycle_solver.o $(BUILD)/ambient.o $(BUILD)/types.o
+$(BUILD)/site_performance.o:     $(BUILD)/off_design.o $(BUILD)/types.o $(BUILD)/precision_kinds.o
 $(BUILD)/hrsg.o:                 $(BUILD)/fluid_properties.o
 $(BUILD)/steam_cycle.o:          $(BUILD)/hrsg.o
 $(BUILD)/market_data.o:          $(BUILD)/engine_state.o

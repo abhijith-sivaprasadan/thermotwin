@@ -35,6 +35,20 @@ that these new workflows already exist.** New modules must preserve the frozen
 v2 beta, disclose unsupported humidity/fuel-composition corrections and pass
 independent CI gates before inclusion in application evidence.
 
+### Experimental ISO-to-site demonstration (under review)
+
+The [site performance v0.1 implementation guide](docs/SITE_PERFORMANCE_v0.1.md)
+documents the fixed-hardware full-load correction prototype. With the
+experimental branch built:
+
+```bash
+./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
+```
+
+This workflow uses entirely synthetic conditions and is **not** a validated
+engine map, test-pass-off method or commercial site guarantee. Humidity
+response and detailed fuel-composition effects are deliberately unsupported.
+
 ## Software release and citation
 
 ThermoTwin-F is **open research software** (MIT licensed). The published `v2.0.0-beta.1`
