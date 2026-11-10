@@ -3,6 +3,7 @@ import copy
 import csv
 import json
 import math
+import random
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -90,6 +91,53 @@ class PassoffPhysicsTests(unittest.TestCase):
         self.assertAlmostEqual(u["corrected_power_MW"],
                                1.05*math.sqrt(0.0104), places=10)
         self.assertLess(u["power_heat_rate_covariance_MW_times_kJ_kWh"], 0)
+
+    def test_first_order_jacobian_agrees_with_central_differences(self):
+        # Instrument sensitivities are derivatives of exact equations; no
+        # invented gas-turbine performance observations enter this test.
+        data = analytic_record()["measured"]
+        result = compute_corrected(data, 1.05, 0.98, ZERO, ZERO)
+        u = result["conditional_instrument_standard_uncertainty"]
+        for i, name in enumerate(ORDER):
+            value = data[name]
+            step = abs(value) * 1e-5
+            plus, minus = dict(data), dict(data)
+            plus[name], minus[name] = value + step, value - step
+            yp = compute_corrected(plus, 1.05, 0.98, ZERO, ZERO)
+            ym = compute_corrected(minus, 1.05, 0.98, ZERO, ZERO)
+            for key, expected in (
+                ("corrected_reference_power_MW", u["jacobian_power_MW"][i]),
+                ("corrected_reference_heat_rate_kJ_kWh", u["jacobian_heat_rate_kJ_kWh"][i]),
+            ):
+                numerical = (yp[key] - ym[key]) / (2 * step)
+                self.assertAlmostEqual(numerical, expected,
+                                       delta=max(1e-10, abs(expected)*1e-7))
+
+    def test_first_order_uq_matches_small_noise_monte_carlo_identity(self):
+        # Seeded mathematical covariance calculation; these draws are NOT
+        # purported fuel meters, engine recordings, or scientific field data.
+        data = analytic_record()["measured"]
+        calculated = compute_corrected(data, 1.05, 0.98,
+                                       covariance()["precision"], covariance()["calibration"])
+        diag = [covariance()["precision"][i][i] +
+                covariance()["calibration"][i][i] for i in range(3)]
+        rng = random.Random(88116)
+        n = 5000
+        powers, heats = [], []
+        for _ in range(n):
+            sampled = {key: data[key] + math.sqrt(diag[i])*rng.gauss(0, 1)
+                       for i, key in enumerate(ORDER)}
+            result = compute_corrected(sampled, 1.05, 0.98, ZERO, ZERO)
+            powers.append(result["corrected_reference_power_MW"])
+            heats.append(result["corrected_reference_heat_rate_kJ_kWh"])
+        for samples, key in (
+            (powers, "corrected_power_MW"),
+            (heats, "corrected_heat_rate_kJ_kWh"),
+        ):
+            mean = sum(samples)/n
+            sample_std = math.sqrt(sum((z-mean)**2 for z in samples)/(n-1))
+            analytic_std = calculated["conditional_instrument_standard_uncertainty"][key]
+            self.assertLess(abs(sample_std/analytic_std - 1.0), 0.08)
 
     def test_covariance_correlated_terms_propagate(self):
         p = covariance()["precision"]
