@@ -165,7 +165,8 @@ class EvidenceDossierTests(unittest.TestCase):
 
     def test_rejects_fortran_site_ratio_inconsistency(self):
         path = self.weather / "lincoln_era5_site_model.csv"
-        row = next(csv.DictReader(path.open(newline="")))
+        with path.open(newline="", encoding="utf-8") as stream:
+            row = next(csv.DictReader(stream))
         row["power_derate_ratio"] = "1.4"
         one_csv(path, row)
         with self.assertRaisesRegex(ValueError, "site power"):
@@ -173,7 +174,8 @@ class EvidenceDossierTests(unittest.TestCase):
 
     def test_rejects_wrong_model_boundary_temperature(self):
         path = self.weather / "lincoln_era5_model_boundary_case.csv"
-        row = next(csv.DictReader(path.open(newline="")))
+        with path.open(newline="", encoding="utf-8") as stream:
+            row = next(csv.DictReader(stream))
         row["ambient_T_K"] = "299"
         one_csv(path, row)
         with self.assertRaisesRegex(ValueError, "weather/model T"):
