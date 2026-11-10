@@ -36,7 +36,7 @@ program thermotwin
     nargs = command_argument_count()
     if (nargs < 1) then
         call print_usage()
-        stop
+        error stop 2
     end if
 
     call read_argument(1, mode)
