@@ -359,6 +359,9 @@ def run(argv=None):
     print(f"UCI real observed records: {report['measured_observations']}; one turbine")
     print(f"Untouched {report['holdout']['rows']} records (2014-2015): TEY RMSE={report['holdout']['rmse_source_TEY_units']:.4f} source units; MAE={report['holdout']['mae_source_TEY_units']:.4f}")
     print(f"Within-year demeaned training lag-1: {train_lag1:.4f}; no independent fault labels")
+    print(f"Training-mean baseline on untouched holdout: RMSE={report['holdout']['training_mean_baseline_rmse_source_TEY_units']:.4f} source units")
+    print(f"Heldout outside any training feature range: {support['heldout_fraction_outside_any_feature']:.4%} (marginal, not a fault)")
+    print(f"Heldout block-64 descriptive RMSE resampling range: {resampling['sensitivity']['64']['rmse_central_95pct_resampling_range']} source units (NOT calibrated CI)")
     print(f"Recorded source-backed analysis at {a.output}")
 
 
