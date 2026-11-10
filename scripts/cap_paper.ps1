@@ -1,5 +1,6 @@
 # Cycle the theme with T a given number of times, then capture the flagship.
 param([int]$Presses = 3, [string]$OutFile = "fa_paper.png", [string]$OutDir = (Join-Path $PSScriptRoot '..\build\gui-captures'))
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Drawing;
 public class WinCapT {
