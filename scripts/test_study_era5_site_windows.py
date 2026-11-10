@@ -20,7 +20,7 @@ def make_fixture(start: str, count=3) -> dict:
             "time": [z[:16] for z in times(start, count)],
             "temperature_2m": [12.0 + 0.5*k for k in range(count)],
             "surface_pressure": [1013.0 + 0.1*k for k in range(count)],
-            "relative_humidity_2m": [60.0 + k for k in range(count)],
+            "relative_humidity_2m": [60.0 + (k % 10) for k in range(count)],
         },
     }
 
