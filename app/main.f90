@@ -27,9 +27,10 @@ program thermotwin
                                   default_weights, diagnose
     use utilities, only: seed_rng, itoa
     use scenario_runner, only: Scenario, scenario_load, scenario_run
+    use site_performance, only: SiteCorrection, evaluate_site
     implicit none
 
-    character(len=256) :: mode, infile, outfile
+    character(len=256) :: mode, infile, outfile, sitefile
     integer :: nargs
 
     nargs = command_argument_count()
@@ -52,6 +53,21 @@ program thermotwin
             outfile = "output/results_run.csv"
         end if
         call mode_run(trim(infile), trim(outfile))
+
+    case ("site")
+        if (nargs < 3) then
+            write(*, '(A)') "ERROR: site needs reference CSV and site-conditions CSV."
+            call print_usage()
+            error stop 2
+        end if
+        call get_command_argument(2, infile)
+        call get_command_argument(3, sitefile)
+        if (nargs >= 4) then
+            call get_command_argument(4, outfile)
+        else
+            outfile = "output/results_site.csv"
+        end if
+        call mode_site(trim(infile), trim(sitefile), trim(outfile))
 
     case ("degradation")
         call require_infile(nargs, infile)
@@ -99,6 +115,7 @@ contains
         write(*, '(A)') "---------------------------------------------------------------"
         write(*, '(A)') "Usage:"
         write(*, '(A)') "  thermotwin run         <input.csv> [output.csv]"
+        write(*, '(A)') "  thermotwin site <iso_reference.csv> <site_cases.csv> [output.csv]"
         write(*, '(A)') "  thermotwin degradation <baseline.csv>"
         write(*, '(A)') "  thermotwin transient   <baseline.csv>"
         write(*, '(A)') "  thermotwin uncertainty <baseline.csv>"
@@ -167,6 +184,73 @@ contains
         call write_results(outfile, results, n)
         call print_one_line_summary(results(1))
     end subroutine mode_run
+
+    !===================================================================
+    ! MODE: site -- fixed-hardware ISO-to-site performance corrections
+    !===================================================================
+    subroutine mode_site(reference_file, site_file, output_file)
+        character(len=*), intent(in) :: reference_file, site_file, output_file
+        type(InputCase), allocatable :: refs(:), sites(:)
+        type(SiteCorrection) :: c
+        real(dp) :: v(18)
+        integer :: nref, nsite, i, j, nbad, unit, ios
+        logical :: ok
+
+        call read_input_cases(reference_file, refs, nref, ok)
+        if (.not. ok) error stop 3
+        if (nref /= 1) then
+            write(*, '(A)') "ERROR: reference CSV must have exactly one machine row"
+            error stop 3
+        end if
+        call read_input_cases(site_file, sites, nsite, ok)
+        if (.not. ok) error stop 3
+
+        open(newunit=unit, file=output_file, status='replace', &
+             action='write', iostat=ios)
+        if (ios /= 0) then
+            write(*, '(A)') "ERROR: unable to write site comparison output"
+            error stop 4
+        end if
+        write(unit, '(A)') &
+          "case_name,site_ambient_T_K,site_ambient_P_Pa,site_inlet_loss_frac,"// &
+          "site_exhaust_loss_frac,site_fuel_LHV_J_kg,"// &
+          "reference_net_power_MW,site_net_power_MW,power_derate_ratio,"// &
+          "power_correction_ref_per_site,reference_heat_rate_kJ_kWh,"// &
+          "site_heat_rate_kJ_kWh,heat_rate_correction_ref_per_site,"// &
+          "reference_exhaust_flow_kg_s,site_exhaust_flow_kg_s,"// &
+          "exhaust_flow_correction_ref_per_site,reference_exhaust_T_K,"// &
+          "site_exhaust_T_K,exhaust_T_additive_ref_minus_site_K,valid,status"
+        nbad = 0
+        do i = 1, nsite
+            c = evaluate_site(refs(1), sites(i))
+            if (.not. c%valid) nbad = nbad + 1
+            v = [ sites(i)%ambient_T_K, sites(i)%ambient_P_Pa, &
+                  sites(i)%inlet_pressure_loss, sites(i)%exhaust_pressure_loss, &
+                  sites(i)%LHV_J_kg, c%reference%cyc%net_power_MW, &
+                  c%installed%cyc%net_power_MW, c%power_derate_ratio, &
+                  c%power_correction_ref_per_site, &
+                  c%reference%cyc%heat_rate_kJ_kWh, &
+                  c%installed%cyc%heat_rate_kJ_kWh, &
+                  c%heat_rate_correction_ref_per_site, &
+                  c%reference%cyc%mdot_gas_kg_s, &
+                  c%installed%cyc%mdot_gas_kg_s, &
+                  c%exhaust_flow_correction_ref_per_site, &
+                  c%reference%cyc%exhaust_temperature_K, &
+                  c%installed%cyc%exhaust_temperature_K, &
+                  c%exhaust_T_additive_ref_minus_site_K ]
+            write(unit, '(A)', advance='no') trim(sites(i)%case_name)
+            do j = 1, size(v)
+                write(unit, '(",",ES16.8)', advance='no') v(j)
+            end do
+            write(unit, '(",",I0,",",A)') merge(1,0,c%valid), trim(c%status)
+        end do
+        close(unit)
+        write(*, '(A,I0,A,I0,A)') "Site comparison: ", nsite-nbad, &
+              " accepted; ", nbad, " rejected."
+        write(*, '(A)') "Output: "//trim(output_file)
+        write(*, '(A)') "Educational dry-air model ratios only; no OEM validation."
+        if (nbad > 0) error stop 7
+    end subroutine mode_site
 
     !===================================================================
     ! MODE: degradation -- baseline + clean/mild/severe/washed presets
