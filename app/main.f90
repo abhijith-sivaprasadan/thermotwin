@@ -39,31 +39,35 @@ program thermotwin
         stop
     end if
 
-    call get_command_argument(1, mode)
+    call read_argument(1, mode)
 
     select case (trim(mode))
+    case ("--help", "-h", "help")
+        if (nargs /= 1) error stop 2
+        call print_usage()
+
     case ("run", "design")
-        if (nargs < 2) then
+        if (nargs < 2 .or. nargs > 3) then
             write(*, '(A)') "ERROR: 'run' needs an input CSV."; call print_usage(); error stop 2
         end if
-        call get_command_argument(2, infile)
+        call read_argument(2, infile)
         if (nargs >= 3) then
-            call get_command_argument(3, outfile)
+            call read_argument(3, outfile)
         else
             outfile = "output/results_run.csv"
         end if
         call mode_run(trim(infile), trim(outfile))
 
     case ("site")
-        if (nargs < 3) then
+        if (nargs < 3 .or. nargs > 4) then
             write(*, '(A)') "ERROR: site needs reference CSV and site-conditions CSV."
             call print_usage()
             error stop 2
         end if
-        call get_command_argument(2, infile)
-        call get_command_argument(3, sitefile)
+        call read_argument(2, infile)
+        call read_argument(3, sitefile)
         if (nargs >= 4) then
-            call get_command_argument(4, outfile)
+            call read_argument(4, outfile)
         else
             outfile = "output/results_site.csv"
         end if
@@ -86,6 +90,7 @@ program thermotwin
         call mode_diagnostics(trim(infile))
 
     case ("selftest")
+        if (nargs /= 1) error stop 2
         call mode_selftest()
 
     case ("scenario")
@@ -99,14 +104,26 @@ program thermotwin
 
 contains
 
+    ! Fail closed for empty, unavailable or silently truncated CLI arguments.
+    subroutine read_argument(number, value)
+        integer, intent(in) :: number
+        character(len=*), intent(out) :: value
+        integer :: status
+        call get_command_argument(number, value, status=status)
+        if (status /= 0 .or. len_trim(value) == 0) then
+            write(*, '(A,I0)') "ERROR: empty or overlong argument at position ", number
+            error stop 2
+        end if
+    end subroutine read_argument
+
     subroutine require_infile(nargs, infile)
         integer, intent(in) :: nargs
         character(len=*), intent(out) :: infile
-        if (nargs < 2) then
+        if (nargs /= 2) then
             write(*, '(A)') "ERROR: this mode needs a baseline CSV."
             call print_usage(); error stop 2
         end if
-        call get_command_argument(2, infile)
+        call read_argument(2, infile)
     end subroutine require_infile
 
     subroutine print_usage()
@@ -121,6 +138,7 @@ contains
         write(*, '(A)') "  thermotwin uncertainty <baseline.csv>"
         write(*, '(A)') "  thermotwin diagnostics <baseline.csv>"
         write(*, '(A)') "  thermotwin selftest"
+        write(*, '(A)') "  thermotwin --help"
         write(*, '(A)') "  thermotwin scenario run <file.scn> [--record out.csv]"
         write(*, '(A)') ""
     end subroutine print_usage
@@ -139,19 +157,19 @@ contains
             write(*, '(A)') "ERROR: usage: thermotwin scenario run <file.scn> [--record out.csv]"
             error stop 2
         end if
-        call get_command_argument(2, sub)
+        call read_argument(2, sub)
         if (trim(sub) /= "run") then
             write(*, '(A)') "ERROR: unknown scenario subcommand '"//trim(sub)//"'"
             error stop 2
         end if
-        call get_command_argument(3, scn_path)
+        call read_argument(3, scn_path)
 
         record_path = ""
         i = 4
         do while (i <= nargs)
-            call get_command_argument(i, arg)
-            if (trim(arg) == "--record" .and. i + 1 <= nargs) then
-                call get_command_argument(i + 1, record_path)
+            call read_argument(i, arg)
+            if (trim(arg) == "--record" .and. i + 1 <= nargs .and. len_trim(record_path) == 0) then
+                call read_argument(i + 1, record_path)
                 i = i + 2
             else
                 write(*, '(A)') "ERROR: unknown scenario option '"//trim(arg)//"'"
@@ -183,6 +201,10 @@ contains
         call run_cases(cases, results)
         call write_results(outfile, results, n)
         call print_one_line_summary(results(1))
+        if (any(.not. results%converged)) then
+            write(*, '(A)') "ERROR: one or more operating points failed physical sanity checks; inspect CSV status."
+            error stop 7
+        end if
     end subroutine mode_run
 
     !===================================================================
