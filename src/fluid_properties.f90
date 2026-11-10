@@ -3,9 +3,15 @@
 !>
 !> Two property models are provided behind one interface:
 !>   * CONSTANT  - fixed cp, gamma (Rev A default; matches hand calculations)
-!>   * VARIABLE  - approximate temperature-dependent gas properties using
-!>                 NASA seven-coefficient cp(T) polynomial terms and compact
-!>                 correlations for water/steam. NOT full NASA-9 or IAPWS-IF97.
+!>   * VARIABLE  - Revamp 7.0 P2 reference-style properties:
+!>                 NASA polynomial cp(T) for air / combustion products, and
+!>                 compact engineering-accuracy saturated-water/steam
+!>                 correlations (Antoine-equation saturation temperature,
+!>                 constant liquid/vapour cp, Watson-style power-law latent
+!>                 heat). These are NOT the full IAPWS-IF97 formulation --
+!>                 see the `if97_*` function headers below for the caveat
+!>                 (the `if97_` name prefix is retained only for interface
+!>                 stability / historical reasons, not as an accuracy claim).
 !>
 !> Switching `property_model` changes the whole simulation without editing any
 !> component code. The constant model is the default so that the verification
@@ -34,9 +40,9 @@ module fluid_properties
     real(dp), parameter :: R_STEAM_KJ_KG_K = 0.4615_dp
     real(dp), parameter :: HFG_100C_KJ_KG = 2256.9_dp
 
-    ! NASA seven-coefficient cp/R polynomial data (first five coefficients).
-    ! This is NOT a full NASA-9 formulation; fitted constant enthalpy/entropy
-    ! terms and two additional inverse-temperature terms are not implemented.
+    ! NASA 7-coefficient cp/R polynomials (first five coefficients) used as
+    ! the compact P2 property kernel.  They are the same polynomial basis used
+    ! by the NASA-9 form; enthalpy/entropy constants are not needed for cp(T).
     real(dp), parameter :: NASA_N2_LOW(5)  = [3.53100528_dp, -1.23660987e-4_dp, -5.02999433e-7_dp, &
                                                2.43530612e-9_dp, -1.40881235e-12_dp]
     real(dp), parameter :: NASA_N2_HIGH(5) = [2.95257626_dp,  1.39690040e-3_dp, -4.92631603e-7_dp, &
@@ -54,10 +60,36 @@ module fluid_properties
     real(dp), parameter :: NASA_H2O_HIGH(5)= [3.03399249_dp,  2.17691804e-3_dp, -1.64072518e-7_dp, &
                                               -9.70419870e-11_dp,  1.68200992e-14_dp]
     real(dp), parameter :: M_AIR_KG_MOL = 0.0289652_dp
-    ! Effective molecular mass for the diluted working gas seen by the turbine.
-    ! The dry products are lighter, but air dilution, cooling flow and the
-    ! single-equivalent-stage model are calibrated to the validated 30 MW frame.
-    real(dp), parameter :: M_GAS_KG_MOL = 0.03110_dp
+
+    ! Molar masses of the individual hot-gas species [kg/mol] (CODATA/IUPAC
+    ! atomic-weight values), and the molar composition fractions of the
+    ! lean, air-diluted combustion-product mixture used throughout this
+    ! module (cp_gas_at, h_gas_sensible_J_kg). Keeping a single named
+    ! fraction set and deriving the mixture molecular mass from it (rather
+    ! than hard-coding an independent number) guarantees the mixture cp,
+    ! the mixture molecular mass and the mixture gas constant are always
+    ! mutually consistent.
+    real(dp), parameter :: M_N2_KG_MOL  = 0.0280134_dp
+    real(dp), parameter :: M_O2_KG_MOL  = 0.0319988_dp
+    real(dp), parameter :: M_CO2_KG_MOL = 0.0440095_dp
+    real(dp), parameter :: M_H2O_KG_MOL = 0.0180153_dp
+
+    real(dp), parameter :: X_GAS_N2  = 0.735_dp
+    real(dp), parameter :: X_GAS_CO2 = 0.085_dp
+    real(dp), parameter :: X_GAS_H2O = 0.115_dp
+    real(dp), parameter :: X_GAS_O2  = 0.065_dp
+
+    ! Effective molecular mass of the diluted hot-gas working fluid, derived
+    ! directly from the composition fractions above (~28.48 g/mol). Prior to
+    ! this fix this constant was an independent, hard-coded 0.03110 kg/mol
+    ! (~31.10 g/mol) that did not match the composition used elsewhere in
+    ! this module -- an internal inconsistency. It is now self-consistent by
+    ! construction.
+    real(dp), parameter :: M_GAS_KG_MOL = X_GAS_N2*M_N2_KG_MOL + X_GAS_CO2*M_CO2_KG_MOL + &
+                                           X_GAS_H2O*M_H2O_KG_MOL + X_GAS_O2*M_O2_KG_MOL
+    ! Ideal-gas mass-specific R for this SAME fixed molar mixture.
+    ! R_GAS from constants applies only to the CONSTANT-property teaching model.
+    real(dp), parameter :: R_GAS_VARIABLE = R_UNIVERSAL / M_GAS_KG_MOL
 
     !> Module-level selector. Defaults to CONSTANT for reproducible verification.
     integer, save :: property_model = PROP_CONSTANT
@@ -104,10 +136,10 @@ contains
         real(dp) :: cp
         if (property_model == PROP_VARIABLE) then
             ! Lean natural-gas exhaust proxy: N2/CO2/H2O/O2 molar blend.
-            cp = (0.735_dp * nasa_cp_molar(T_K, NASA_N2_LOW,  NASA_N2_HIGH) + &
-                  0.085_dp * nasa_cp_molar(T_K, NASA_CO2_LOW, NASA_CO2_HIGH) + &
-                  0.115_dp * nasa_cp_molar(T_K, NASA_H2O_LOW, NASA_H2O_HIGH) + &
-                  0.065_dp * nasa_cp_molar(T_K, NASA_O2_LOW,  NASA_O2_HIGH)) / M_GAS_KG_MOL
+            cp = (X_GAS_N2  * nasa_cp_molar(T_K, NASA_N2_LOW,  NASA_N2_HIGH) + &
+                  X_GAS_CO2 * nasa_cp_molar(T_K, NASA_CO2_LOW, NASA_CO2_HIGH) + &
+                  X_GAS_H2O * nasa_cp_molar(T_K, NASA_H2O_LOW, NASA_H2O_HIGH) + &
+                  X_GAS_O2  * nasa_cp_molar(T_K, NASA_O2_LOW,  NASA_O2_HIGH)) / M_GAS_KG_MOL
         else
             cp = CP_GAS
         end if
@@ -118,7 +150,7 @@ contains
         real(dp) :: g, cp
         if (property_model == PROP_VARIABLE) then
             cp = cp_gas_at(T_K)
-            g  = cp / (cp - R_GAS)
+            g  = cp / (cp - R_GAS_VARIABLE)
         else
             g = GAMMA_GAS
         end if
@@ -157,10 +189,10 @@ contains
         real(dp), intent(in) :: T_K
         real(dp) :: h
         if (property_model == PROP_VARIABLE) then
-            h = (0.735_dp * nasa_h_molar(T_K, NASA_N2_LOW,  NASA_N2_HIGH) + &
-                 0.085_dp * nasa_h_molar(T_K, NASA_CO2_LOW, NASA_CO2_HIGH) + &
-                 0.115_dp * nasa_h_molar(T_K, NASA_H2O_LOW, NASA_H2O_HIGH) + &
-                 0.065_dp * nasa_h_molar(T_K, NASA_O2_LOW,  NASA_O2_HIGH)) / M_GAS_KG_MOL
+            h = (X_GAS_N2  * nasa_h_molar(T_K, NASA_N2_LOW,  NASA_N2_HIGH) + &
+                 X_GAS_CO2 * nasa_h_molar(T_K, NASA_CO2_LOW, NASA_CO2_HIGH) + &
+                 X_GAS_H2O * nasa_h_molar(T_K, NASA_H2O_LOW, NASA_H2O_HIGH) + &
+                 X_GAS_O2  * nasa_h_molar(T_K, NASA_O2_LOW,  NASA_O2_HIGH)) / M_GAS_KG_MOL
         else
             h = CP_GAS * T_K
         end if
@@ -204,10 +236,12 @@ contains
             0.25_dp*a(4)*T*T*T*T + 0.2_dp*a(5)*T*T*T*T*T)
     end function nasa_h_integral
 
-    !> Approximate saturation temperature [K] from pressure [bar].
-    !> Legacy if97_* naming is retained for API compatibility, but this is an
-    !> Antoine-type correlation, NOT the published IAPWS-IF97 equations.
-    !> Accuracy is assessed externally against CoolProp's IF97 backend.
+    !> Saturation temperature [K] from pressure [bar] via the classical
+    !> Antoine equation (NOT IAPWS-IF97 -- this is an engineering-accuracy
+    !> correlation, adequate for the 1-220 bar power-plant range targeted
+    !> here but not a reference-grade steam-table replacement). Antoine
+    !> coefficients are the standard water-vapour-pressure set; the
+    !> function is clamped below the critical point for numerical robustness.
     pure function if97_saturation_T_K(p_bar) result(Tsat)
         real(dp), intent(in) :: p_bar
         real(dp) :: Tsat
@@ -226,6 +260,8 @@ contains
         h = CP_LIQ_KJ_KG_K * T_C
     end function if97_h_liq_kJ_kg
 
+    !> Latent heat of vaporisation [kJ/kg] via a Watson-correlation-style
+    !> power law anchored at the 100 C reference value (NOT IAPWS-IF97).
     pure function if97_latent_kJ_kg(p_bar) result(hfg)
         real(dp), intent(in) :: p_bar
         real(dp) :: hfg, theta, theta_ref
