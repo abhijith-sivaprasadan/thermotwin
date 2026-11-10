@@ -1,6 +1,6 @@
 # DPI-aware capture of the flagship (F1 default) and detailed-overview (F1 toggle)
 # plus a couple of regression tabs. Run via powershell.exe (needs System.Drawing).
-param([string]$OutDir = "C:\Users\prasa\Downloads\tt_caps")
+param([string]$OutDir = (Join-Path $PSScriptRoot '..\build\gui-captures'))
 
 Add-Type @"
 using System;
