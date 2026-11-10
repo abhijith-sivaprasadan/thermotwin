@@ -21,12 +21,12 @@ The completed frozen release `v2.0.0-beta.1` (commit `ee0461684dbad75c5ab28fe9a6
 
 | Lincoln posting activity | Baseline asset | Deficit | Planned verification | Issue |
 |---|---|---|---|---|
-| Predict installed site power, heat rate, exhaust flow | `off_design`, `cycle_solver`, `ambient` | No explicit fixed-reference correction interface; humidity is inert | Reference identity, controlled one-factor sweeps, boundary tests, model-relative factors | [#13](../issues/13) |
-| Assess production pass-off/development/site tests | `sensor_model`, `uncertainty_analysis` | No raw-test QC, model correction/guarantee decision | Unit tests, bad-channel rejection, uncertainty budget and synthetic test report | [#14](../issues/14) |
-| Thermodynamic calculations/models & R&D testing | `InputCase`, `CycleResult`, existing numerical tests | Unverified applicability and simplified steam/fuel models | Explicit limitations, numerical reference checks and traceability | [#12](../issues/12) |
-| Large datasets / statistical investigations | `anomaly_detector`, `fleet_dispatch` | Grid-dispatch fleet ≠ production-engine population | Synthetic 100+ engines, stability controls, drift/outlier metrics | [#15](../issues/15) |
-| Develop and automate tools | Make, CLI, scripts, CI on three OSs | No end-to-end correction pipeline | Single-command examples, fixture schemas, gates in CI | [#16](../issues/16) |
-| Communicate to Sales/Manufacturing/R&D | Existing report generator and README | No bid-style site sheet, pass-off memo or diagnostic summary | Reproducible memo and plots with assumptions and decision uncertainty | [#16](../issues/16) |
+| Predict installed site power, heat rate, exhaust flow | `off_design`, `cycle_solver`, `ambient` | No explicit fixed-reference correction interface; humidity is inert | Reference identity, controlled one-factor sweeps, boundary tests, model-relative factors | [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13) |
+| Assess production pass-off/development/site tests | `sensor_model`, `uncertainty_analysis` | No raw-test QC, model correction/guarantee decision | Unit tests, bad-channel rejection, uncertainty budget and synthetic test report | [#14](https://github.com/abhijith-sivaprasadan/thermotwin/issues/14) |
+| Thermodynamic calculations/models & R&D testing | `InputCase`, `CycleResult`, existing numerical tests | Unverified applicability and simplified steam/fuel models | Explicit limitations, numerical reference checks and traceability | [#12](https://github.com/abhijith-sivaprasadan/thermotwin/issues/12) |
+| Large datasets / statistical investigations | `anomaly_detector`, `fleet_dispatch` | Grid-dispatch fleet ≠ production-engine population | Synthetic 100+ engines, stability controls, drift/outlier metrics | [#15](https://github.com/abhijith-sivaprasadan/thermotwin/issues/15) |
+| Develop and automate tools | Make, CLI, scripts, CI on three OSs | No end-to-end correction pipeline | Single-command examples, fixture schemas, gates in CI | [#16](https://github.com/abhijith-sivaprasadan/thermotwin/issues/16) |
+| Communicate to Sales/Manufacturing/R&D | Existing report generator and README | No bid-style site sheet, pass-off memo or diagnostic summary | Reproducible memo and plots with assumptions and decision uncertainty | [#16](https://github.com/abhijith-sivaprasadan/thermotwin/issues/16) |
 
 ## 2. Scientific, standard and evidence boundary
 
