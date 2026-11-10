@@ -122,6 +122,32 @@ class WeatherBoundaryTests(unittest.TestCase):
             self.assertFalse(manifest["observed_engine_measurement"])
             self.assertFalse(manifest["flange_condition_measured"])
 
+    def test_dry_air_approximation_keeps_real_weather_rh_in_manifest(self):
+        with TemporaryDirectory() as temp:
+            tmp = Path(temp)
+            data = archive_fixture()
+            data["hourly"]["relative_humidity_2m"][0] = 73.0
+            snapshot = tmp / "weather_test_only.json"
+            snapshot.write_text(json.dumps(data), encoding="utf-8")
+            out = tmp / "boundary.csv"
+            main([
+                "--source", "archive", "--model", "era5",
+                "--latitude", "53.23", "--longitude", "-0.54",
+                "--valid-time", "2025-10-01T12:00Z",
+                "--response-json", str(snapshot),
+                "--reference-case", "cases/design_point.csv",
+                "--dry-air-approximation", "--output", str(out),
+            ])
+            model_rows = list(csv.DictReader(out.with_name("boundary_case.csv").open()))
+            manifest = json.loads(out.with_suffix(".manifest.json").read_text())
+            boundary = list(csv.DictReader(out.open()))[0]
+            self.assertEqual(len(model_rows), 1)
+            self.assertEqual(float(model_rows[0]["relative_humidity"]), 0.60)
+            self.assertEqual(float(boundary["relative_humidity_fraction"]), 0.73)
+            self.assertEqual(manifest["actual_weather_relative_humidity_fraction"], 0.73)
+            self.assertFalse(manifest["humidity_correction_performed"])
+            self.assertTrue(manifest["hardware_calibration_not_verified_by_weather_data"])
+
 
 if __name__ == "__main__":
     unittest.main()
