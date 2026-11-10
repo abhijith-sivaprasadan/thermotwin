@@ -31,7 +31,10 @@ def main() -> None:
         generated = work / "regenerated.csv"
         subprocess.run([sys.executable, str(ROOT / "scripts/generate_site_cases.py"),
                         "--output", str(generated)], cwd=ROOT, check=True)
-        if generated.read_bytes() != SWEEP.read_bytes():
+        # Git can check out text files with CRLF on Windows. Compare logical
+        # CSV content rather than platform-specific newline bytes.
+        if (generated.read_text(encoding="utf-8").splitlines() !=
+                SWEEP.read_text(encoding="utf-8").splitlines()):
             raise AssertionError("checked-in synthetic site fixture is not reproducible")
 
         result = work / "results.csv"
