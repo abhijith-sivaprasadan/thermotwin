@@ -17,37 +17,37 @@ A gas-turbine site performance calculation needs boundary conditions. A real geo
 
 Historical ERA5 source near the city of Lincoln, England (for a historical illustrative **location**, not a Siemens Energy facility or a specific turbine):
 
-\`\`\`sh
+```sh
 python scripts/open_meteo_boundary.py \
   --source archive --model era5 \
   --latitude 53.23 --longitude -0.54 \
   --valid-time 2025-10-01T12:00:00Z \
   --output build/weather/lincoln_era5_boundary.csv \
   --snapshot build/weather/lincoln_era5_raw.json
-\`\`\`
+```
 
 Current model-estimated weather at user-supplied coordinates (do not call it live sensor telemetry):
 
-\`\`\`sh
+```sh
 python scripts/open_meteo_boundary.py \
   --source forecast-current --model best_match \
   --latitude 53.23 --longitude -0.54 \
   --output build/weather/lincoln_forecast_current.csv \
   --snapshot build/weather/lincoln_forecast_raw.json
-\`\`\`
+```
 
 Replay a **previously collected** API response with no network call:
 
-\`\`\`sh
+```sh
 python scripts/open_meteo_boundary.py \
   --source archive --model era5 \
   --latitude 53.23 --longitude -0.54 \
   --valid-time 2025-10-01T12:00:00Z \
   --response-json build/weather/lincoln_era5_raw.json \
   --output build/weather/replayed_boundary.csv
-\`\`\`
+```
 
-The importer can optionally copy a separately documented existing 18-field engine model deck into a compatible case file (\`--reference-case path.csv\`), changing only atmospheric T/P/RH. This does **not** establish the validity of the hardware deck. A complete fixed-reference off-design power/heat-rate correction is tracked separately under [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13). **Do not use the generic simple-cycle \`run\` results at fixed air flow and pressure ratio as a substitute for site-performance prediction.**
+The importer can optionally copy a separately documented existing 18-field engine model deck into a compatible case file (`--reference-case path.csv`), changing only atmospheric T/P/RH. This does **not** establish the validity of the hardware deck. A complete fixed-reference off-design power/heat-rate correction is tracked separately under [#13](https://github.com/abhijith-sivaprasadan/thermotwin/issues/13). **Do not use the generic simple-cycle `run` results at fixed air flow and pressure ratio as a substitute for site-performance prediction.**
 
 ## Data and fail-closed constraints
 
@@ -67,10 +67,14 @@ p_{\rm surface,Pa}=100\,p_{\rm surface,hPa},\qquad
 
 These conversions are dimensional identities, not a site-performance correction. The current compressor inlet model further applies a separate assumed or measured fractional inlet pressure loss as \(p_1=p_{\rm ambient}(1-\Delta p_{\rm inlet,frac})\); exhaust backpressure requires its own actual boundary data. The inlet loss should not be inferred from weather alone.
 
+## Verified external ingestion evidence (10 November 2026)
+
+GitHub CI [run 42775612320](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/42775612320), job **Real ERA5 weather boundary integration**, successfully fetched the 2025-10-01 12:00 UTC ERA5 hour for the Lincoln-area sample point, producing **T = 287.250 K (14.10 °C)** and **surface pressure = 102,390 Pa**. The raw JSON, metadata manifest and boundary CSV were uploaded as [real-era5-boundary-and-source artifact](https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/42775612320/artifacts/13743358194); the job asserted the exact raw response SHA-256 equals the manifest digest. These are genuine ERA5 reanalysis outputs, **not physical turbine readings, not Siemens site measurements and not an OEM-corrected power estimate**.
+
 ## Verification
 
-\`\`\`sh
+```sh
 python -m unittest scripts.test_open_meteo_boundary -v
-\`\`\`
+```
 
 The tests construct **mathematical/schema fixtures only** and are not presented as real weather or turbine measurements. The CI integration test uses a genuine Open-Meteo API response and retains the original response file; the API connection and successful execution must be verified from the specific workflow run before claiming real ingestion works.
