@@ -79,8 +79,11 @@ contains
     !> @param[in]  load_frac   requested net power / current capacity (0..1)
     !> @param[in]  ramp_pct_s  dispatch slew rate [%/s], drives transient surge excursion
     !> @param[out] od          solved operating point
-    subroutine solve_off_design(base, load_frac, ramp_pct_s, od)
+    subroutine solve_off_design(base, load_frac, ramp_pct_s, od, hardware_ref)
         type(InputCase), intent(in) :: base
+        ! Optional fixed hardware reference prevents site-condition re-fitting.
+        ! Omitted for backwards compatibility with existing dispatch studies.
+        type(InputCase), intent(in), optional :: hardware_ref
         real(dp), intent(in) :: load_frac, ramp_pct_s
         type(OffDesignPoint), intent(out) :: od
 
@@ -92,7 +95,7 @@ contains
         integer, parameter :: MAX_BISECT = 24
         real(dp), parameter :: P_TOL_MW = 0.02_dp
 
-        call calibrate(base, K_t, PR_d_iso, W_phys_max)
+        call calibrate(base, K_t, PR_d_iso, W_phys_max, hardware_ref)
 
         ! Capacity at the current ambient and TIT setpoint: IGVs full open.
         call eval_point(base, K_t, PR_d_iso, W_phys_max, 1.0_dp, base%T_turbine_inlet_K, od)
@@ -143,29 +146,33 @@ contains
     end subroutine solve_off_design
 
     !> Calibrate the choked-turbine constant and the ambient flow correction.
-    subroutine calibrate(base, K_t, PR_d_iso, W_phys_max)
+    subroutine calibrate(base, K_t, PR_d_iso, W_phys_max, hardware_ref)
         type(InputCase), intent(in) :: base
+        type(InputCase), intent(in), optional :: hardware_ref
         real(dp), intent(out) :: K_t, PR_d_iso, W_phys_max
-        type(InputCase) :: ic
+        type(InputCase) :: ic, hardware
         type(CycleResult) :: res
         real(dp) :: T1, P1, T1_iso, P1_iso
 
         ! Hardware reference: ISO day, design firing temperature.
-        ic = base
+        ! Site losses/ambient values must not alter the turbine-flow constant.
+        hardware = base
+        if (present(hardware_ref)) hardware = hardware_ref
+        ic = hardware
         ic%ambient_T_K = ISO_T_K
         ic%ambient_P_Pa = ISO_P_Pa
         ic%T_turbine_inlet_K = DESIGN_TIT_K
         res = solve_cycle(ic)
         K_t = ic%mdot_air_kg_s * (1.0_dp + res%fuel_air_ratio) * &
               sqrt(DESIGN_TIT_K) / res%P3_Pa
-        PR_d_iso = base%pressure_ratio
+        PR_d_iso = hardware%pressure_ratio
         T1_iso = res%T1_K
         P1_iso = res%P1_Pa
 
         ! Constant corrected flow at fixed speed/IGV: physical flow scales
         ! with inlet delta/sqrt(theta) relative to the ISO design inlet.
         call inlet_state(base, T1, P1)
-        W_phys_max = base%mdot_air_kg_s * (P1 / P1_iso) * sqrt(T1_iso / T1)
+        W_phys_max = hardware%mdot_air_kg_s * (P1 / P1_iso) * sqrt(T1_iso / T1)
     end subroutine calibrate
 
     !> Evaluate one (flow fraction, TIT) point on the running line.
