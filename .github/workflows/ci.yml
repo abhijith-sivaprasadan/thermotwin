@@ -133,6 +133,8 @@ jobs:
         run: |
           'C:\msys64\ucrt64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
           'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Compile explicit offline GUI without network or OPC UA vendor sources
+        run: make -j4 gui-offline
       - name: Download pinned optional OPC UA implementation
         run: make download-opcua
       - name: Compile GUI
