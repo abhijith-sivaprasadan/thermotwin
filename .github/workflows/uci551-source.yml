@@ -12,6 +12,8 @@ on:
     paths:
       - 'scripts/fetch_uci_gt551.py'
       - 'scripts/test_fetch_uci_gt551.py'
+      - 'scripts/analyze_uci_gt551.py'
+      - 'scripts/test_analyze_uci_gt551.py'
       - '.github/workflows/uci551-source.yml'
   workflow_dispatch:
 
