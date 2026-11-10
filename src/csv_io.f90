@@ -13,6 +13,7 @@
 !>   auxiliary_load_fraction, degradation_mode
 module csv_io
     use precision_kinds, only: dp
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use types, only: InputCase, CycleResult, NAME_LEN, TAG_LEN
     implicit none
     private
@@ -20,6 +21,14 @@ module csv_io
     public :: N_INPUT_COLUMNS
 
     integer, parameter :: N_INPUT_COLUMNS = 18
+    ! Header is the schema contract. A swapped column would otherwise silently
+    ! assign physical values to the wrong fields and corrupt all predictions.
+    character(len=*), parameter :: INPUT_HEADER = &
+        "case_name,ambient_T_K,ambient_P_Pa,relative_humidity,inlet_pressure_loss,"// &
+        "mdot_air_kg_s,pressure_ratio,eta_compressor,T_turbine_inlet_K,"// &
+        "eta_combustor,combustor_pressure_loss,LHV_J_kg,eta_turbine,"// &
+        "exhaust_pressure_loss,eta_mechanical,eta_generator,"// &
+        "auxiliary_load_fraction,degradation_mode"
     integer, parameter :: MAX_LINE = 4096
     integer, parameter :: MAX_FIELDS = 64
 
@@ -60,7 +69,13 @@ contains
                 if (ios /= 0) exit
                 if (is_blank_or_comment(line)) cycle
                 if (.not. header_seen) then
-                    header_seen = .true.   ! consume the header line
+                    header_seen = .true.
+                    if (trim(adjustl(line)) /= INPUT_HEADER) then
+                        write(*, '(A)') "ERROR: CSV header does not match required input schema."
+                        write(*, '(A)') "       Expected: "//INPUT_HEADER
+                        close(unit)
+                        return
+                    end if
                     cycle
                 end if
                 n_rows = n_rows + 1
@@ -108,9 +123,14 @@ contains
         integer :: nf
 
         call split_csv(line, fields, nf)
-        if (nf < N_INPUT_COLUMNS) then
-            write(*, '(A,I0,A,I0)') "WARNING: row has ", nf, &
-                " fields; expected ", N_INPUT_COLUMNS
+        if (nf /= N_INPUT_COLUMNS) then
+            write(*, '(A,I0,A,I0)') "ERROR: row has ", nf, &
+                " columns; required exactly ", N_INPUT_COLUMNS
+            error stop 1
+        end if
+        if (len_trim(fields(1)) == 0 .or. len_trim(fields(18)) == 0) then
+            write(*, '(A)') "ERROR: case_name and degradation_mode cannot be blank"
+            error stop 1
         end if
 
         ic%case_name              = adjustl_name(get_field(fields, nf, 1))
@@ -227,7 +247,7 @@ contains
         end if
     end function get_field
 
-    !> Convert a string to real; returns 0 on blank, stops on garbage.
+    !> Convert a numeric CSV field; fail closed on missing/non-finite data.
     function to_real(s) result(x)
         character(len=*), intent(in) :: s
         real(dp) :: x
@@ -235,12 +255,16 @@ contains
         character(len=:), allocatable :: t
         t = trim(adjustl(s))
         if (len(t) == 0) then
-            x = 0.0_dp
-            return
+            write(*, '(A)') "ERROR: missing required numeric input"
+            error stop 1
         end if
         read(t, *, iostat=ios) x
         if (ios /= 0) then
-            write(*, '(A)') "FATAL: could not parse number from '"//t//"'"
+            write(*, '(A)') "ERROR: could not parse number from '"//t//"'"
+            error stop 1
+        end if
+        if (.not. ieee_is_finite(x)) then
+            write(*, '(A)') "ERROR: non-finite numeric input '"//t//"'"
             error stop 1
         end if
     end function to_real
