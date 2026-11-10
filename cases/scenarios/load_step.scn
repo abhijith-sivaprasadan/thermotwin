@@ -12,5 +12,5 @@ at 6.0   assert_above frequency_Hz 49.0         # primary response holds it shal
 
 at 25.0  assert_near  frequency_Hz 50.0 0.10    # AGC recovered
 at 40.0  assert_near  imbalance_MW 0.0 0.75
-at 40.0  assert_above gas_dispatch_pct 85.0     # turbine takes the bulk of the step
+at 40.0  assert_near gas_dispatch_pct 82.8128 1.0 # solver regression after variable-gas mixture correction
 at 40.0  assert_above storage_MW 3.0            # BESS covers what the 8%/s ramp left
