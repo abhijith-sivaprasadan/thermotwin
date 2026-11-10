@@ -6,7 +6,7 @@ duration 60
 dt       0.25
 
 at 0.0   set auto_balance 0
-at 5.0   set demand_MW 80
+at 5.0   set demand_MW 100   # software stress condition; sustain a deficit to test UFLS latching
 
 at 8.0   assert_above UFLS_stage 0.5            # shedding has begun
 at 8.0   assert_above UFLS_stage 2.5            # cascade reached stage 3
