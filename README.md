@@ -25,32 +25,25 @@ The whole project is built around a single shared data model — one `InputCase`
 KPI) flows out — so the advanced modules compose coherently instead of being
 independent scripts.
 
-## Performance-engineering development work package (November 2026)
+## Performance-engineering research workflows (November 2026)
 
-The [Lincoln performance engineering master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md)
-tracks repository hygiene, ISO-to-site prediction, synthetic production pass-off
-correction/uncertainty, and synthetic multi-engine trend analysis against a
-published Performance Engineer role. The fixed-reference ISO-to-site
-**v0.1 prototype is implemented**; production pass-off correction, uncertainty
-reporting and multi-engine population analysis are **planned, not yet implemented**.
-All work preserves the frozen v2 beta and explicitly discloses unsupported
-humidity and fuel-composition corrections.
+The [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md) and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
 
-### Experimental ISO-to-site demonstration (implemented v0.1)
+- **Site-performance prediction (implemented, educational):** a fixed-hardware full-load Fortran off-design calculation with a corrected ISO compressor-inlet/exhaust-flange reference, power/heat-rate/exhaust correction factors, documented assumptions and invalid-input rejection. See [site methodology](docs/SITE_PERFORMANCE_v0.1.md) and [ISO flange fix #27](https://github.com/abhijith-sivaprasadan/thermotwin/pull/27).
+- **Actual atmospheric inputs (implemented):** live Open-Meteo forecast / historical ERA5 ingestion records original response, model, UTC time, coordinates, unit conversions and SHA-256. Real weather-model *reanalysis* is not measured turbine telemetry; humidity effects remain unsupported. See [weather evidence](docs/REAL_WEATHER_BOUNDARY.md).
+- **Real turbine operating-data analysis (implemented):** UCI #551 original CC BY 4.0 dataset, **36,733 measured records from one turbine**, physical inlet-flow/temperature covariates, 2011–2013 fitting and untouched 2014–2015 evaluation. It is not a production-engine fleet or validated engine test. See [UCI equations and results](docs/UCI551_REAL_OPERATIONS.md).
+- **Pass-off correction mathematics (implemented method, not an industrial pass-off):** measured fuel-flow/LHV/power heat-rate equations and full precision/calibration covariance propagation with analytical Jacobian. Actual traceable test data, OEM calibration and guarantee terms are not provided; the method cannot issue an industrial acceptance verdict. See [measurement-method specification](docs/PASSOFF_CORRECTION_METHOD.md).
 
-The [site performance v0.1 implementation guide](docs/SITE_PERFORMANCE_v0.1.md)
-documents the fixed-hardware full-load correction prototype. For a
-requirement-by-requirement account of evidence and limitations, see the
-[Siemens Energy Lincoln engineering evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md).
-Build with `make`, then:
+To reproduce the controlled **numerical verification** cases for the ISO-flange reference (not empirical engine measurements):
 
 ```bash
-./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
+make all tests
+python scripts/generate_site_cases.py --output cases/site_sweep.csv
+./thermotwin site cases/site_iso_flange_reference.csv cases/site_sweep.csv output/results_site.csv
+python scripts/test_site_pipeline.py --executable ./thermotwin
 ```
 
-This workflow uses entirely synthetic conditions and is **not** a validated
-engine map, test-pass-off method or commercial site guarantee. Humidity
-response and detailed fuel-composition effects are deliberately unsupported.
+For external-data commands and exact output provenance use the linked guides. **None of the models is OEM-certified, ISO 2314 / ASME PTC 22 compliant, or validated for Siemens Energy SGT guarantees.**
 
 ## Software release and citation
 
