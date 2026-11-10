@@ -88,7 +88,7 @@ See [equations, results and limitations](UCI551_REAL_OPERATIONS.md); immutable o
 
 ## 4. Pass-off method — what is and is not supported
 
-A separate correction and instrument-uncertainty workflow is undergoing review in [PR #28](https://github.com/abhijith-sivaprasadan/thermotwin/pull/28). It uses model-derived \`C_P,C_HR\` and actual measured fuel-flow/LHV/power inputs, with the dimensionally consistent heat-rate equation
+A separate correction and instrument-uncertainty method is implemented and CI-verified in merged [PR #28](https://github.com/abhijith-sivaprasadan/thermotwin/pull/28). It uses model-derived \`C_P,C_HR\` and actual measured fuel-flow/LHV/power inputs, with the dimensionally consistent heat-rate equation
 
 \[
 HR_s = \frac{3600\,\dot m_f LHV}{10^6 P_s}.
@@ -109,7 +109,7 @@ For conditional **instrument-only** uncertainty, it propagates supplied precisio
 
 ## 6. Application language (evidence-based)
 
-Suitable project language for CV/cover letter **after confirming the referenced PRs/CI results**:
+Suitable project language for CV/cover letter **after confirming the referenced CI results**:
 
 > Extended an open-source Fortran 2008 gas-turbine simulator with a fixed-reference full-load site-correction method and explicit intake/exhaust reference conditions; automated physically sourced ERA5 weather boundary ingestion and traceable correction-factor checks. Independently analyzed 36,733 real turbine operating records using dimensionless corrected-flow/temperature covariates and chronological held-out evaluation. Implemented analytical measurement-uncertainty method with covariance propagation; no OEM or field-test validation claimed.
 
