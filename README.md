@@ -39,7 +39,10 @@ humidity and fuel-composition corrections.
 ### Experimental ISO-to-site demonstration (implemented v0.1)
 
 The [site performance v0.1 implementation guide](docs/SITE_PERFORMANCE_v0.1.md)
-documents the fixed-hardware full-load correction prototype. Build with `make`, then:
+documents the fixed-hardware full-load correction prototype. For a
+requirement-by-requirement account of evidence and limitations, see the
+[Siemens Energy Lincoln engineering evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md).
+Build with `make`, then:
 
 ```bash
 ./thermotwin site cases/design_point.csv cases/site_sweep.csv output/results_site.csv
