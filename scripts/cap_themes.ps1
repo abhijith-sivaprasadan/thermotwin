@@ -1,6 +1,6 @@
 # DPI-aware capture of the new themes by posting the T key to cycle.
 # Order from launch (Blueprint): T->ClassicDK, T->ClassicLT, T->Paper, T->Aurora, T->Glass, T->Hicon
-param([string]$OutDir = "C:\Users\prasa\Downloads\tt_caps")
+param([string]$OutDir = (Join-Path $PSScriptRoot '..\build\gui-captures'))
 
 Add-Type @"
 using System;
