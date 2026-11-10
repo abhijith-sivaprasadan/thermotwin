@@ -22,7 +22,8 @@ class Prerequisites(unittest.TestCase):
 
     def test_complete_metadata_only_reaches_readiness_not_model_validation(self):
         a=gate(REQUIRED_MEASURED_FIELDS,{x:True for x in REQUIRED_METADATA})
-        self.assertTrue(a["experimentally_traceable_validation_ready"])
+        self.assertTrue(a["required_document_attestations_declared"])
+        self.assertFalse(a["experimentally_traceable_validation_ready"])
         self.assertFalse(a["engine_accuracy_verified"])
         self.assertFalse(a["measured_heat_rate_verified"])
         self.assertFalse(a["OEM_or_contractual_passoff_established"])
