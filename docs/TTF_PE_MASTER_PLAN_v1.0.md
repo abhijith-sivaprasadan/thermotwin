@@ -161,4 +161,6 @@ Figures should be generated from data in the checked CI run; avoid committing un
 
 - Repository baseline inspected 2026-11-10; main initially `d7cc0a3`.
 - Historical numerical issue #8 resolved by CI-verified PR #11 (merged 2026-11-10) without modifying the DOI tag.
-- Implementation of the site, pass-off and production-population workflows remains **not started** at the date of this plan. Their definitions of done are the acceptance gates above, not merely creation of source files.
+- PR #18 (merged 2026-11-10) added fail-closed CSV input validation and fixed stale documentation references, with 10/10 CI jobs passing.
+- PR #20 (merged 2026-11-10, commit `8de141bb3b09d8e7e725ccbf9990df1f2eaa35ae`) implemented **site correction v0.1**: fixed hardware calibration, full-load reference-to-site ratios, 26 deterministic synthetic cases, CLI and out-of-envelope / unsupported-humidity rejection tests; 10/10 CI jobs passed. See [site performance guide](SITE_PERFORMANCE_v0.1.md). This does not close the full site-validation scope of issue #13.
+- Pass-off correction / uncertainty (#14), statistical production-population analysis (#15), and integrated application-facing report (#16) remain **not implemented**. The full repository validity inventory (#12) also remains open. Their definitions of done are the acceptance gates above, not merely the creation of source files.
