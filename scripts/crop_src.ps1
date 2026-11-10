@@ -18,7 +18,7 @@ $g = [System.Drawing.Graphics]::FromImage($dst)
 $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
 $g.DrawImage($crop, 0, 0, $ow, $oh)
 $g.Dispose()
-$outpath = Join-Path "C:\Users\prasa\Downloads\tt_caps" $Out
+$outpath = Join-Path (Join-Path $PSScriptRoot '..\build\gui-captures') $Out
 $dst.Save($outpath, [System.Drawing.Imaging.ImageFormat]::Png)
 $img.Dispose(); $crop.Dispose(); $dst.Dispose()
 Write-Output ("CROP {0} {1}x{2}" -f $outpath, $ow, $oh)
