@@ -30,6 +30,8 @@ python scripts/tespy_rankine_reference.py --output build/tespy_rankine_reference
 
 It is deliberately **not** claimed as a numerical validation of ThermoTwin's combined-cycle model. A publishable head-to-head comparison requires matching flow boundaries, HRSG configuration, cooling-system boundary conditions, pressure losses and efficiency definitions. Review its reference artifact separately before use in manuscripts.
 
+**Post-v2 fix (proposed 10 November 2026):** Issue [#8](https://github.com/abhijith-sivaprasadan/thermotwin/issues/8) identified a one-million-fold unit mismatch: the archived solver artifact reported selected-unit (MW) values as if they were watts. The development fixture now reads explicit TESPy `.P.val_SI` values for W and `.P.val` values for MW, asserts consistency, solver convergence, expected signs and a problem-specific physical range, and emits both W/MW values. Unit-regression tests and solver output assertions are now CI gates. **Do not use the earlier archived numerical power value as validation.** A new successful workflow artifact must be collected before describing the corrected solver result as reproduced. The original `v2.0.0-beta.1` and frozen-paper evidence remain unmodified.
+
 ## Next experimental studies (not incorporated)
 
 Cantera for fuel/combustion consistency checks; ExerPy for exergy balances; independently published measurements for external validation. Do not combine unrelated models or copy third-party code without reviewing the exact license, attribution, and physical assumptions. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
