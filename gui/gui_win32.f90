@@ -2325,6 +2325,55 @@ contains
 
         handled = .false.
         if (hmi_screen /= SCREEN_ALARMS) return
+        if (operator_layout) then
+            ix=layout_main_left+16
+            iw=layout_main_w-32
+            top_y=hmi_content_top(layout_main_top)
+            btn_y=top_y+39
+            table_w=max(60,(iw-24)/4)
+            if (point_in_rect(x,y,ix,btn_y,ix+table_w,btn_y+35)) then
+                call ack_all_alarms()
+                handled=.true.
+                return
+            else if (point_in_rect(x,y,ix+table_w+8,btn_y,ix+2*table_w+8,btn_y+35)) then
+                call silence_alarm_audio()
+                handled=.true.
+                return
+            else if (point_in_rect(x,y,ix+2*(table_w+8),btn_y,ix+3*table_w+16,btn_y+35)) then
+                call shelve_active_alarms()
+                handled=.true.
+                return
+            else if (point_in_rect(x,y,ix+3*(table_w+8),btn_y,ix+iw,btn_y+35)) then
+                call unshelve_all_alarms()
+                handled=.true.
+                return
+            end if
+            call current_alarm_states(states)
+            row_y=top_y+113
+            do i=1,ALARM_COUNT
+                if (point_in_rect(x,y,ix,row_y,ix+iw,row_y+39)) then
+                    if (alarm_seen(i).and.states(i).and..not.alarm_ack(i)) then
+                        alarm_ack(i)=.true.
+                        call log_alarm_event(i,"ACK")
+                    else if (alarm_seen(i).and.states(i).and.trim(alarm_priority_text(i))/="P1") then
+                        alarm_shelved(i)=.not.alarm_shelved(i)
+                        if (alarm_shelved(i)) then
+                            alarm_shelve_expiry(i)=grid%elapsed_s+real(ALARM_SHELVE_SECONDS,dp)
+                        else
+                            alarm_shelve_expiry(i)=0.0_dp
+                        end if
+                        call log_alarm_event(i,merge("SHLV  ","UNSHLV",alarm_shelved(i)))
+                    else if (alarm_seen(i).and..not.states(i)) then
+                        alarm_seen(i)=.false.
+                        alarm_ack(i)=.false.
+                    end if
+                    handled=.true.
+                    return
+                end if
+                row_y=row_y+42
+            end do
+            return
+        end if
         x0 = layout_main_left
         y0 = layout_main_top
         w = layout_main_w
@@ -2861,8 +2910,15 @@ contains
                 row_y = row_y + row_h + 4
             end do
         end if
-        nav_y = layout_main_top + 72
-        nav_h = 32
+        if (operator_layout) then
+            if (point_in_rect(x,y,layout_main_left,layout_main_top+108, &
+                layout_main_left+layout_main_w,layout_main_top+146)) then
+                screen_id=SCREEN_ALARMS
+                return
+            end if
+        end if
+        nav_y = layout_main_top + merge(64,72,operator_layout)
+        nav_h = merge(36,32,operator_layout)
         if (.not. point_in_rect(x, y, layout_main_left, nav_y, &
                 layout_main_left + layout_main_w, nav_y + nav_h)) return
         if (operator_layout) then
@@ -3025,6 +3081,10 @@ contains
         integer :: gx, gy, content_y, content_h
 
         call compute_layout(canvas_w, canvas_h)
+        if (operator_layout) then
+            call draw_operator_dashboard(hdc,canvas_w,canvas_h)
+            return
+        end if
         if (boot_ticks > 0) then          ! [6.0-P5] self-drawing boot sequence
             call draw_boot_overlay(hdc, canvas_w, canvas_h, &
                 real(BOOT_TICKS0 - boot_ticks, dp) / real(BOOT_TICKS0, dp))
@@ -3378,6 +3438,254 @@ contains
         write(pc, '("INITIALISING PLANT MODEL   ",I0,"%")') nint(progress * 100.0_dp)
         call draw_text(hdc, cx - 130, cy + 48, trim(pc), COL_MUTED)
     end subroutine draw_boot_overlay
+
+
+    ! Operator work area: neutral normal state; priority visible in both colour
+    ! and text. Legacy experimental analytics remain accessible from the rail.
+    subroutine draw_ops_kpi(hdc,x,y,w,label,value,col)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w
+        character(len=*), intent(in) :: label,value
+        integer(c_int), intent(in) :: col
+        call fill_box(hdc,x,y,x+w,y+92,COL_PANEL)
+        call stroke_soft_box(hdc,x,y,x+w,y+92,COL_BORDER,1)
+        call draw_text(hdc,x+12,y+11,label,COL_MUTED)
+        call draw_title_text(hdc,x+12,y+46,value,col)
+    end subroutine draw_ops_kpi
+
+    subroutine draw_ops_flow(hdc,x,y,w,label,value,full_scale)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w
+        character(len=*), intent(in) :: label
+        real(dp), intent(in) :: value,full_scale
+        integer :: wf
+        character(len=24) :: vt
+        call draw_text(hdc,x,y,label,COL_MUTED)
+        write(vt,'(F7.1," MW")') value
+        call draw_text(hdc,x+w-114,y,trim(adjustl(vt)),COL_INK)
+        call fill_box(hdc,x,y+23,x+w,y+32,COL_PANEL_DEEP)
+        wf=int(real(w,dp)*max(0.0_dp,min(1.0_dp,value/max(full_scale,0.01_dp))))
+        if (wf>0) call fill_box(hdc,x,y+23,x+wf,y+32,COL_MUTED)
+    end subroutine draw_ops_flow
+
+    subroutine draw_operator_dashboard(hdc,canvas_w,canvas_h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: canvas_w,canvas_h
+        integer :: x,y,w,h,cy,ch,i,ncrit,nwarn,nunack,tab_w
+        integer,parameter :: ids(4)=[SCREEN_OVERVIEW,SCREEN_GRID,SCREEN_GT,SCREEN_ALARMS]
+        character(len=12),parameter :: tabnames(4)=[character(len=12) :: &
+            "OVERVIEW","DISPATCH","GAS TURBINE","ALARMS"]
+        character(len=50) :: info
+        logical :: states(ALARM_COUNT)
+        integer(c_int) :: accent
+        call fill_box(hdc,0,0,canvas_w,canvas_h,COL_BG)
+        call draw_control_panel(hdc)
+        call draw_nav_rail(hdc)
+        x=layout_main_left; y=layout_main_top; w=layout_main_w; h=layout_main_h
+        cy=hmi_content_top(y)
+        ch=max(200,y+h-cy-12)
+        call fill_box(hdc,x,y,x+w,y+55,COL_PANEL_DEEP)
+        call draw_line(hdc,x,y+55,x+w,y+55,COL_BORDER,1)
+        call draw_title_text(hdc,x+14,y+8,"THERMOTWIN-F",COL_INK)
+        call draw_text(hdc,x+14,y+35,"ENGINEERING SIMULATOR  /  NOT PLANT TELEMETRY",COL_MUTED)
+        if (grid%auto_balance) then
+            info="AUTO"
+        else
+            info="MANUAL"
+        end if
+        call draw_text(hdc,x+w-114,y+12,trim(info)//" MODE",COL_MUTED)
+        call draw_nav_bar(hdc,x,y+64,w,36)
+        call current_alarm_states(states)
+        ncrit=count(states([1,5,7]))
+        nwarn=count(states([2,3,4,6,8]))
+        nunack=count(alarm_seen .and. .not. alarm_ack)
+        call fill_box(hdc,x,y+108,x+w,y+146,COL_PANEL)
+        accent=COL_MUTED
+        if (nwarn>0) accent=COL_AMBER
+        if (ncrit>0) accent=COL_RED
+        call fill_box(hdc,x,y+108,x+5,y+146,accent)
+        write(info,'("ALARMS   P1 ",I0,"  /  P2 ",I0,"  /  UNACK ",I0)') ncrit,nwarn,nunack
+        call draw_text(hdc,x+14,y+119,trim(info),merge(COL_INK,accent,ncrit+nwarn==0))
+        if (.not.alarm_sound_enabled) then
+            info="AUDIO OFF"
+        else if (alarm_audio_silenced) then
+            info="AUDIO SILENCED"
+        else
+            info="AUDIO ON"
+        end if
+        call draw_text(hdc,x+w-150,y+119,trim(info),COL_MUTED)
+        select case(hmi_screen)
+        case(SCREEN_OVERVIEW)
+            call draw_operator_overview(hdc,x,cy,w,ch)
+        case(SCREEN_GRID)
+            call draw_operator_dispatch(hdc,x,cy,w,ch)
+        case(SCREEN_GT)
+            call draw_operator_turbine(hdc,x,cy,w,ch)
+        case(SCREEN_ALARMS)
+            call draw_operator_alarms(hdc,x,cy,w,ch)
+        case(SCREEN_TRENDS)
+            call draw_trends_screen(hdc,x,cy,w,ch)
+        case(SCREEN_CC)
+            call draw_combined_cycle_screen(hdc,x,cy,w,ch)
+        case(SCREEN_MARKET)
+            call draw_market_screen(hdc,x,cy,w,ch)
+        case(SCREEN_DIAG)
+            call draw_diagnostics_screen(hdc,x,cy,w,ch)
+        case(SCREEN_DAYAHEAD)
+            call draw_dayahead_screen(hdc,x,cy,w,ch)
+        case(SCREEN_FLEET_UC)
+            call draw_fleet_uc_screen(hdc,x,cy,w,ch)
+        case(SCREEN_DNN)
+            call draw_dnn_screen(hdc,x,cy,w,ch)
+        case(SCREEN_CARBON)
+            call draw_carbon_screen(hdc,x,cy,w,ch)
+        case(SCREEN_FORECAST)
+            call draw_forecast_screen(hdc,x,cy,w,ch)
+        case(SCREEN_ADVISORY)
+            call draw_advisory_screen(hdc,x,cy,w,ch)
+        case(SCREEN_SCENARIO)
+            call draw_scenario_screen(hdc,x,cy,w,ch)
+        case(SCREEN_EXERGY)
+            call draw_exergy_screen(hdc,x,cy,w,ch)
+        end select
+        if (faceplate_id/=FP_NONE) call draw_kpi_faceplate_popup(hdc,x,y,w,h)
+        if (help_overlay_active) call draw_help_overlay(hdc,x,y,w,h)
+        if (shortcuts_popup_active) call draw_shortcuts_popup(hdc,x,y,w)
+        call draw_global_overlays(hdc,x,y,w,h)
+    end subroutine draw_operator_dashboard
+
+    subroutine draw_operator_overview(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: ix,iw,cw,bar_y,trend_y
+        real(dp) :: full_scale
+        character(len=40) :: vt
+        integer(c_int) :: color
+        ix=x+16; iw=w-32
+        cw=max(50,(iw-16)/3)
+        call draw_text(hdc,ix,y+10,"01 / PLANT OPERATIONS",COL_MUTED)
+        write(vt,'(F7.3," Hz")') grid%frequency_Hz
+        color=COL_INK
+        if(grid%alarm_underfreq.or.grid%alarm_overfreq) color=COL_RED
+        call draw_ops_kpi(hdc,ix,y+40,cw,"FREQUENCY",trim(adjustl(vt)),color)
+        write(vt,'(SP,F6.1," MW")') grid%imbalance_MW
+        color=COL_INK
+        if(abs(grid%imbalance_MW)>0.5_dp) color=COL_AMBER
+        call draw_ops_kpi(hdc,ix+cw+8,y+40,cw,"POWER IMBALANCE",trim(adjustl(vt)),color)
+        write(vt,'(F6.1," MW")') grid%reserve_MW
+        color=COL_INK
+        if(grid%alarm_low_reserve) color=COL_AMBER
+        call draw_ops_kpi(hdc,ix+2*(cw+8),y+40,cw,"RESERVE",trim(adjustl(vt)),color)
+        bar_y=y+143
+        call fill_box(hdc,ix,bar_y,ix+iw,bar_y+168,COL_PANEL)
+        call stroke_soft_box(hdc,ix,bar_y,ix+iw,bar_y+168,COL_BORDER,1)
+        call draw_text(hdc,ix+12,bar_y+9,"POWER BALANCE   /   MODEL OUTPUT",COL_MUTED)
+        full_scale=max(1.0_dp,max(grid%demand_MW,grid%supply_MW))
+        call draw_ops_flow(hdc,ix+12,bar_y+38,iw-24,"LOAD DEMAND",grid%demand_MW,full_scale)
+        call draw_ops_flow(hdc,ix+12,bar_y+84,iw-24,"TOTAL SUPPLY",grid%supply_MW,full_scale)
+        write(vt,'("GT ",F5.1,"   /   RENEWABLE ",F5.1," MW")') grid%gas_power_MW,effective_renewable_MW(grid)
+        call draw_text(hdc,ix+12,bar_y+137,trim(adjustl(vt)),COL_MUTED)
+        trend_y=bar_y+196
+        call draw_text(hdc,ix,trend_y-20,"LIVE HISTORY   /   60 SECOND WINDOW",COL_MUTED)
+        call draw_history_traces(hdc,ix,trend_y,iw,max(80,y+h-trend_y-12))
+    end subroutine draw_operator_overview
+
+    subroutine draw_operator_dispatch(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: ix,iw,cw,panel_y
+        character(len=40) :: vt
+        ix=x+16; iw=w-32; cw=max(50,(iw-16)/3)
+        call draw_text(hdc,ix,y+10,"02 / GRID DISPATCH",COL_MUTED)
+        write(vt,'(F6.1," MW")') grid%plant_power_MW
+        call draw_ops_kpi(hdc,ix,y+40,cw,"PLANT NET",trim(adjustl(vt)),COL_INK)
+        write(vt,'(F6.1," MW")') effective_renewable_MW(grid)
+        call draw_ops_kpi(hdc,ix+cw+8,y+40,cw,"RENEWABLE",trim(adjustl(vt)),COL_INK)
+        write(vt,'(SP,F6.1," MW")') grid%storage_MW
+        call draw_ops_kpi(hdc,ix+2*(cw+8),y+40,cw,"BESS NET",trim(adjustl(vt)),COL_INK)
+        panel_y=y+150
+        call fill_box(hdc,ix,panel_y,ix+iw,panel_y+165,COL_PANEL)
+        call stroke_soft_box(hdc,ix,panel_y,ix+iw,panel_y+165,COL_BORDER,1)
+        call draw_text(hdc,ix+12,panel_y+10,"DISPATCH MIX   /   CURRENT TIME STEP",COL_MUTED)
+        call draw_ops_flow(hdc,ix+12,panel_y+39,iw-24,"GAS TURBINE",grid%gas_power_MW, &
+            max(grid%plant_capacity_MW,1.0_dp))
+        call draw_ops_flow(hdc,ix+12,panel_y+86,iw-24,"RENEWABLE",effective_renewable_MW(grid), &
+            max(grid%plant_capacity_MW,1.0_dp))
+        call draw_text(hdc,ix+12,panel_y+135,"Use GRID controls at left; this view is simulated.",COL_MUTED)
+        call draw_text(hdc,ix,panel_y+183,"HISTORY / FREQUENCY AND DISPATCH",COL_MUTED)
+        call draw_history_traces(hdc,ix,panel_y+205,iw,max(80,y+h-(panel_y+215)))
+    end subroutine draw_operator_dispatch
+
+    subroutine draw_operator_turbine(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: ix,iw,cw,top,yy
+        character(len=40) :: vt
+        integer(c_int) :: color
+        ix=x+16; iw=w-32; cw=max(50,(iw-16)/3)
+        call draw_text(hdc,ix,y+10,"03 / GAS TURBINE / GENERIC MODEL",COL_MUTED)
+        write(vt,'(F6.1," MW")') grid%gas_power_MW
+        call draw_ops_kpi(hdc,ix,y+40,cw,"NET OUTPUT",trim(adjustl(vt)),COL_INK)
+        write(vt,'(F6.1," %")') grid%surge_margin_pct
+        color=COL_INK
+        if(grid%alarm_surge) color=COL_RED
+        call draw_ops_kpi(hdc,ix+cw+8,y+40,cw,"SURGE MARGIN",trim(adjustl(vt)),color)
+        write(vt,'(F5.1," %")') grid%gt_thermal_efficiency*100.0_dp
+        call draw_ops_kpi(hdc,ix+2*(cw+8),y+40,cw,"GT EFFICIENCY",trim(adjustl(vt)),COL_INK)
+        top=y+151
+        call fill_box(hdc,ix,top,ix+iw,top+245,COL_PANEL)
+        call stroke_soft_box(hdc,ix,top,ix+iw,top+245,COL_BORDER,1)
+        call draw_text(hdc,ix+12,top+12,"OPERATING POINT / MODEL STATE",COL_MUTED)
+        yy=top+48
+        write(vt,'(F6.2)') grid%PR_op
+        call draw_value_pair(hdc,ix+12,yy,"Compressor ratio",trim(adjustl(vt)),COL_INK)
+        write(vt,'(F6.1," %")') grid%igv_pct
+        call draw_value_pair(hdc,ix+12,yy+34,"IGV position",trim(adjustl(vt)),COL_INK)
+        write(vt,'(I5," K")') nint(grid%TIT_actual_K)
+        call draw_value_pair(hdc,ix+12,yy+68,"Turbine inlet",trim(adjustl(vt)),COL_INK)
+        write(vt,'(I5," K")') nint(grid%exhaust_K)
+        call draw_value_pair(hdc,ix+12,yy+102,"Exhaust",trim(adjustl(vt)),COL_INK)
+        write(vt,'(I6," kJ/kWh")') nint(grid%gt_heat_rate_kJ_kWh)
+        call draw_value_pair(hdc,ix+12,yy+136,"Heat rate",trim(adjustl(vt)),COL_INK)
+        write(vt,'(F6.3," kg/s")') grid%fuel_flow_kg_s
+        call draw_value_pair(hdc,ix+12,yy+170,"Fuel flow",trim(adjustl(vt)),COL_INK)
+        call draw_text(hdc,ix,top+263,"LIVE HISTORY / NOT MEASURED ENGINE DATA",COL_MUTED)
+        call draw_history_traces(hdc,ix,top+289,iw,max(75,y+h-(top+301)))
+    end subroutine draw_operator_turbine
+
+    subroutine draw_operator_alarms(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: ix,iw,bw,i,ry
+        integer(c_int) :: colors(ALARM_COUNT)
+        logical :: states(ALARM_COUNT)
+        character(len=20) :: labels(ALARM_COUNT)
+        character(len=80) :: vt
+        ix=x+16; iw=w-32
+        call current_alarm_states(states)
+        call alarm_labels(labels)
+        call alarm_colors(colors)
+        call draw_text(hdc,ix,y+8,"07 / ALARMS / OPERATOR ACKNOWLEDGEMENT",COL_MUTED)
+        bw=max(60,(iw-24)/4)
+        call draw_industrial_button(hdc,ix,y+39,ix+bw,y+74,"ACK ALL",COL_PANEL_ALT,.false.)
+        call draw_industrial_button(hdc,ix+bw+8,y+39,ix+2*bw+8,y+74,"SILENCE",COL_PANEL_ALT,alarm_audio_silenced)
+        call draw_industrial_button(hdc,ix+2*(bw+8),y+39,ix+3*bw+16,y+74,"SHELVE P2",COL_PANEL_ALT,.false.)
+        call draw_industrial_button(hdc,ix+3*(bw+8),y+39,ix+iw,y+74,"UNSHELVE",COL_PANEL_ALT,.false.)
+        call draw_text(hdc,ix,y+88,"PRIORITY         CONDITION                STATE                  OPERATOR ACTION",COL_MUTED)
+        ry=y+113
+        do i=1,ALARM_COUNT
+            call draw_alarm_row(hdc,ix,ry,iw,39,i,labels(i),states(i),colors(i))
+            ry=ry+42
+        end do
+        call draw_text(hdc,ix,ry+5,"RECENT CHANGES / SIMULATION ELAPSED TIME",COL_MUTED)
+        ry=ry+30
+        do i=max(1,alarm_log_count-2),alarm_log_count
+            write(vt,'(F7.1," s  ",A,"  ",A)') alarm_log_time(i), &
+                trim(alarm_log_state(i)),trim(alarm_log_name(i))
+            call draw_text(hdc,ix+8,ry,trim(adjustl(vt)),COL_MUTED)
+            ry=ry+24
+        end do
+    end subroutine draw_operator_alarms
 
     subroutine draw_control_panel(hdc)
         type(c_ptr), value :: hdc
