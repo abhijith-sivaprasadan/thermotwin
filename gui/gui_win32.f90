@@ -1122,11 +1122,16 @@ contains
                 case (36)
                     call visual_qa_capture("build\gui-visual-qa\03-alarms.png")
                 case (38)
-                    ! Exercise a genuine in-model disturbance; not a fabricated sensor.
+                    ! Sustained **simulation** shortage: the genuine swing equation,
+                    ! frequency relays and alarm lifecycle must derive the alarm.
+                    grid%auto_balance = .false.
+                    grid%demand_MW = DEMAND_MAX_MW
+                    grid%renewable_MW = 0.0_dp
+                    grid%storage_request_MW = 0.0_dp
                     call apply_turbine_trip(grid)
-                case (52)
+                case (76)
                     call visual_qa_capture("build\gui-visual-qa\04-alarms-trip.png")
-                case (54)
+                case (78)
                     ok = DestroyWindow(hwnd)
                     lres = 0_c_intptr_t
                     return
