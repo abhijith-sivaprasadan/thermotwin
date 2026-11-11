@@ -13,6 +13,10 @@ module thermotwin_win32_gui
     use engine_core
     use engine_state, only: EQ_N, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
     use equipment_protection, only: equipment_name, equipment_unit, equipment_priority, EQ_THRESHOLD_ON
+    use alarm_drilldown, only: DrillObservation, DrillHistory, DRILL_N, &
+        DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
+        drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
+        drill_alarm_row_hit, drill_source_label
     use exergy, only: ExergyResult, compute_exergy
     use exergy_uq,         only: ExergyUQ, run_exergy_uq
     use exergy_sobol,      only: SobolResult, run_exergy_sobol, SOBOL_NIN
@@ -889,6 +893,8 @@ module thermotwin_win32_gui
     integer :: fl_card(4,3) = 0            !          3 KPI cards (margin / CO2 / reserve)
     integer :: fl_tile(4,6) = 0            !          6 subsystem tiles (P2X/CCS/GFM/TIE/MPC/OU)
     integer :: alarm_page = 1 ! 1 grid/plant; 2 equipment; 3 trip sequence
+    integer :: alarm_drill_selected = 0 ! one live context, not an ACK shortcut
+    type(DrillHistory) :: alarm_drill_hist
     logical :: trip_events_view = .false. ! narrow-screen F7 status/events switch
     integer :: gui_first_out_seen = GT_CAUSE_NONE
     real(dp) :: gui_first_out_time_seen = -1.0_dp
@@ -1107,6 +1113,8 @@ contains
             end if
             call refresh_model(grid)
             call append_history(grid)
+            alarm_drill_hist=DrillHistory()
+            call drill_record(alarm_drill_hist,grid)
             history_sample_ms_accum = 0
             call update_alarm_workflow()
             call opcua_start(4840)
@@ -1145,6 +1153,7 @@ contains
             history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
             if (history_sample_ms_accum >= HISTORY_SAMPLE_MS) then
                 call append_history(grid)
+                call drill_record(alarm_drill_hist,grid)
                 history_sample_ms_accum = mod(history_sample_ms_accum, HISTORY_SAMPLE_MS)
             end if
             anim_tick = anim_tick + 1                 ! [6.0-P5] animation clock
@@ -1473,6 +1482,24 @@ contains
         mouse_hover_x = x
         mouse_hover_y = y
         mouse_hover_valid = .true.
+        ! Alarm details are a live modal: background control setpoints,
+        ! navigation and ACK actions are deliberately not clickable through it.
+        if(alarm_drill_selected>0) then
+            call handle_alarm_drill_mouse(x,y)
+            active_control=ID_NONE
+            return
+        end if
+        block
+            integer :: picked
+            picked=drill_annunciator_hit(x,y,layout_main_left,layout_main_top+108, &
+                layout_main_w,38)
+            if(picked>0) then
+                alarm_drill_selected=picked
+                faceplate_id=FP_NONE
+                active_control=ID_NONE
+                return
+            end if
+        end block
 
         if (command_palette_active) then
             nav_target = hit_test_command_palette(x, y)
@@ -1716,6 +1743,12 @@ contains
         integer(c_int) :: kval
 
         kval = int(key, c_int)
+        if(alarm_drill_selected>0) then
+            if(kval==VK_ESCAPE) alarm_drill_selected=0
+            ! With the overlay active, all background keyboard commands
+            ! are inhibited; no accidental setpoint changes or ACK-on-click.
+            return
+        end if
         if (command_palette_active) then
             call handle_command_palette_key(kval)
             return
@@ -2634,33 +2667,36 @@ contains
         call current_alarm_states(states)
         row_y = btn_y + 122
         row_h = 48
-        do i = 1, ALARM_PAGE_ROWS
-            alarm_id = ALARM_ORIGINAL_N*(alarm_page-1)+i
-            if (alarm_id>ALARM_COUNT) exit
-            if (point_in_rect(x, y, ix + 8, row_y, ix + table_w - 8, row_y + row_h - 3)) then
-                if (alarm_seen(alarm_id) .and. states(alarm_id) .and. .not. alarm_ack(alarm_id)) then
-                    alarm_ack(alarm_id) = .true.
-                    call log_alarm_event(alarm_id, "ACK")
-                else if (alarm_seen(alarm_id) .and. states(alarm_id) .and. &
-                         trim(alarm_priority_text(alarm_id)) == "P2") then
-                    alarm_shelved(alarm_id) = .not.alarm_shelved(alarm_id)
-                    if (alarm_shelved(alarm_id)) then
-                        alarm_shelve_until_s(alarm_id) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
-                    else
-                        alarm_shelve_until_s(alarm_id) = 0.0_dp
-                        alarm_audio_new_event = .true.
-                    end if
-                    call log_alarm_event(alarm_id, merge("SHLV  ", "UNSHLV", alarm_shelved(alarm_id)))
-                else if (alarm_seen(alarm_id)) then
-                    alarm_seen(alarm_id) = .false.
-                    alarm_ack(alarm_id) = .false.
-                    alarm_shelved(alarm_id) = .false.
+        alarm_id=drill_alarm_row_hit(x,y,ix,row_y,table_w,alarm_page)
+        if(alarm_id>0) then
+            ! Last 75px is the explicit ACK/row-management affordance.
+            ! Everywhere else opens technical context; clicking must
+            ! NEVER silently acknowledge the alarm.
+            if(x < ix+table_w-86) then
+                alarm_drill_selected=alarm_id
+            else if (alarm_seen(alarm_id) .and. states(alarm_id) .and. &
+                     .not.alarm_ack(alarm_id)) then
+                alarm_ack(alarm_id)=.true.
+                call log_alarm_event(alarm_id,"ACK")
+            else if (alarm_seen(alarm_id) .and. states(alarm_id) .and. &
+                     trim(alarm_priority_text(alarm_id))=="P2") then
+                alarm_shelved(alarm_id)=.not.alarm_shelved(alarm_id)
+                if(alarm_shelved(alarm_id)) then
+                    alarm_shelve_until_s(alarm_id)=grid%elapsed_s+real(ALARM_P2_SHELVE_SECONDS,dp)
+                else
+                    alarm_shelve_until_s(alarm_id)=0.0_dp
+                    alarm_audio_new_event=.true.
                 end if
-                handled = .true.
-                return
+                call log_alarm_event(alarm_id, &
+                    merge("SHLV  ","UNSHLV",alarm_shelved(alarm_id)))
+            else if(alarm_seen(alarm_id)) then
+                alarm_seen(alarm_id)=.false.
+                alarm_ack(alarm_id)=.false.
+                alarm_shelved(alarm_id)=.false.
             end if
-            row_y = row_y + row_h
-        end do
+            handled=.true.
+            return
+        end if
     end function handle_alarm_mouse
 
     subroutine cycle_plant_mode()
@@ -3584,6 +3620,7 @@ contains
             if (help_overlay_active) call draw_help_overlay(hdc, x0, y0, w, h)
             if (shortcuts_popup_active) call draw_shortcuts_popup(hdc, x0, y0, w)
             call draw_global_overlays(hdc, x0, y0, w, h)
+            if(alarm_drill_selected>0) call draw_alarm_drill_popup(hdc,x0,y0,w,h)
             return
         end if
 
@@ -3594,6 +3631,7 @@ contains
             if (faceplate_id /= FP_NONE) call draw_kpi_faceplate_popup(hdc, x0, y0, w, h)
             if (shortcuts_popup_active)  call draw_shortcuts_popup(hdc, x0, y0, w)
             call draw_global_overlays(hdc, x0, y0, w, h)
+            if(alarm_drill_selected>0) call draw_alarm_drill_popup(hdc,x0,y0,w,h)
             return
         end if
 
@@ -3715,6 +3753,7 @@ contains
         if (faceplate_id /= FP_NONE) call draw_kpi_faceplate_popup(hdc, x0, y0, w, h)
         if (shortcuts_popup_active)  call draw_shortcuts_popup(hdc, x0, y0, w)
         call draw_global_overlays(hdc, x0, y0, w, h)
+        if(alarm_drill_selected>0) call draw_alarm_drill_popup(hdc,x0,y0,w,h)
     end subroutine draw_dashboard
 
     !> [6.0-P5] Self-drawing boot sequence — the drafting grid plots itself in (left to
@@ -6115,7 +6154,19 @@ contains
                     "/"//trim(adjustl(lim_str))//" "//trim(unit_str)
             end if
         end if
-        call draw_text(hdc, x + 410, y + 8, trim(action_text), COL_MUTED)
+        ! Reserve the right edge as a separate explicit ACK/management target;
+        ! the alarm name/status/value region is a clickable drill-down.
+        if(width>530) then
+            call draw_text(hdc,x+410,y+8, &
+                action_text(1:min(len_trim(action_text),max(1,(width-500)/8))),COL_MUTED)
+        end if
+        if(alarm_seen(alarm_id) .and. active .and. .not.alarm_ack(alarm_id)) then
+            call draw_text(hdc,x+width-65,y+8,"ACK",COL_GREEN)
+        else if(alarm_seen(alarm_id) .and. .not.active) then
+            call draw_text(hdc,x+width-65,y+8,"CLEAR",COL_CYAN)
+        else
+            call draw_text(hdc,x+width-65,y+8,"> INFO",COL_CYAN)
+        end if
     end subroutine draw_alarm_row
 
     ! =========================================================================
