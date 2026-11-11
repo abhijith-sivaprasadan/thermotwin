@@ -85,6 +85,8 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
+    integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
+    integer(c_int), parameter :: VK_V   = 86_c_int   ! cycle annunciation volume
     integer(c_int), parameter :: VK_A   = 65_c_int   ! toggle DNN adapting
     integer(c_int), parameter :: VK_T   = 84_c_int   ! Ctrl+T theme toggle
     integer(c_int), parameter :: VK_C   = 67_c_int
@@ -218,6 +220,9 @@ module thermotwin_win32_gui
     integer, parameter :: ICON_OU  = 6
     integer, parameter :: ALARM_COUNT = 8
     integer, parameter :: ALARM_LOG_N = 36
+    integer, parameter :: ALARM_P2_SHELVE_SECONDS = 600
+    real(dp), parameter :: ALARM_P1_REPEAT_S = 8.0_dp
+    real(dp), parameter :: ALARM_P2_REPEAT_S = 20.0_dp
 
     integer(c_int), parameter :: CANVAS_W = 1280_c_int
     integer(c_int), parameter :: CANVAS_H = 940_c_int
@@ -692,6 +697,25 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function hmi_native_init
 
+        ! Original sound profiles are synthesised as PCM and queued asynchronously
+        ! through WinMM. No generic Windows MessageBeep sounds are used.
+        function hmi_alarm_audio_play(priority, volume_pct) bind(C, name="hmi_alarm_audio_play") result(rc)
+            import :: c_int
+            integer(c_int), value :: priority, volume_pct
+            integer(c_int) :: rc
+        end function hmi_alarm_audio_play
+
+        function hmi_alarm_has_audio_device() bind(C, name="hmi_alarm_has_audio_device") result(rc)
+            import :: c_int
+            integer(c_int) :: rc
+        end function hmi_alarm_has_audio_device
+
+        subroutine hmi_alarm_audio_tick() bind(C, name="hmi_alarm_audio_tick")
+        end subroutine hmi_alarm_audio_tick
+
+        subroutine hmi_alarm_audio_stop() bind(C, name="hmi_alarm_audio_stop")
+        end subroutine hmi_alarm_audio_stop
+
         function hmi_save_window_png(hwnd, lpPath) bind(C, name="hmi_save_window_png") result(ok)
             import :: c_int, c_ptr
             type(c_ptr), value :: hwnd
@@ -841,6 +865,13 @@ module thermotwin_win32_gui
     logical :: alarm_seen(ALARM_COUNT) = .false.
     logical :: alarm_ack(ALARM_COUNT) = .false.
     logical :: alarm_shelved(ALARM_COUNT) = .false.
+    real(dp) :: alarm_shelve_until_s(ALARM_COUNT) = 0.0_dp
+    logical :: alarm_audio_enabled = .true.
+    logical :: alarm_audio_silenced = .false.
+    logical :: alarm_audio_new_event = .false.
+    integer :: alarm_volume_pct = 65
+    integer :: alarm_audio_result = 1
+    real(dp) :: alarm_last_tone_s = -1.0e9_dp
     integer :: alarm_log_count = 0
     real(dp) :: alarm_log_time(ALARM_LOG_N) = 0.0_dp
     character(len=20) :: alarm_log_name(ALARM_LOG_N) = ""
@@ -1062,6 +1093,7 @@ contains
             end if
             call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
             call update_alarm_workflow()
+            call update_alarm_audio()
             call flush_opcua_tags()
             call opcua_iterate()
             history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
@@ -1147,6 +1179,7 @@ contains
             call save_hmi_config()
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
             call opcua_stop()
+            call hmi_alarm_audio_stop()
             call destroy_back_buffer()
             call destroy_fonts()
             if (native_renderer_ready) call hmi_native_shutdown()
@@ -1658,6 +1691,12 @@ contains
             grid%rl_mode = .not. grid%rl_mode
         case (VK_A)
             grid%dnn_adapting = .not. grid%dnn_adapting
+        case (VK_B)
+            call toggle_alarm_audio()
+        case (VK_V)
+            alarm_volume_pct = mod(alarm_volume_pct+25,101)
+            if (alarm_volume_pct<25) alarm_volume_pct=25
+            call set_notice("Alarm cue output level "//trim(int_text(alarm_volume_pct))//"%")
         case (VK_T)
             hmi_theme = modulo(hmi_theme + 1, THEME_COUNT)   ! [6.0] Blueprint -> Classic dark -> Classic light
             call apply_theme()
@@ -2024,6 +2063,10 @@ contains
                 color_blind_safe = ival /= 0
             case ("nav_rail_collapsed")
                 nav_rail_collapsed = ival /= 0
+            case ("alarm_audio_enabled")
+                alarm_audio_enabled = ival /= 0
+            case ("alarm_volume_pct")
+                alarm_volume_pct = min(100,max(0,ival))
             end select
         end do
         close(unit)
@@ -2050,6 +2093,8 @@ contains
         write(unit, '("ui_scale_pct ",I0)') ui_scale_pct
         write(unit, '("color_blind_safe ",I0)') merge(1, 0, color_blind_safe)
         write(unit, '("nav_rail_collapsed ",I0)') merge(1, 0, nav_rail_collapsed)
+        write(unit, '("alarm_audio_enabled ",I0)') merge(1, 0, alarm_audio_enabled)
+        write(unit, '("alarm_volume_pct ",I0)') alarm_volume_pct
         write(unit, "(A)") "units SI"
         write(unit, "(A)") "api_eia_key"
         write(unit, "(A)") "api_entsoe_token"
@@ -2061,6 +2106,11 @@ contains
         alarm_seen = .false.
         alarm_ack = .false.
         alarm_shelved = .false.
+        alarm_shelve_until_s = 0.0_dp
+        alarm_audio_silenced = .false.
+        alarm_audio_new_event = .false.
+        alarm_last_tone_s = -1.0e9_dp
+        call hmi_alarm_audio_stop()
         alarm_log_count = 0
         alarm_log_name = ""
         alarm_log_state = ""
@@ -2078,17 +2128,90 @@ contains
                 alarm_seen(i) = .true.
                 alarm_ack(i) = .false.
                 alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
+                alarm_audio_silenced = .false.
+                alarm_audio_new_event = .true.
                 call log_alarm_event(i, "UNACK")
             else if (.not. states(i) .and. alarm_prev(i)) then
                 alarm_seen(i) = .true.
                 alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
                 call log_alarm_event(i, "RTN")
             else if (states(i)) then
                 alarm_seen(i) = .true.
             end if
         end do
+        ! Auto-unshelve after ten minutes of model elapsed time. A standing
+        ! unacknowledged alarm then returns to the annunciation queue.
+        do i = 1, ALARM_COUNT
+            if (.not.alarm_shelved(i)) cycle
+            if (grid%elapsed_s >= alarm_shelve_until_s(i)) then
+                alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
+                alarm_audio_new_event = .true.
+                call log_alarm_event(i, "EXPIRE")
+            end if
+        end do
         alarm_prev = states
     end subroutine update_alarm_workflow
+
+    subroutine update_alarm_audio()
+        logical :: states(ALARM_COUNT)
+        integer :: i, priority
+        integer(c_int) :: result
+        real(dp) :: repeat_s
+        call hmi_alarm_audio_tick()
+        if (.not.alarm_audio_enabled .or. alarm_audio_silenced) return
+        call current_alarm_states(states)
+        priority = 0
+        do i=1,ALARM_COUNT
+            if (.not.states(i) .or. alarm_ack(i) .or. alarm_shelved(i)) cycle
+            if (trim(alarm_priority_text(i)) == "P1") then
+                priority = 1
+                exit
+            end if
+            priority = 2
+        end do
+        if (priority==0) then
+            alarm_audio_new_event = .false.
+            alarm_last_tone_s = -1.0e9_dp
+            call hmi_alarm_audio_stop()
+            return
+        end if
+        repeat_s=merge(ALARM_P1_REPEAT_S,ALARM_P2_REPEAT_S,priority==1)
+        if (.not.alarm_audio_new_event .and. grid%elapsed_s-alarm_last_tone_s<repeat_s) return
+        result=hmi_alarm_audio_play(int(priority,c_int),int(alarm_volume_pct,c_int))
+        if (result == 1_c_int) then
+            alarm_last_tone_s = grid%elapsed_s
+            alarm_audio_new_event = .false.
+            alarm_audio_result = 1
+        else if (result < 0_c_int) then
+            ! Output device missing: keep visual priority/ack state; avoid
+            ! logging an audio error every timer tick.
+            alarm_audio_result = int(result)
+            alarm_last_tone_s = grid%elapsed_s
+            alarm_audio_new_event = .false.
+        end if
+    end subroutine update_alarm_audio
+
+    subroutine silence_alarm_audio()
+        alarm_audio_silenced = .true.
+        alarm_audio_new_event = .false.
+        call hmi_alarm_audio_stop()
+        call set_notice("Audio silenced. Standing alarms are NOT acknowledged.")
+        call log_debug("operator: audio silenced; alarm acknowledgement unchanged")
+    end subroutine silence_alarm_audio
+
+    subroutine toggle_alarm_audio()
+        alarm_audio_enabled = .not.alarm_audio_enabled
+        alarm_audio_silenced = .false.
+        if (.not.alarm_audio_enabled) then
+            call hmi_alarm_audio_stop()
+        else
+            alarm_audio_new_event = .true.
+        end if
+        call set_bool_notice("Original alarm audio enabled.","Alarm audio muted; visuals active.",alarm_audio_enabled)
+    end subroutine toggle_alarm_audio
 
     subroutine ack_all_alarms()
         logical :: states(ALARM_COUNT)
@@ -2114,8 +2237,10 @@ contains
 
         call current_alarm_states(states)
         do i = 1, ALARM_COUNT
-            if (states(i) .and. alarm_seen(i)) then
+            if (states(i) .and. alarm_seen(i) .and. &
+                trim(alarm_priority_text(i)) == "P2" .and. .not.alarm_shelved(i)) then
                 alarm_shelved(i) = .true.
+                alarm_shelve_until_s(i) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
                 call log_alarm_event(i, "SHLV")
             end if
         end do
@@ -2128,6 +2253,8 @@ contains
             if (alarm_shelved(i)) call log_alarm_event(i, "UNSHLV")
         end do
         alarm_shelved = .false.
+        alarm_shelve_until_s = 0.0_dp
+        alarm_audio_new_event = .true.
     end subroutine unshelve_all_alarms
 
     subroutine log_alarm_event(alarm_id, state_text)
@@ -2188,6 +2315,16 @@ contains
             handled = .true.
             return
         end if
+        if (point_in_rect(x, y, bx + 400, btn_y, bx + 503, btn_y + 34)) then
+            call silence_alarm_audio()
+            handled = .true.
+            return
+        end if
+        if (point_in_rect(x, y, bx + 513, btn_y, bx + 628, btn_y + 34)) then
+            call toggle_alarm_audio()
+            handled = .true.
+            return
+        end if
 
         call current_alarm_states(states)
         row_y = btn_y + 122
@@ -2197,8 +2334,15 @@ contains
                 if (alarm_seen(i) .and. states(i) .and. .not. alarm_ack(i)) then
                     alarm_ack(i) = .true.
                     call log_alarm_event(i, "ACK")
-                else if (alarm_seen(i) .and. states(i)) then
-                    alarm_shelved(i) = .not. alarm_shelved(i)
+                else if (alarm_seen(i) .and. states(i) .and. &
+                         trim(alarm_priority_text(i)) == "P2") then
+                    alarm_shelved(i) = .not.alarm_shelved(i)
+                    if (alarm_shelved(i)) then
+                        alarm_shelve_until_s(i) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
+                    else
+                        alarm_shelve_until_s(i) = 0.0_dp
+                        alarm_audio_new_event = .true.
+                    end if
                     call log_alarm_event(i, merge("SHLV  ", "UNSHLV", alarm_shelved(i)))
                 else if (alarm_seen(i)) then
                     alarm_seen(i) = .false.
@@ -5142,15 +5286,28 @@ contains
         call alarm_labels(labels)
         call alarm_colors(colors)
         active_count = count(states)
-        write(subtitle, '("ISA-18.2 workflow | active ",I0," | unack ",I0," | shelved ",I0)') &
+        write(subtitle, '("Model alarms | active ",I0," | unack ",I0," | shelved ",I0)') &
             active_count, count(alarm_seen .and. .not. alarm_ack), count(alarm_shelved)
         call draw_screen_caption(hdc, ix, top_y, iw, SCREEN_FULL_LABEL(SCREEN_ALARMS), trim(subtitle))
 
         btn_y = top_y + 76
         call draw_industrial_button(hdc, ix, btn_y, ix + 110, btn_y + 34, "ACK ALL", COL_GREEN, .true.)
-        call draw_industrial_button(hdc, ix + 122, btn_y, ix + 250, btn_y + 34, "SHELVE ACTIVE", COL_AMBER, .false.)
+        call draw_industrial_button(hdc, ix + 122, btn_y, ix + 250, btn_y + 34, "SHELVE P2", COL_AMBER, .false.)
         call draw_industrial_button(hdc, ix + 262, btn_y, ix + 390, btn_y + 34, "UNSHELVE", COL_CYAN, .false.)
-        call draw_text(hdc, ix + 410, btn_y + 8, "Alarm actions and chronological event state", COL_MUTED)
+        call draw_industrial_button(hdc, ix + 400, btn_y, ix + 503, btn_y + 34, &
+            "SILENCE", COL_PANEL_ALT, alarm_audio_silenced)
+        call draw_industrial_button(hdc, ix + 513, btn_y, ix + 628, btn_y + 34, &
+            merge("AUDIO ON ", "AUDIO OFF",alarm_audio_enabled),COL_CYAN,alarm_audio_enabled)
+        if (.not.alarm_audio_enabled) then
+            line = "ALARM AUDIO DISABLED - B"
+        else if (hmi_alarm_has_audio_device()==0_c_int) then
+            line = "NO AUDIO DEVICE / VISUAL ACTIVE"
+        else if (alarm_audio_silenced) then
+            line = "SILENCED / NOT ACKNOWLEDGED"
+        else
+            write(line,'("ORIGINAL P1/P2 TONES  /  V ",I0,"%")') alarm_volume_pct
+        end if
+        call draw_text(hdc, ix, btn_y + 40, trim(line), COL_MUTED)
 
         table_w = max(650, int(0.62_dp * real(iw, dp)))
         log_x = ix + table_w + 18
@@ -5184,7 +5341,7 @@ contains
             kp_gap = GAP_CARD
             kp_w   = (table_w - 16 - 3 * kp_gap) / 4
             kp_y   = btn_y + 82 + list_h + 32
-            call draw_section_title_width(hdc, ix, btn_y + 82 + list_h + 8, "Alarm performance  (ISA-18.2)", table_w)
+            call draw_section_title_width(hdc, ix, btn_y + 82 + list_h + 8, "Alarm performance  (simulated)", table_w)
             write(vtxt, '(I0)') active_count
             call draw_kpi_card(hdc, ix,                   kp_y, kp_w, 76, "STANDING", trim(vtxt), merge(COL_RED, COL_GREEN, active_count > 0))
             write(vtxt, '(I0)') count(alarm_seen .and. .not. alarm_ack)
@@ -5198,7 +5355,7 @@ contains
             call draw_kpi_card(hdc, kc,                   kp_y, kp_w, 76, "BY PRIORITY", trim(adjustl(vtxt)), merge(COL_RED, COL_MUTED, nP1 > 0))
         end block
 
-        ! [5.0-A4] Right column: live ISA-18.2 state summary above the chronological log
+        ! [5.0-A4] Right column: simulated alarm-state summary above the chronological log
         ! (the log alone was a tall, empty panel during calm operation).
         call draw_section_title_width(hdc, log_x, btn_y + 54, "Alarm state summary", log_w)
         block
