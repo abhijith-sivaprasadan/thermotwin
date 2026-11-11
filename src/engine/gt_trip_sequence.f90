@@ -4,6 +4,7 @@
 module gt_trip_sequence
     use precision_kinds, only: dp
     use engine_state
+    use equipment_protection, only: EQ_INPUT_STALE_S
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
@@ -73,8 +74,10 @@ contains
         type(GridState),intent(inout) :: st
         integer,intent(in) :: cause
         logical,intent(out) :: accepted
+        logical :: was_online
         accepted=.false.
-        if(cause<GT_CAUSE_MANUAL .or. cause>GT_CAUSE_OIL) return
+        was_online=(st%gt_phase==GT_ONLINE)
+        if(cause<GT_CAUSE_MANUAL .or. cause>GT_CAUSE_START_ABORT) return
         if(st%fleet_mode) then
             st%gt_trip_last_denial="Single-GT trip is not supported in fleet-mode"
             return
@@ -95,10 +98,12 @@ contains
         st%gt_lube_support_on=.true.
         st%gt_turning_gear_on=.false.
         st%gt_purge_timer_done=.false.
-        st%gt_rotor_est_pct=max(15.0_dp,st%gt_rotor_est_pct)
+        ! Keep estimated speed unchanged on an aborted simulated startup.
+        if(was_online) st%gt_rotor_est_pct=max(15.0_dp,st%gt_rotor_est_pct)
         st%gt_exhaust_est_K=max(st%ambient_C+273.15_dp,st%exhaust_K)
         st%gt_steam_decay_MW=max(0.0_dp,st%steam_power_MW)
-        st%gt_pretrip_fuel_kg_s=max(0.0_dp,st%fuel_flow_kg_s)
+        ! Keep original online fuel reference through repeated start attempts.
+        if(was_online) st%gt_pretrip_fuel_kg_s=max(0.0_dp,st%fuel_flow_kg_s)
         st%gas_dispatch_pct=0.0_dp
         st%prev_gas_dispatch_pct=0.0_dp
         st%gas_ramp_pct_per_s=0.0_dp
@@ -133,8 +138,33 @@ contains
         type(GridState),intent(inout) :: st
         real(dp),intent(in) :: dt
         real(dp) :: ambient_K, alpha
+        integer :: mask, abort_cause
+        logical :: accepted
+        character(len=96) :: denial
         if(.not.ieee_is_finite(dt) .or. dt<=0.0_dp) return
         if(st%gt_phase==GT_ONLINE) return
+        ! Check each start step, including the instant before breaker closure.
+        ! The phase bit is intentionally ignored during the start sequence.
+        if(st%gt_phase>=GT_PURGING .and. st%gt_phase<=GT_SYNCHRONIZING) then
+            mask=ibclr(gt_trip_restart_mask(st),0)
+            if(mask/=0) then
+                denial=gt_trip_reason_for_mask(mask)
+                abort_cause=GT_CAUSE_START_ABORT
+                if(st%eq_source(EQ_OVERSPEED)==EQ_SRC_TRAINING .and. &
+                   st%eq_alarm(EQ_OVERSPEED)) abort_cause=GT_CAUSE_OVERSPEED
+                if(st%eq_source(EQ_OIL)==EQ_SRC_TRAINING .and. &
+                   st%eq_alarm(EQ_OIL)) abort_cause=GT_CAUSE_OIL
+                if(st%eq_source(EQ_COMBUST)==EQ_SRC_TRAINING .and. &
+                   st%eq_alarm(EQ_COMBUST)) abort_cause=GT_CAUSE_COMBUST
+                call gt_trip_request(st,abort_cause,accepted)
+                if(accepted) then
+                    st%gt_trip_last_denial=denial
+                    call gt_log(st,"SIM START ABORT / "//trim(denial))
+                    call gt_trip_apply_boundary(st)
+                end if
+                return
+            end if
+        end if
         ambient_K=st%ambient_C+273.15_dp
         st%gt_phase_s=st%gt_phase_s+dt
         select case(st%gt_phase)
@@ -256,17 +286,44 @@ contains
         call gt_log(st,"OPERATOR ACK / TRIP LATCH STILL ACTIVE")
     end subroutine gt_trip_acknowledge
 
-    integer function gt_trip_permit_mask(st) result(mask)
+    ! Cached TRAIN source identity is insufficient: the underlying numeric
+    ! sample must remain present, finite and fresh through synchronization.
+    logical function gt_trip_inputs_missing(st) result(missing)
         type(GridState),intent(in) :: st
         integer :: i
+        missing=.false.
+        if(st%gt_training_bypass) return
+        if(.not.ieee_is_finite(st%elapsed_s)) then
+            missing=.true.
+            return
+        end if
+        do i=1,EQ_N
+            if(i==EQ_SURGE .or. i==EQ_EXHAUST .or. i==EQ_GENERATOR) cycle
+            if(st%eq_source(i)/=EQ_SRC_TRAINING .or. .not.st%eq_training_present(i)) then
+                missing=.true.
+                return
+            end if
+            if(.not.ieee_is_finite(st%eq_training_stamp_s(i)) .or. &
+               .not.ieee_is_finite(st%eq_training_value(i))) then
+                missing=.true.
+                return
+            end if
+            if(st%eq_training_value(i)<0.0_dp .or. &
+               st%elapsed_s<st%eq_training_stamp_s(i) .or. &
+               st%elapsed_s-st%eq_training_stamp_s(i)>EQ_INPUT_STALE_S) then
+                missing=.true.
+                return
+            end if
+        end do
+    end function gt_trip_inputs_missing
+
+    integer function gt_trip_permit_mask(st) result(mask)
+        type(GridState),intent(in) :: st
         mask=0
         if(st%gt_phase/=GT_LOCKOUT) mask=ibset(mask,0)
         if(.not.st%gt_trip_ack) mask=ibset(mask,1)
         if(any(st%eq_alarm)) mask=ibset(mask,2)
-        do i=1,EQ_N
-            if(i==EQ_SURGE .or. i==EQ_EXHAUST .or. i==EQ_GENERATOR) cycle
-            if(st%eq_source(i)==EQ_SRC_UNAVAILABLE .and. .not.st%gt_training_bypass) mask=ibset(mask,3)
-        end do
+        if(gt_trip_inputs_missing(st)) mask=ibset(mask,3)
         if(st%gt_rotor_est_pct>GT_STOP_RPM_PCT .or. .not.st%gt_turning_gear_on) mask=ibset(mask,4)
         if(st%gt_exhaust_est_K>st%ambient_C+273.15_dp+GT_RESET_HOT_MARGIN_K) mask=ibset(mask,5)
         if(st%fleet_mode) mask=ibset(mask,6)
@@ -274,14 +331,10 @@ contains
 
     integer function gt_trip_restart_mask(st) result(mask)
         type(GridState),intent(in) :: st
-        integer :: i
         mask=0
         if(st%gt_phase/=GT_READY) mask=ibset(mask,0)
         if(any(st%eq_alarm)) mask=ibset(mask,2)
-        do i=1,EQ_N
-            if(i==EQ_SURGE .or. i==EQ_EXHAUST .or. i==EQ_GENERATOR) cycle
-            if(st%eq_source(i)==EQ_SRC_UNAVAILABLE .and. .not.st%gt_training_bypass) mask=ibset(mask,3)
-        end do
+        if(gt_trip_inputs_missing(st)) mask=ibset(mask,3)
         if(st%fleet_mode) mask=ibset(mask,6)
     end function gt_trip_restart_mask
 
@@ -383,6 +436,7 @@ contains
         case(GT_CAUSE_OVERSPEED);label="TRAIN ROTOR OVERSPEED"
         case(GT_CAUSE_COMBUST);label="TRAIN COMBUSTION DYN"
         case(GT_CAUSE_OIL);label="TRAIN LUBE LOW"
+        case(GT_CAUSE_START_ABORT);label="SIM START INTERLOCK"
         case default;label="NONE"
         end select
     end function gt_trip_cause_text

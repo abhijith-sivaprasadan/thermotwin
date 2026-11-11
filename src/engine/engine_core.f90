@@ -69,7 +69,7 @@ module engine_core
     public :: GT_ONLINE, GT_TRIPPED, GT_RUNDOWN, GT_LOCKOUT, GT_READY
     public :: GT_PURGING, GT_IGNITING, GT_ACCELERATING, GT_SYNCHRONIZING
     public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
-    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL
+    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL, GT_CAUSE_START_ABORT
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: limited_storage_power, append_history, history_index
     public :: bottoming_power_MW, thermal_generation_MW
@@ -807,11 +807,21 @@ contains
             merge(1,0,.not. st%auto_balance .and. abs(st%frequency_Hz - FREQ_NOMINAL_HZ) > 0.3_dp) * 2048 + &
             merge(1,0, st%renewable_curtail_MW > 2.0_dp) * 4096 + &
             merge(1,0, st%battery_soc_pct > 70.0_dp) * 8192 + &
-            merge(1,0, st%gas_dispatch_pct > 90.0_dp) * 16384
+            merge(1,0, st%gas_dispatch_pct > 90.0_dp) * 16384 + &
+            st%gt_phase * 32768
         if (h == st%advisory_hash .and. st%anom_tick > 1) return
         st%advisory_hash = h
 
         txt = ""
+
+        ! Protection status is never hidden behind normal/green dispatch advice.
+        ! The operator must not be instructed to raise GT load while isolated.
+        if(st%gt_phase/=GT_ONLINE) then
+            txt = "SIM GT OFFLINE (" // trim(gt_trip_phase_text(st%gt_phase)) // &
+                  "). Generator breaker isolated; gas dispatch unavailable. " // &
+                  "Use F7 TRIP SEQUENCE for first-out, reset and simulated " // &
+                  "restart conditions." // char(10) // char(10)
+        end if
 
         ! Priority 1 — active alarms
         if (st%alarm_surge) then
@@ -828,9 +838,16 @@ contains
         end if
         if (st%alarm_underfreq) then
             write(s1,'(F6.3)') st%frequency_Hz
-            txt = trim(txt) // "ALERT — Under-frequency: " // trim(adjustl(s1)) // &
-                  " Hz. BESS primary response active. Action: increase GT dispatch " // &
-                  "or shed controllable load." // char(10) // char(10)
+            if(st%gt_phase==GT_ONLINE) then
+                txt = trim(txt) // "ALERT — Under-frequency: " // trim(adjustl(s1)) // &
+                      " Hz. BESS primary response active. Action: increase available " // &
+                      "generation or shed controllable load." // char(10) // char(10)
+            else
+                txt = trim(txt) // "ALERT — Under-frequency: " // trim(adjustl(s1)) // &
+                      " Hz. GT generator is disconnected: do not raise its " // &
+                      "dispatch slider. Use available BESS/renewables or load " // &
+                      "shedding as permitted by this simulation." // char(10) // char(10)
+            end if
         end if
         if (st%alarm_overfreq) then
             txt = trim(txt) // "ALERT — Over-frequency. Excess generation. Action: " // &
