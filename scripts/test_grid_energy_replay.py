@@ -115,6 +115,18 @@ def main() -> int:
         with output.open(newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         checked = verify(rows)
+        # Independent checker must reject an internally inconsistent flight
+        # recorder, not merely run successfully on generated model outputs.
+        for field, offset in [("battery_energy_MWh", 0.1), ("supply_MW", 1.0),
+                              ("ROCOF_Hz_s", 1.0)]:
+            altered = [dict(row) for row in rows]
+            altered[3][field] = str(float(altered[3][field]) + offset)
+            try:
+                verify(altered)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"Tampered {field} escaped independent validator")
     print(f"PASS independently replayed {checked} grid samples: MW, Hz/s, MWh, bounds")
     print("NOTE: arithmetic/reference test only; no OEM/field validation")
     return 0
