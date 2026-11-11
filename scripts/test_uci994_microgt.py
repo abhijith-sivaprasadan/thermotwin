@@ -67,7 +67,7 @@ class ForecastMathematicalContracts(unittest.TestCase):
         self.assertTrue(math.isfinite(report["static_baseline_rmse_watt"]))
         self.assertTrue(math.isfinite(report["test_rmse_watt"]))
         self.assertEqual(report["test_points_scored"],2*(165-1))
-        with self.assertRaisesRegex(ValueError,"original"):
+        with self.assertRaisesRegex(ValueError,"Original"):
             evaluate({1:data[1]}, {4:data[4]})
 
     def test_import_schema_and_member_id_guards(self):
