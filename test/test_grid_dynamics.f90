@@ -172,6 +172,7 @@ program test_grid_dynamics
         st%reserve_MW = 1.0_dp
         st%battery_soc_pct = 10.0_dp
         st%gas_dispatch_pct = 100.0_dp
+        st%effective_gas_dispatch_pct = 100.0_dp
         st%gas_power_MW = 30.0_dp
         st%gas_capacity_MW = 30.0_dp
         st%demand_MW = 30.0_dp
