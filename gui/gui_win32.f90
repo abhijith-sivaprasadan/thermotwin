@@ -1164,6 +1164,11 @@ contains
                 case(84)
                     call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
+                case(85)
+                    control_scroll_y=huge(1) ! test the last controls remain reachable
+                case(87)
+                    call visual_qa_capture("build\gui-visual-qa\05-controls-bottom.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\05-controls-bottom-1536.png")
                 case(90)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
@@ -1317,7 +1322,7 @@ contains
         layout_slider_x = layout_control_left + 26
         layout_slider_w = layout_control_w - 58
 
-        first_slider_y = layout_control_top + 116
+        first_slider_y = layout_control_top + 140  ! space for scroll affordance
         available_control = max(480, layout_control_bottom - layout_control_top - 310)
         slider_gap = min(max(ui_slider_gap_min(), available_control / 6), ui_slider_gap_max())
         layout_slider_y(1) = first_slider_y
@@ -3565,6 +3570,7 @@ contains
         call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
         call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
+        call draw_text(hdc, title_x, top + 68, "WHEEL / PGDN  :  MORE CONTROLS", COL_DIM)
         if (native_renderer_ready) call hmi_push_clip(hdc,int(left+4,c_int), &
             int(top+70,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
 

@@ -73,6 +73,22 @@ field points or safety-related annunciation equipment. Human operator testing,
 speaker output tests, alarm rationalization, failure handling, historical
 event integrity and ISA-18.2/IEC 62682 qualification remain incomplete.
 
+## Retaining the full original GUI at smaller display heights
+
+The control strip retains all six sliders, dispatch actions, scenario
+selection and CSV/PDF export. Rather than overlapping lower sliders at
+768/960 px heights, it now has a native GDI+ clipped content viewport
+and a visible cyan scrollbar. Move the mouse over the control strip and
+scroll the **wheel**, press **Page Up/Page Down**, click its narrow scroll
+rail or navigate by keyboard Tab (which reveals a focused control).
+The plant graphics, colors, research plots and all 16 screen destinations
+are unchanged. Header mode information is shortened only where needed
+to avoid colliding with the title.
+
+The screenshot QA includes both true native 1024×768 window frames and
+native 1536×960 offscreen HMI renders (not scaled screenshots), plus a
+scroll-bottom frame documenting scenario/export reachability.
+
 ## Build
 
 From the repository root on Windows with MinGW/gfortran:
