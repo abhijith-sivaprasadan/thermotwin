@@ -1982,6 +1982,7 @@ contains
     function theme_name() result(s)
         character(len=16) :: s
         select case (hmi_theme)
+        case (THEME_OPERATOR);        s = "Operator"
         case (THEME_BLUEPRINT);       s = "Blueprint"
         case (THEME_CLASSIC_DK);      s = "Classic dark"
         case (THEME_CLASSIC_LT);      s = "Classic light"
@@ -2131,7 +2132,7 @@ contains
             case ("nav_rail_collapsed")
                 nav_rail_collapsed = ival /= 0
             case ("operator_layout")
-                operator_layout = ival /= 0
+                operator_layout = .true.   ! retired legacy overlapping layout
             case ("alarm_sound_enabled")
                 alarm_sound_enabled = ival /= 0
             end select
@@ -3513,7 +3514,7 @@ contains
         else
             info="AUDIO ON"
         end if
-        call draw_text(hdc,x+w-150,y+119,trim(info),COL_MUTED)
+        call draw_text(hdc,x+w-150,y+119,trim(info)//" [B]",COL_MUTED)
         select case(hmi_screen)
         case(SCREEN_OVERVIEW)
             call draw_operator_overview(hdc,x,cy,w,ch)
@@ -3671,7 +3672,7 @@ contains
         call draw_industrial_button(hdc,ix+bw+8,y+39,ix+2*bw+8,y+74,"SILENCE",COL_PANEL_ALT,alarm_audio_silenced)
         call draw_industrial_button(hdc,ix+2*(bw+8),y+39,ix+3*bw+16,y+74,"SHELVE P2",COL_PANEL_ALT,.false.)
         call draw_industrial_button(hdc,ix+3*(bw+8),y+39,ix+iw,y+74,"UNSHELVE",COL_PANEL_ALT,.false.)
-        call draw_text(hdc,ix,y+88,"PRIORITY         CONDITION                STATE                  OPERATOR ACTION",COL_MUTED)
+        call draw_text(hdc,ix,y+88,"PRIORITY   CONDITION                  STATE         ACTION",COL_MUTED)
         ry=y+113
         do i=1,ALARM_COUNT
             call draw_alarm_row(hdc,ix,ry,iw,39,i,labels(i),states(i),colors(i))
@@ -3703,7 +3704,7 @@ contains
         call fill_box(hdc,x,y,x+w,bottom,COL_PANEL_DEEP)
         call stroke_soft_box(hdc,x,y,x+w,bottom,COL_BORDER,1)
         call draw_title_text(hdc,x+14,y+14,"SETPOINTS",COL_INK)
-        call draw_text(hdc,x+14,y+42,"SIMULATED / LOCAL CONTROLS",COL_MUTED)
+        call draw_text(hdc,x+14,y+42,"SIMULATED / LOCAL",COL_MUTED)
         bw=(w-28)/3
         call fill_box(hdc,x+14,y+70,x+w-14,y+107,COL_PANEL)
         call fill_box(hdc,x+14+(control_page-1)*bw,y+103, &
@@ -3718,16 +3719,16 @@ contains
         case(1)
             write(v,'(F5.1," MW")') grid%demand_MW
             call draw_custom_slider(hdc,ID_DEMAND,layout_slider_x,layout_slider_y(1),layout_slider_w, &
-                "LOAD DEMAND",trim(adjustl(v)),grid%demand_MW,DEMAND_MIN_MW,DEMAND_MAX_MW,COL_MUTED)
+                "DEMAND",trim(adjustl(v)),grid%demand_MW,DEMAND_MIN_MW,DEMAND_MAX_MW,COL_MUTED)
             write(v,'(F5.1," MW")') grid%renewable_MW
             call draw_custom_slider(hdc,ID_RENEWABLE,layout_slider_x,layout_slider_y(2),layout_slider_w, &
                 "RENEWABLE",trim(adjustl(v)),grid%renewable_MW,0.0_dp,RENEWABLE_MAX_MW,COL_MUTED)
             write(v,'(SP,F5.1," MW")') grid%storage_request_MW
             call draw_custom_slider(hdc,ID_STORAGE,layout_slider_x,layout_slider_y(3),layout_slider_w, &
-                "BESS COMMAND",trim(adjustl(v)),grid%storage_request_MW,STORAGE_MIN_MW,STORAGE_MAX_MW,COL_MUTED)
+                "BESS",trim(adjustl(v)),grid%storage_request_MW,STORAGE_MIN_MW,STORAGE_MAX_MW,COL_MUTED)
             write(v,'(F5.1," %")') grid%gas_dispatch_pct
             call draw_custom_slider(hdc,ID_GAS,layout_slider_x,layout_slider_y(4),layout_slider_w, &
-                "GAS TURBINE",trim(adjustl(v)),grid%gas_dispatch_pct,GAS_MIN_PCT,GAS_MAX_PCT,COL_MUTED)
+                "GT SETPOINT",trim(adjustl(v)),grid%gas_dispatch_pct,GAS_MIN_PCT,GAS_MAX_PCT,COL_MUTED)
             call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34,"AUTO / MAN",COL_PANEL_ALT,grid%auto_balance)
             call draw_industrial_button(hdc,b2,by,x+w-14,by+34,"BALANCE",COL_PANEL_ALT,.false.)
             call draw_industrial_button(hdc,x+14,by+42,x+14+b1,by+76,"LOAD +10",COL_PANEL_ALT,.false.)
@@ -5549,17 +5550,21 @@ contains
         call draw_text(hdc, x + 96, y + 8, label, merge(COL_INK, COL_MUTED, alarm_seen(alarm_id)))
         call draw_text(hdc, x + 306, y + 8, trim(state_text), state_color)
         if (active .and. .not. alarm_ack(alarm_id)) then
-            action_text = "ACK required"
+            action_text = "ACK REQUIRED"
         else if (active .and. alarm_shelved(alarm_id)) then
-            action_text = "Shelved - click row to unshelve"
+            action_text = "SHELVED / P2"
         else if (active) then
-            action_text = "Monitoring active condition"
+            action_text = "ACK / MONITOR"
         else if (alarm_seen(alarm_id)) then
-            action_text = "Returned - click row or ACK ALL to clear"
+            action_text = "RTN / CLEAR"
         else
-            action_text = "Normal"
+            action_text = "NORMAL"
         end if
-        call draw_text(hdc, x + 410, y + 8, trim(action_text), COL_MUTED)
+        if (operator_layout) then
+            call draw_text(hdc, x + max(330,width-174), y + 8, trim(action_text), COL_MUTED)
+        else
+            call draw_text(hdc, x + 410, y + 8, trim(action_text), COL_MUTED)
+        end if
     end subroutine draw_alarm_row
 
     ! =========================================================================

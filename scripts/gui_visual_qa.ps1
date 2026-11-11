@@ -20,17 +20,18 @@ foreach ($name in $expected) {
     try {
         if ($img.Width -lt 1024 -or $img.Height -lt 720) { throw "Invalid screenshot resolution: $name" }
         Write-Host ("Native screenshot {0}: {1}x{2} px; {3} bytes" -f $name, $img.Width, $img.Height, (Get-Item $path).Length)
-        if ($name -eq "01-overview.png") {
-            $newWidth = 960
+        {
+            $newWidth = 800
             $newHeight = [int][Math]::Round($img.Height * $newWidth / $img.Width)
             $thumb = New-Object System.Drawing.Bitmap($newWidth, $newHeight)
             $g = [System.Drawing.Graphics]::FromImage($thumb)
             try { $g.DrawImage($img, 0, 0, $newWidth, $newHeight) }
             finally { $g.Dispose() }
-            $out = Join-Path $folder "01-overview-thumb.jpg"
+            $out = Join-Path $folder ($name -replace "\.png$", "-thumb.jpg")
             $thumb.Save($out, [System.Drawing.Imaging.ImageFormat]::Jpeg)
             $thumb.Dispose()
-            Write-Host ("HMI_OVERVIEW_JPEG_BASE64:" + [Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
+            $tag = ($name -replace "\.png$", "").ToUpperInvariant() -replace "^[0-9]+-", ""
+            Write-Host ("HMI_" + $tag + "_JPEG_BASE64:" + [Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
         }
     }
     finally { $img.Dispose() }
