@@ -71,6 +71,7 @@ At any instant in the reduced electrical model:
 - `test/test_grid_primary_energy.f90`: solved fuel/power governor coupling, no extra frequency MW, real BESS energy debit, charge/discharge near energy limit, repeated GFM no-accumulation, combined inverter ceiling, UFLS/LFSM-O accounting, timestep subdivision and trip exclusions.
 - `test/test_grid_dynamics.f90`: existing analytical frequency, UFLS and renewable regulation tests, updated primary-control semantics.
 - `test/test_gt_trip_sequence.f90`: GT trip isolation and restart preconditions retained.
+- `scripts/test_grid_energy_replay.py`: independently replays the real simulator's `grid_energy_replay.scn` flight recorder in Python. Asserts `supply=plant+renewable_actual+storage`, `imbalance=supply-served`, explicit frequency Euler step, timestep battery MWh integration and storage/rated-power bounds. The checker also deliberately corrupts stored battery energy, supply and ROCOF values and **must reject** all three altered records. This is independent arithmetic **using simulated telemetry**, not comparison against a measured power plant.
 - `make check` + cross-platform CI required on the **exact SHA**; code changes alone are not acceptance.
 
 ## Scientific and industrial limitations that still apply
