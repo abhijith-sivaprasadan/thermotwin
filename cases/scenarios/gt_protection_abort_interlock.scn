@@ -28,4 +28,6 @@ at 61.25 assert_near gt_excitation_on 0.0 0.01
 at 61.25 assert_near gt_start_motor_on 0.0 0.01
 at 61.25 assert_near gt_fuel_valve_open 0.0 0.01
 at 61.25 assert_near gas_power_MW 0.0 0.001
-at 62.00 assert_near gt_phase 2.0 0.01
+# Rotor already near rest during purge; this aborted startup reaches
+# lockout on the next modeled rundown tick, without any re-energization.
+at 62.00 assert_near gt_phase 3.0 0.01

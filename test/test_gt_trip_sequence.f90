@@ -133,6 +133,9 @@ program test_gt_trip_sequence
     call check("acknowledged safe educational reset accepted",accepted .and. out%gt_phase==GT_READY)
     call check("reset does not spontaneously restart generation",&
        .not.out%gt_breaker_closed .and. .not.out%gt_fuel_valve_open)
+    call gt_trip_request(out,GT_CAUSE_MANUAL,accepted)
+    call check("manual trip cannot re-enter emergency shutdown from already reset OFFLINE",&
+       .not.accepted .and. out%gt_phase==GT_READY)
     out%eq_alarm(EQ_OVERSPEED)=.true.
     call gt_trip_start(out,accepted)
     call check("restart blocked by standing overspeed condition",.not.accepted)

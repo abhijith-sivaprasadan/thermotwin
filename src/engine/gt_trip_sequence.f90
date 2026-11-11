@@ -144,7 +144,10 @@ contains
             integer :: i
             do i=1,EQ_N
                 if(.not.st%gt_followon_alarm_seen(i)) cycle
-                call gt_log(st,"ACTIVE AT TRIP: "//trim(equipment_name(i)))
+                if(i==EQ_OVERSPEED .and. cause==GT_CAUSE_OVERSPEED) cycle
+                if(i==EQ_OIL .and. cause==GT_CAUSE_OIL) cycle
+                if(i==EQ_COMBUST .and. cause==GT_CAUSE_COMBUST) cycle
+                call gt_log(st,"OTHER ACTIVE AT TRIP: "//trim(equipment_name(i)))
             end do
         end block
     end subroutine gt_trip_request
@@ -191,7 +194,7 @@ contains
                 end if
             end do
         end if
-        if(st%gt_phase/=GT_ONLINE .and. st%gt_phase/=GT_READY .and. &
+        if(st%gt_phase/=GT_ONLINE .and. &
            st%gt_phase/=GT_PURGING .and. st%gt_phase/=GT_IGNITING .and. &
            st%gt_phase/=GT_ACCELERATING .and. st%gt_phase/=GT_SYNCHRONIZING) return
         cause=gt_first_training_cause(st)
