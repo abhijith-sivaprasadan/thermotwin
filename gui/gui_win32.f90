@@ -3764,9 +3764,24 @@ contains
 
         ! --- Status banner ---
         call grid_status(status, status_color)
+        if(instructor%frozen) then
+            status='INSTRUCTOR FROZEN - MODEL CLOCK HALTED'
+            status_color=COL_AMBER
+        end if
         call fill_box(hdc, x0, y0 + 44, x0 + w, y0 + 68, COL_PANEL_ALT)
         call fill_box(hdc, x0, y0 + 44, x0 + 6, y0 + 68, status_color)
         call draw_line(hdc, x0, y0 + 68, x0 + w, y0 + 68, COL_BORDER_SOFT, 1)
+        ! At 1024px the main canvas is narrower than the six module chips
+        ! plus alert cluster. Keep the first-out/status unobscured on that view.
+        if(w < 850) then
+            if(grid%gt_phase/=GT_ONLINE.or.instructor%frozen.or. &
+               notice_ticks<=0.or.len_trim(operator_notice)==0) then
+                call draw_text(hdc,inner_x+10,y0+50,trim(status(1:min(len_trim(status),62))),status_color)
+            else
+                call draw_text(hdc,inner_x+10,y0+50, &
+                    trim(operator_notice(1:min(len_trim(operator_notice),62))),COL_CYAN)
+            end if
+        else
         call draw_text(hdc, inner_x + 10, y0 + 50, trim(status), status_color)
         if (notice_ticks > 0 .and. len_trim(operator_notice) > 0) then
             call draw_text(hdc, inner_x + min(520, w / 2), y0 + 50, trim(operator_notice), COL_CYAN)
@@ -3819,6 +3834,8 @@ contains
                 end if
             end if
         end block
+
+        end if  ! wide header chips only; narrow status stays readable
 
         ! --- Screen navigation ---
         call draw_nav_bar(hdc, x0, y0 + 72, w, 32)
@@ -13335,8 +13352,13 @@ contains
         top=y+8
         bw3=(iw-16)/3
         bw4=(iw-24)/4
-        call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
-            'OFFLINE TRAINING / simulated faults only - NOT plant control')
+        if(iw<700) then
+            call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
+                'TRAINING ONLY - NO PLANT I/O')
+        else
+            call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
+                'OFFLINE TRAINING / simulated faults only - NOT plant control')
+        end if
         call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
             'SCENARIOS [I]',COL_PANEL_ALT,.false.)
 
