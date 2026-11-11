@@ -5,7 +5,7 @@ $env:THERMOTWIN_GUI_VISUAL_QA = "1"
 $binary = Join-Path $PWD "thermotwin-gui-offline.exe"
 if (!(Test-Path $binary)) { throw "Expected original offline GUI executable absent" }
 $proc = Start-Process -FilePath $binary -WorkingDirectory $PWD -PassThru
-if (!$proc.WaitForExit(25000)) {
+if (!$proc.WaitForExit(35000)) {
     Stop-Process -Id $proc.Id -Force
     throw "Original GUI screenshot harness timed out; graphical desktop unavailable"
 }
@@ -21,7 +21,11 @@ $expected = @(
 "08-trip-events.png","08-trip-events-1536.png",
 "09-alarm-surge-map.png","09-alarm-surge-map-1536.png",
 "10-alarm-oil-no-data.png","10-alarm-oil-no-data-1536.png",
-"11-alarm-frequency.png","11-alarm-frequency-1536.png")
+"11-alarm-frequency.png","11-alarm-frequency-1536.png",
+"12-instructor-running.png","12-instructor-running-1536.png",
+"13-instructor-frozen.png","13-instructor-frozen-1536.png",
+"14-instructor-oil-trip.png","14-instructor-oil-trip-1536.png",
+"15-instructor-restored.png","15-instructor-restored-1536.png")
 Add-Type -AssemblyName System.Drawing
 foreach($name in $expected) {
     $path = Join-Path $folder $name

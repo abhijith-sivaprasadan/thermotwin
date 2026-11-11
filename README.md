@@ -198,6 +198,8 @@ make gui
 .\thermotwin-gui.exe
 ```
 
+**Current draft development only:** F15 now has a separate Instructor tab (I toggles it), allowing declared training sensor injections, bounded disturbances, an in-memory freeze/snapshot/restore workflow, and a simple F7 operator-action exercise rubric. The original F15 A/B scenarios, F3 compressor map/Brayton T-s diagram, and F7 alarm/protection screens remain. The PFD and maps now use model-derived component states and cursor/tracer cues. These features are in [unmerged draft PR #54](https://github.com/abhijith-sivaprasadan/thermotwin/pull/54), not the frozen source beta. See the [instructor and engineering-visual acceptance plan](docs/INSTRUCTOR_AND_ENGINEERING_VISUALS_2026-11-11.md) for explicit model/measurement provenance and outstanding checks.
+
 See [`gui/README.md`](gui/README.md) for scope and
 [the GUI acceptance protocol](docs/GUI_ACCEPTANCE.md). The GitHub Actions
 Windows job only **compiles** the GUI; the source-code prerelease must not

@@ -114,8 +114,8 @@ jobs:
           if-no-files-found: error
       - name: Verify build cleanup cannot remove sources or outside paths
         run: python -m unittest scripts.test_clean -v
-      - name: Test Open-Meteo weather boundary units, QC and replay
-        run: python -m unittest scripts.test_open_meteo_boundary -v
+      - name: Deterministic weather boundary and four-season study contracts (no external HTTP)
+        run: python -m unittest scripts.test_open_meteo_boundary scripts.test_study_era5_site_windows -v
       - name: Generate independent IF97 discrepancies
         run: |
           make property-reference-grid
@@ -226,6 +226,9 @@ jobs:
 
   real-weather-archive:
     name: Real ERA5 weather boundary integration (reanalysis, not GT test data)
+    # External Open-Meteo HTTP is not a reproducible code-validation gate.
+    # Only report actual fetched source data when this job has executed.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -271,6 +274,8 @@ jobs:
 
   lincoln-source-backed-dossier:
     name: Recruiter evidence dossier from UCI + ERA5 source artifacts
+    # Deliberately SKIPPED for PRs, never mislabelled as live-source verified.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: [real-turbine-uci551, real-weather-archive]
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -308,6 +313,9 @@ jobs:
 
   historical-era5-seasonal-site-study:
     name: Original ERA5 four-season fixed-engine site sensitivity
+    # Four separate remote 2025 reanalysis queries are provenance checks,
+    # not deterministic pull-request regression tests.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 28
     steps:

@@ -11,8 +11,15 @@ module thermotwin_win32_gui
         c_ptr, c_short, c_sizeof
     use precision_kinds, only: dp
     use engine_core
-    use engine_state, only: EQ_N, EQ_COMBUST, EQ_OIL, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
+    use engine_state, only: EQ_N, EQ_COMBUST, EQ_OIL, EQ_OVERSPEED, EQ_BEARING, &
+        EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
     use equipment_protection, only: equipment_name, equipment_unit, equipment_priority, EQ_THRESHOLD_ON
+    use instructor_console, only: InstructorSession, instructor_set_frozen, &
+        instructor_capture, instructor_restore, instructor_inject_fault, &
+        instructor_clear_fault, instructor_refresh_fault, instructor_change_boundary, &
+        instructor_observe, instructor_operator_action, instructor_score, &
+        INSTR_LOG_N, INSTR_LOAD_UP, INSTR_LOAD_DOWN, INSTR_RENEWABLE_DROP, &
+        INSTR_AMBIENT_HOT, INSTR_ACK, INSTR_RESET, INSTR_RESTART
     use alarm_drilldown, only: DrillObservation, DrillHistory, DRILL_N, DRILL_PLANT_N, &
         DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
         drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
@@ -92,6 +99,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_LEFT  = 37_c_int
     integer(c_int), parameter :: VK_RIGHT = 39_c_int
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
+    integer(c_int), parameter :: VK_I   = 73_c_int   ! F15 instructor-console toggle
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
     integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
@@ -918,6 +926,8 @@ module thermotwin_win32_gui
     ! CI-only native screenshot capture, completely inactive in normal operation.
     logical :: visual_qa_mode = .false.
     integer :: visual_qa_ticks = 0
+    real(dp) :: visual_qa_frozen_time_s=-1.0_dp
+    real(dp) :: visual_qa_frozen_load_MW=-1.0_dp
     type(c_ptr) :: back_memdc = c_null_ptr
     type(c_ptr) :: back_bitmap = c_null_ptr
     type(c_ptr) :: back_old_bitmap = c_null_ptr
@@ -978,7 +988,12 @@ module thermotwin_win32_gui
     integer :: scn_selected = 1
     integer :: scn_compare_selected = 2
     logical :: scn_playing = .false.
+    type(InstructorSession) :: instructor
+    logical :: instructor_view=.false.   ! F15 instructor tab; existing comparison preserved
     type(Scenario) :: scn_active
+    ! GUI-side checkpoint of scripted event cursors alongside the full GridState.
+    type(Scenario) :: instructor_saved_scenario
+    logical :: instructor_saved_scn_playing=.false.
     type(ScenarioComparison) :: scn_cmp
     character(len=96) :: scn_compare_status = "No comparison run"
 
@@ -1100,6 +1115,7 @@ contains
             call init_fonts()
             call create_controls(hwnd)
             call engine_init(grid)
+            instructor=InstructorSession()
             call load_hmi_config()
             call apply_theme()                 ! [6.0-P1] activate the selected palette at launch
             qa_env = ""
@@ -1138,24 +1154,29 @@ contains
         case (WM_TIMER)
             ! HMI scan/render tick: advance engine every frame, sample trend history at
             ! the plant-HMI cadence so a 240-sample buffer remains a real 60 s window.
-            if (scn_playing) then
-                block
-                    logical :: scn_done
-                    call scenario_gui_tick(scn_active, grid, grid%elapsed_s, scn_done)
-                    if (scn_done) scn_playing = .false.
-                end block
+            if (.not.instructor%frozen) then
+                if (scn_playing) then
+                    block
+                        logical :: scn_done
+                        call scenario_gui_tick(scn_active, grid, grid%elapsed_s, scn_done)
+                        if (scn_done) scn_playing = .false.
+                    end block
+                end if
+                call instructor_refresh_fault(instructor,grid)
+                call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
+                call instructor_observe(instructor,grid)
+                call update_alarm_workflow()
+                call flush_opcua_tags()
+                history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
+                if (history_sample_ms_accum >= HISTORY_SAMPLE_MS) then
+                    call append_history(grid)
+                    call drill_record(alarm_drill_hist,grid)
+                    history_sample_ms_accum = mod(history_sample_ms_accum, HISTORY_SAMPLE_MS)
+                end if
             end if
-            call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
-            call update_alarm_workflow()
+            ! Rendering and Win32 interaction continue while modeled time is frozen.
             call update_alarm_audio()
-            call flush_opcua_tags()
             call opcua_iterate()
-            history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
-            if (history_sample_ms_accum >= HISTORY_SAMPLE_MS) then
-                call append_history(grid)
-                call drill_record(alarm_drill_hist,grid)
-                history_sample_ms_accum = mod(history_sample_ms_accum, HISTORY_SAMPLE_MS)
-            end if
             anim_tick = anim_tick + 1                 ! [6.0-P5] animation clock
             if (boot_ticks > 0) boot_ticks = boot_ticks - 1
             if (notice_ticks > 0) notice_ticks = notice_ticks - 1
@@ -1275,6 +1296,110 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\05-controls-bottom.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\05-controls-bottom-1536.png")
                 case(90)
+                    ! Continue into the instructor tab after the original HMI screenshots.
+                    call engine_init(grid)
+                    call reset_alarm_workflow()
+                    call set_hmi_screen(SCREEN_SCENARIO)
+                    instructor=InstructorSession()
+                    instructor_view=.false.
+                case(91)
+                    block
+                        integer :: ix,iw,top
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        call handle_mouse_down(hwnd,ix+iw-90,top+26)
+                        if(.not.instructor_view) then
+                            call log_debug("QA FAIL: instructor tab click did not open")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(93)
+                    call visual_qa_capture("build\gui-visual-qa\12-instructor-running.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\12-instructor-running-1536.png")
+                case(94)
+                    block
+                        integer :: ix,top
+                        ix=layout_main_left+18
+                        top=hmi_content_top(layout_main_top)+8
+                        call handle_mouse_down(hwnd,ix+30,top+126)
+                        if(.not.instructor%frozen) then
+                            call log_debug("QA FAIL: instructor freeze button")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        visual_qa_frozen_time_s=grid%elapsed_s
+                        visual_qa_frozen_load_MW=grid%demand_MW
+                    end block
+                case(95)
+                    if(grid%elapsed_s/=visual_qa_frozen_time_s) then
+                        call log_debug("QA FAIL: frozen simulation advanced engine clock")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                    call handle_command(ID_LOAD_STEP)
+                    if(grid%demand_MW/=visual_qa_frozen_load_MW) then
+                        call log_debug("QA FAIL: frozen operator changed plant demand")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                    call visual_qa_capture("build\gui-visual-qa\13-instructor-frozen.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\13-instructor-frozen-1536.png")
+                case(96)
+                    block
+                        integer :: ix,iw,top,bw3
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        bw3=(iw-16)/3
+                        call handle_mouse_down(hwnd,ix+bw3+20,top+126)
+                        if(.not.instructor%saved) then
+                            call log_debug("QA FAIL: instructor snapshot capture")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        call handle_mouse_down(hwnd,ix+30,top+126)
+                        if(instructor%frozen) then
+                            call log_debug("QA FAIL: instructor resume button")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        call handle_mouse_down(hwnd,ix+30,top+208)
+                        if(instructor%fault_id/=EQ_OIL) then
+                            call log_debug("QA FAIL: instructor low oil fault injection")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(110)
+                    if(grid%gt_first_out/=GT_CAUSE_OIL) then
+                        call log_debug("QA FAIL: injected oil did not qualify real first-out")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                case(111)
+                    call visual_qa_capture("build\gui-visual-qa\14-instructor-oil-trip.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\14-instructor-oil-trip-1536.png")
+                case(112)
+                    block
+                        integer :: ix,iw,top,bw3
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        bw3=(iw-16)/3
+                        call handle_mouse_down(hwnd,ix+2*bw3+25,top+126)
+                        if(.not.instructor%frozen.or.grid%gt_phase/=GT_ONLINE.or. &
+                            instructor%fault_id/=0) then
+                            call log_debug("QA FAIL: instructor snapshot restore")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(114)
+                    call visual_qa_capture("build\gui-visual-qa\15-instructor-restored.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\15-instructor-restored-1536.png")
+                case(119)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
                     return
@@ -1502,6 +1627,10 @@ contains
     subroutine handle_command(control_id)
         integer(c_int), intent(in) :: control_id
 
+        if(instructor%frozen) then
+            call set_notice('INSTRUCTOR FROZEN - resume before changing operator setpoints.')
+            return
+        end if
         select case (control_id)
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
@@ -1661,6 +1790,13 @@ contains
             active_control = ID_NONE
             return
         end if
+        ! F15 is split into independent scenario comparison and instructor tabs.
+        if (hmi_screen==SCREEN_SCENARIO) then
+            if (handle_instructor_mouse(x,y)) then
+                active_control=ID_NONE
+                return
+            end if
+        end if
         handled = handle_alarm_mouse(x, y)
         if (handled) then
             active_control = ID_NONE
@@ -1674,6 +1810,13 @@ contains
         end if
 
         active_control = hit_test_control(x, y)
+        if(instructor%frozen.and.active_control/=ID_NONE.and. &
+            active_control/=ID_EXPORT_CSV.and.active_control/=ID_EXPORT_PDF.and. &
+            active_control/=ID_SHORTCUTS) then
+            call set_notice('INSTRUCTOR FROZEN - operator inputs are held.')
+            active_control=ID_NONE
+            return
+        end if
         select case (active_control)
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
@@ -1832,6 +1975,12 @@ contains
         end if
         if (ctrl_down()) then
             select case (kval)
+            case (VK_I)
+                call set_hmi_screen(SCREEN_SCENARIO)
+                instructor_view=.true.
+                shortcuts_popup_active=.false.
+                call set_notice('Instructor console: use FREEZE, SAVE, injections and F7 drill.')
+                return
             case (VK_K)
                 command_palette_active = .true.
                 shortcuts_popup_active = .false.
@@ -1862,6 +2011,17 @@ contains
             end select
         end if
 
+        if (hmi_screen==SCREEN_SCENARIO.and.instructor_view.and.kval==VK_SPACE) then
+            call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
+            return
+        end if
+        if(instructor%frozen) then
+            if((kval>=VK_1.and.kval<=VK_6).or.kval==VK_R.or.kval==VK_A.or. &
+                kval==VK_UP.or.kval==VK_DOWN) then
+                call set_notice('INSTRUCTOR FROZEN - operator model hotkeys held.')
+                return
+            end if
+        end if
         if (kval == VK_TAB) then
             call cycle_focus(1)
             return
@@ -1870,10 +2030,14 @@ contains
             call refresh_model(grid)
             return
         else if (kval == VK_LEFT) then
-            if (adjust_focused_slider(-1)) call refresh_model(grid)
+            if(.not.instructor%frozen) then
+                if (adjust_focused_slider(-1)) call refresh_model(grid)
+            end if
             return
         else if (kval == VK_RIGHT) then
-            if (adjust_focused_slider(1)) call refresh_model(grid)
+            if(.not.instructor%frozen) then
+                if (adjust_focused_slider(1)) call refresh_model(grid)
+            end if
             return
         end if
 
@@ -1945,6 +2109,8 @@ contains
             grid%mpc_active = .not. grid%mpc_active
         case (VK_6)
             grid%ou_active = .not. grid%ou_active
+        case (VK_I)
+            if(hmi_screen==SCREEN_SCENARIO) instructor_view=.not.instructor_view
         case (VK_E)
             call export_shift_csv(grid)
         case (VK_R)
@@ -2699,12 +2865,14 @@ contains
                     call set_notice("First-out already acknowledged; latch unchanged.")
                 else
                     call gt_trip_acknowledge(grid)
+                    call instructor_operator_action(instructor,grid,INSTR_ACK,.true.)
                     call set_notice("First-out acknowledged; trip latch remains.")
                 end if
             case(2)
                 block
                     logical :: accepted
                     call gt_trip_reset_latch(grid,accepted)
+                    call instructor_operator_action(instructor,grid,INSTR_RESET,accepted)
                     if(accepted) then
                         call set_notice("GT trip reset; unit OFFLINE, restart separate.")
                     else
@@ -2715,6 +2883,7 @@ contains
                 block
                     logical :: accepted
                     call gt_trip_start(grid,accepted)
+                    call instructor_operator_action(instructor,grid,INSTR_RESTART,accepted)
                     if(accepted) then
                         call set_notice("Simulation purge timer started; no flow verified.")
                     else
@@ -3070,6 +3239,12 @@ contains
 
     subroutine activate_focused_control()
         active_control = focus_control_id
+        if(instructor%frozen.and.focus_control_id/=ID_EXPORT_CSV.and. &
+            focus_control_id/=ID_EXPORT_PDF.and.focus_control_id/=ID_SHORTCUTS) then
+            call set_notice('INSTRUCTOR FROZEN - focused model input held.')
+            active_control=ID_NONE
+            return
+        end if
         select case (focus_control_id)
         case (ID_AUTO, ID_BALANCE, ID_RESET, ID_ROI_MODE, ID_FCR_HOLD, ID_LOAD_STEP, &
               ID_CLOUD_RAMP, ID_TURBINE_TRIP, ID_CC_MODE, ID_MARKET_PROFILE, ID_MARKET_REPLAY)
@@ -3589,9 +3764,24 @@ contains
 
         ! --- Status banner ---
         call grid_status(status, status_color)
+        if(instructor%frozen) then
+            status='INSTRUCTOR FROZEN - MODEL CLOCK HALTED'
+            status_color=COL_AMBER
+        end if
         call fill_box(hdc, x0, y0 + 44, x0 + w, y0 + 68, COL_PANEL_ALT)
         call fill_box(hdc, x0, y0 + 44, x0 + 6, y0 + 68, status_color)
         call draw_line(hdc, x0, y0 + 68, x0 + w, y0 + 68, COL_BORDER_SOFT, 1)
+        ! At 1024px the main canvas is narrower than the six module chips
+        ! plus alert cluster. Keep the first-out/status unobscured on that view.
+        if(w < 850) then
+            if(grid%gt_phase/=GT_ONLINE.or.instructor%frozen.or. &
+               notice_ticks<=0.or.len_trim(operator_notice)==0) then
+                call draw_text(hdc,inner_x+10,y0+50,trim(status(1:min(len_trim(status),62))),status_color)
+            else
+                call draw_text(hdc,inner_x+10,y0+50, &
+                    trim(operator_notice(1:min(len_trim(operator_notice),62))),COL_CYAN)
+            end if
+        else
         call draw_text(hdc, inner_x + 10, y0 + 50, trim(status), status_color)
         if (notice_ticks > 0 .and. len_trim(operator_notice) > 0) then
             call draw_text(hdc, inner_x + min(520, w / 2), y0 + 50, trim(operator_notice), COL_CYAN)
@@ -3645,6 +3835,8 @@ contains
             end if
         end block
 
+        end if  ! wide header chips only; narrow status stays readable
+
         ! --- Screen navigation ---
         call draw_nav_bar(hdc, x0, y0 + 72, w, 32)
 
@@ -3683,7 +3875,11 @@ contains
             case (SCREEN_ADVISORY)
                 call draw_advisory_screen(hdc, x0, content_y, w, content_h)
             case (SCREEN_SCENARIO)
-                call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                if(instructor_view) then
+                    call draw_instructor_screen(hdc,x0,content_y,w,content_h)
+                else
+                    call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                end if
             case (SCREEN_EXERGY)
                 call draw_exergy_screen(hdc, x0, content_y, w, content_h)
             end select
@@ -5059,6 +5255,8 @@ contains
         end do
         if(.not.compact) call draw_text(hdc,gx+gw-88,gy+14,"surge limit",COL_RED)
 
+        ! Offline or starting GT has no valid running map operating point.
+        if(grid%gt_phase==GT_ONLINE) then
         ! Operating point dot
         px = gx + int((clamp_real(grid%flow_frac, 0.35_dp, 1.0_dp) - 0.35_dp) / 0.65_dp * real(gw, dp))
         py = gy + gh - int((clamp_real(grid%PR_op, 6.0_dp, 20.0_dp) - 6.0_dp) / 14.0_dp * real(gh, dp))
@@ -5081,6 +5279,19 @@ contains
         ! OP readout
         write(line, '("OP  flow ",F5.1,"%  PR ",F5.2)') 100.0_dp * grid%flow_frac, grid%PR_op
         call draw_text(hdc, gx + 12, gy + gh - 28, trim(adjustl(line)), COL_LIME)
+        else
+            call draw_text(hdc,gx+12,gy+gh-28,'GT OFFLINE - NO RUNNING MAP POINT',COL_AMBER)
+        end if
+        ! Interactive cursor stays separate from the live solver operating point.
+        if(mouse_hover_valid.and.mouse_hover_x>=gx.and.mouse_hover_x<=gx+gw.and. &
+            mouse_hover_y>=gy.and.mouse_hover_y<=gy+gh) then
+            call draw_line(hdc,mouse_hover_x,gy,mouse_hover_x,gy+gh,COL_MUTED,1)
+            call draw_line(hdc,gx,mouse_hover_y,gx+gw,mouse_hover_y,COL_MUTED,1)
+            f=0.35_dp+0.65_dp*real(mouse_hover_x-gx,dp)/real(max(1,gw),dp)
+            pr=20.0_dp-14.0_dp*real(mouse_hover_y-gy,dp)/real(max(1,gh),dp)
+            write(line,'("CURSOR flow ",F5.1,"%  PR ",F5.2)') f*100.0_dp,pr
+            call draw_text(hdc,gx+12,gy+10,trim(adjustl(line)),COL_MUTED)
+        end if
     end subroutine draw_gt_map
 
     ! Brayton cycle T-s diagram using live engine state points.
@@ -5185,6 +5396,27 @@ contains
         call draw_text(hdc, x + 4, gy + 2, adjustl(lbl), COL_DIM)
         call draw_text(hdc, x + 4, gy + gh / 2 - 6, "T", COL_MUTED)
         call draw_text(hdc, gx + gw/2 - 22, gy + gh + 2, "s (kJ/kgK)", COL_MUTED)
+        ! Tracer is a schematic cycle-path marker, not measured gas velocity.
+        if(grid%gt_phase==GT_ONLINE.and.grid%fuel_flow_kg_s>0.0_dp) then
+            block
+                integer :: stage,qx,qy
+                real(dp) :: alpha
+                stage=modulo(int(grid%elapsed_s*6.0_dp),30)
+                alpha=real(mod(stage,10),dp)/10.0_dp
+                if(stage<10) then
+                    qx=nint(real(px1,dp)*(1.0_dp-alpha)+real(px2,dp)*alpha)
+                    qy=nint(real(py1,dp)*(1.0_dp-alpha)+real(py2,dp)*alpha)
+                else if(stage<20) then
+                    qx=nint(real(px2,dp)*(1.0_dp-alpha)+real(px3,dp)*alpha)
+                    qy=nint(real(py2,dp)*(1.0_dp-alpha)+real(py3,dp)*alpha)
+                else
+                    qx=nint(real(px3,dp)*(1.0_dp-alpha)+real(px4,dp)*alpha)
+                    qy=nint(real(py3,dp)*(1.0_dp-alpha)+real(py4,dp)*alpha)
+                end if
+                call hmi_fill_pie(hdc,int(qx,c_int),int(qy,c_int),3_c_int, &
+                    0.0_c_float,360.0_c_float,COL_AMBER)
+            end block
+        end if
     end subroutine draw_brayton_ts
 
     subroutine draw_combined_cycle_screen(hdc, x, y, width, height)
@@ -6505,9 +6737,11 @@ contains
         integer,intent(in) :: x,y,w,h,id
         type(DrillObservation),intent(in) :: obs
         integer :: i,j,n,good,xx,yy,old_x,old_y,gx,gy,gw,gh,idx
-        real(dp) :: lo,hi,v,norm,span,first_t,last_t
+        integer :: cursor_idx
+        real(dp) :: lo,hi,v,norm,span,first_t,last_t,target_t,best_dt
         logical :: prev_good,usable
         character(len=64) :: label
+        character(len=96) :: cursor_label
         call fill_soft_box(hdc,x,y,x+w,y+h,COL_PANEL_ALT)
         call stroke_soft_box(hdc,x,y,x+w,y+h,COL_BORDER_SOFT,1)
         gx=x+14; gy=y+24
@@ -6573,6 +6807,37 @@ contains
         end do
         if(n==1) call hmi_fill_pie(hdc,int(old_x,c_int),int(old_y,c_int), &
             4_c_int,0.0_c_float,360.0_c_float,COL_LIME)
+        ! Cursor uses the nearest stored timestamp, preserving missing-data gaps.
+        ! It never interpolates across invalid samples to manufacture a measurement.
+        if(mouse_hover_valid.and.n>0.and. &
+            point_in_rect(mouse_hover_x,mouse_hover_y,gx,gy,gx+gw,gy+gh)) then
+            target_t=first_t+span*real(mouse_hover_x-gx,dp)/real(max(1,gw),dp)
+            best_dt=huge(1.0_dp)
+            cursor_idx=0
+            do j=1,n
+                idx=drill_history_index(alarm_drill_hist,j)
+                if(idx<=0) cycle
+                if(abs(alarm_drill_hist%time_s(idx)-target_t)<best_dt) then
+                    best_dt=abs(alarm_drill_hist%time_s(idx)-target_t)
+                    cursor_idx=idx
+                end if
+            end do
+            call draw_line(hdc,mouse_hover_x,gy,mouse_hover_x,gy+gh,COL_CYAN,1)
+            if(cursor_idx>0) then
+                if(alarm_drill_hist%valid(id,cursor_idx)) then
+                    v=alarm_drill_hist%value(id,cursor_idx)
+                    yy=gy+gh-nint(real(gh,dp)*clamp_real((v-lo)/max(hi-lo,1.0e-9_dp),0.0_dp,1.0_dp))
+                    call hmi_fill_pie(hdc,int(mouse_hover_x,c_int),int(yy,c_int), &
+                        4_c_int,0.0_c_float,360.0_c_float,COL_CYAN)
+                    write(cursor_label,'("t=",F7.2,"s  ",F9.3," ",A," [MODEL/TRAIN]")') &
+                        alarm_drill_hist%time_s(cursor_idx),v,trim(obs%unit)
+                else
+                    write(cursor_label,'("t=",F7.2,"s  NO DATA")') alarm_drill_hist%time_s(cursor_idx)
+                end if
+                call fill_soft_box(hdc,gx+5,gy+4,gx+min(gw-5,322),gy+27,COL_PANEL_DEEP)
+                call draw_text(hdc,gx+10,gy+8,trim(adjustl(cursor_label)),COL_CYAN)
+            end if
+        end if
         write(label,'("REAL SAMPLES ",I0," / ",I0)') good,n
         call draw_text(hdc,gx+4,y+h-21,trim(label),COL_CYAN)
     end subroutine draw_alarm_drill_trend
@@ -12247,7 +12512,7 @@ contains
         integer(c_int) :: stream_col, bess_col, res_col
         character(len=24) :: lbl, lbl2, lbl3, lbl4, lbl5
         logical :: compact, show_callouts, show_branches
-        integer, save :: flow_phase = 0   ! animation counter, advances each repaint
+        integer :: flow_phase   ! deterministic simulation-time phase (not repaint count)
 
         if (width < 260 .or. height < 68) return
 
@@ -12291,35 +12556,59 @@ contains
 
         ! Advance animation phase against elapsed time so flow speed stays stable as
         ! the HMI scan cadence changes.
-        flow_phase = mod(flow_phase + max(1, nint(real(TIMER_MS, dp) * 8.0_dp / 1000.0_dp)), 256)
+        flow_phase = modulo(int(max(0.0_dp,grid%elapsed_s)*8.0_dp),256)
 
         call draw_panel_box_deep(hdc, x, y, width, height)
+        if(compact) then
+            call draw_text(hdc,x+6,y+5, &
+                'FUEL '//merge('OPEN  ','CLOSED',grid%gt_fuel_valve_open), &
+                merge(COL_GREEN,COL_AMBER,grid%gt_fuel_valve_open))
+            call draw_text(hdc,x+max(112,width/2),y+5, &
+                'BRK '//merge('CLOSED','OPEN  ',grid%gt_breaker_closed), &
+                merge(COL_GREEN,COL_RED,grid%gt_breaker_closed))
+        end if
         if (.not. compact) then
             call draw_text(hdc, x + 12, y + 8, "PFD-001  LIVE PLANT SINGLE-LINE", COL_MUTED)
             call draw_text(hdc, x + width - 172, y + 8, "ISA STYLE / REALTIME", COL_DIM)
         end if
 
         ! Main gas/electrical train: air -> compressor -> combustor -> turbine -> generator -> bus.
-        stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, grid%exhaust_K < 800.0_dp)
+        stream_col = merge(int(Z'00BBFFFF', c_int), COL_DIM, grid%gt_phase==GT_ONLINE)
         call draw_pid_arrow_line(hdc, x_air, main_y, x_comp - eq_w / 2, main_y, COL_BORDER_SOFT, 2)
-        call draw_pid_arrow_line(hdc, x_comp + eq_w / 2, main_y, x_comb - eq_w / 2, main_y, COL_CYAN, 2)
-        call draw_pid_arrow_line(hdc, x_comb + eq_w / 2, main_y, x_turb - eq_w / 2, main_y, COL_AMBER, 2)
+        call draw_pid_arrow_line(hdc, x_comp + eq_w / 2, main_y, x_comb - eq_w / 2, main_y, &
+            merge(COL_CYAN,COL_DIM,grid%gt_phase==GT_ONLINE), 2)
+        call draw_pid_arrow_line(hdc, x_comb + eq_w / 2, main_y, x_turb - eq_w / 2, main_y, &
+            merge(COL_AMBER,COL_DIM,grid%gt_phase==GT_ONLINE), 2)
         call draw_pid_arrow_line(hdc, x_turb + eq_w / 2, main_y, x_gen - gen_r, main_y, stream_col, 2)
-        call draw_pid_arrow_line(hdc, x_gen + gen_r, main_y, x_bus, main_y, COL_GREEN, 2)
+        call draw_pid_arrow_line(hdc, x_gen + gen_r, main_y, x_bus, main_y, &
+            merge(COL_GREEN,COL_DIM,grid%gt_breaker_closed), 2)
+        ! Breaker blade is drawn from the actual simulated breaker state.
+        block
+            integer :: bx
+            bx=(x_gen+gen_r+x_bus)/2
+            call fill_box(hdc,bx-9,main_y-5,bx+9,main_y+6,COL_PANEL_DEEP)
+            if(grid%gt_breaker_closed) then
+                call draw_line(hdc,bx-8,main_y,bx+8,main_y,COL_GREEN,3)
+            else
+                call draw_line(hdc,bx-8,main_y,bx,main_y,COL_AMBER,2)
+                call draw_line(hdc,bx+3,main_y-8,bx+9,main_y-2,COL_AMBER,2)
+            end if
+        end block
         call draw_pid_arrow_line(hdc, x_bus, main_y, x_load - eq_w / 2, main_y, COL_RED, 2)
 
         ! Animated flow markers stay subtle; the linework remains the main artifact.
-        stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, &
-                           grid%exhaust_K < 800.0_dp)
-        spacing = 18
-        seg_len = max(1, x_load - (x_comp + eq_w/2))
-        n_dots  = seg_len / spacing + 2
-        do i = 0, n_dots
-            dot_x = x_comp + eq_w/2 + mod(i * spacing + flow_phase, seg_len)
-            if (dot_x >= x_comp + eq_w/2 .and. dot_x < x_load - 4) then
-                call fill_box(hdc, dot_x - 1, main_y - 1, dot_x + 2, main_y + 2, stream_col)
-            end if
-        end do
+        if(grid%gt_phase==GT_ONLINE.and.grid%fuel_flow_kg_s>0.0_dp) then
+            stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, grid%exhaust_K < 800.0_dp)
+            spacing = 18
+            seg_len = max(1, x_gen - (x_comp + eq_w/2)) ! physical GT train only
+            n_dots  = seg_len / spacing + 2
+            do i = 0, n_dots
+                dot_x = x_comp + eq_w/2 + mod(i * spacing + flow_phase, seg_len)
+                if (dot_x >= x_comp + eq_w/2 .and. dot_x < x_gen - gen_r) then
+                    call fill_box(hdc, dot_x - 1, main_y - 1, dot_x + 2, main_y + 2, stream_col)
+                end if
+            end do
+        end if
 
         ! Equipment symbols and live tags.
         write(lbl, '("PR ",F4.1)') grid%PR_op
@@ -12331,7 +12620,8 @@ contains
         call draw_pid_turbine(hdc, x_turb, main_y, eq_w, eq_h, "GT-301", trim(adjustl(lbl)), &
             merge(COL_RED, COL_AMBER, grid%alarm_turbine_max))
         write(lbl, '(I4,"MW")') nint(grid%plant_power_MW)
-        call draw_pid_generator(hdc, x_gen, main_y, gen_r, "G-401", trim(adjustl(lbl)), COL_GREEN)
+        call draw_pid_generator(hdc, x_gen, main_y, gen_r, "G-401", trim(adjustl(lbl)), &
+            merge(COL_GREEN,COL_AMBER,grid%gt_breaker_closed))
         write(lbl, '(F5.2,"Hz")') grid%frequency_Hz
         bus_top = main_y - max(34, eq_h)
         bus_bot = main_y + max(42, eq_h + 10)
@@ -12791,6 +13081,99 @@ contains
     ! =========================================================================
     ! F15  Scenario Builder — toggle switches + parameter sliders
     ! =========================================================================
+
+    ! F15 instructor is a separate training surface, not an operator control.
+    ! All coordinates match the rendered controls in draw_instructor_screen.
+    logical function handle_instructor_mouse(px,py) result(handled)
+        integer,intent(in) :: px,py
+        integer :: ix,iw,top,bw3,bw4,j,action,x0
+        logical :: accepted
+        handled=.false.
+        ix=layout_main_left+18
+        iw=layout_main_w-36
+        top=hmi_content_top(layout_main_top)+8
+        if(point_in_rect(px,py,ix+iw-174,top+12,ix+iw,top+42)) then
+            instructor_view=.not.instructor_view
+            handled=.true.
+            return
+        end if
+        if(.not.instructor_view) return
+        if(.not.point_in_rect(px,py,ix,top+55,ix+iw,layout_main_top+layout_main_h)) return
+        handled=.true. ! consume background F15 scenario-comparison hit targets
+        bw3=(iw-16)/3
+        bw4=(iw-24)/4
+        action=0
+        do j=1,3
+            x0=ix+(j-1)*(bw3+8)
+            if(point_in_rect(px,py,x0,top+111,x0+bw3,top+145)) action=j
+        end do
+        do j=1,4
+            x0=ix+(j-1)*(bw4+8)
+            if(point_in_rect(px,py,x0,top+192,x0+bw4,top+228)) action=j+3
+            if(point_in_rect(px,py,x0,top+309,x0+bw4,top+345)) action=j+8
+        end do
+        if(point_in_rect(px,py,ix,top+239,ix+min(iw,195),top+273)) action=8
+        select case(action)
+        case(1)
+            call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
+            if(instructor%frozen) then
+                call set_notice('INSTRUCTOR FREEZE: simulation clock halted.')
+            else
+                call set_notice('INSTRUCTOR RESUME: engine advancing.')
+            end if
+        case(2)
+            instructor_saved_scenario=scn_active
+            instructor_saved_scn_playing=scn_playing
+            call instructor_capture(instructor,grid)
+            call set_notice('Model + scripted-event snapshot captured.')
+        case(3)
+            call instructor_restore(instructor,grid,accepted)
+            if(accepted) then
+                scn_active=instructor_saved_scenario
+                scn_playing=instructor_saved_scn_playing
+                call reset_alarm_workflow()
+                alarm_drill_hist=DrillHistory()
+                call drill_record(alarm_drill_hist,grid)
+                history_sample_ms_accum=0
+                call set_notice('Snapshot restored and FROZEN. Resume explicitly.')
+            else
+                call set_notice('No instructor snapshot available.')
+            end if
+        case(4)
+            call instructor_inject_fault(instructor,grid,EQ_OIL,0.7_dp,accepted)
+            call set_instructor_fault_notice(accepted,'LOW OIL / 0.7 bar')
+        case(5)
+            call instructor_inject_fault(instructor,grid,EQ_OVERSPEED,115.0_dp,accepted)
+            call set_instructor_fault_notice(accepted,'OVERSPEED / 115%')
+        case(6)
+            call instructor_inject_fault(instructor,grid,EQ_COMBUST,7.0_dp,accepted)
+            call set_instructor_fault_notice(accepted,'COMBUSTION / 7 kPa RMS')
+        case(7)
+            call instructor_inject_fault(instructor,grid,EQ_BEARING,115.0_dp,accepted)
+            call set_instructor_fault_notice(accepted,'BEARING / 115 C')
+        case(8)
+            call instructor_clear_fault(instructor,grid)
+            call set_notice('Instructor input removed: channel becomes NO DATA.')
+        case(9:12)
+            call instructor_change_boundary(instructor,grid,action-8,accepted)
+            if(accepted) then
+                call set_notice('Instructor boundary changed; next solver tick applies.')
+            else
+                call set_notice('Boundary change refused while FROZEN.')
+            end if
+        end select
+    end function handle_instructor_mouse
+
+    subroutine set_instructor_fault_notice(accepted,label)
+        logical,intent(in) :: accepted
+        character(len=*),intent(in) :: label
+        if(accepted) then
+            call set_notice('TRAINING injection: '//trim(label))
+        else
+            call set_notice('Injection refused (frozen or invalid training point).')
+        end if
+    end subroutine set_instructor_fault_notice
+
     subroutine draw_scenario_screen(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
@@ -12804,6 +13187,8 @@ contains
         call draw_screen_caption(hdc, ix, top_y, iw, &
             "F15  SCENARIO COMPARISON", &
             "A/B playback overlay with deterministic scenario traces")
+        call draw_industrial_button(hdc,ix+iw-174,top_y+12,ix+iw,top_y+42, &
+            'INSTRUCTOR [I]',COL_PANEL_ALT,.false.)
 
         col1_w = iw * 42 / 100
         col2_x = ix + col1_w + 20
@@ -12952,6 +13337,82 @@ contains
             "F15 D2: A/B scenario traces use the same solver path as playback and tests.", COL_DIM)
 
     end subroutine draw_scenario_screen
+
+
+    ! Separate instructional surface; original F15 comparison stays intact.
+    subroutine draw_instructor_screen(hdc,x,y,width,height)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,width,height
+        integer :: ix,iw,top,bw3,bw4,j,x0,i,first
+        character(len=160) :: line
+        integer(c_int) :: status_col
+
+        ix=x+18
+        iw=width-36
+        top=y+8
+        bw3=(iw-16)/3
+        bw4=(iw-24)/4
+        if(iw<700) then
+            call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
+                'TRAINING ONLY - NO PLANT I/O')
+        else
+            call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
+                'OFFLINE TRAINING / simulated faults only - NOT plant control')
+        end if
+        call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
+            'SCENARIOS [I]',COL_PANEL_ALT,.false.)
+
+        status_col=merge(COL_AMBER,COL_GREEN,instructor%frozen)
+        write(line,'("CLOCK ",F7.2,"s  |  ",A,"  |  GT ",A)') grid%elapsed_s, &
+            merge('FROZEN ','RUNNING',instructor%frozen),trim(gt_trip_phase_text(grid%gt_phase))
+        call draw_text(hdc,ix,top+62,trim(adjustl(line)),status_col)
+        if(instructor%fault_id>0) then
+            write(line,'("INJECTED TRAINING CHANNEL ",I0,"  VALUE ",F7.2,"  (not measured)")') &
+                instructor%fault_id,instructor%fault_value
+        else
+            line='NO ACTIVE TRAINING INJECTION - absent sensor points remain NO DATA'
+        end if
+        call draw_text(hdc,ix,top+83,trim(line),COL_MUTED)
+
+        ! Header/status already labels time controls; leave buttons unobscured.
+        call draw_industrial_button(hdc,ix,top+111,ix+bw3,top+145, &
+            merge('RESUME','FREEZE',instructor%frozen),status_col,instructor%frozen)
+        call draw_button(hdc,ix+bw3+8,top+111,ix+2*bw3+8,top+145,'SAVE SNAPSHOT',COL_PANEL_ALT)
+        call draw_button(hdc,ix+2*(bw3+8),top+111,ix+3*bw3+16,top+145, &
+            'RESTORE',COL_PANEL_ALT)
+
+        call draw_section_title_width(hdc,ix,top+166,'Fault injection - training inputs / qualified alarms',iw)
+        call draw_button(hdc,ix,top+192,ix+bw4,top+228,'OIL 0.7 bar',COL_PANEL_ALT)
+        call draw_button(hdc,ix+bw4+8,top+192,ix+2*bw4+8,top+228,'SPEED 115%',COL_PANEL_ALT)
+        call draw_button(hdc,ix+2*(bw4+8),top+192,ix+3*bw4+16,top+228,'COMB 7 kPa',COL_PANEL_ALT)
+        call draw_button(hdc,ix+3*(bw4+8),top+192,ix+4*bw4+24,top+228,'BEARING 115C',COL_PANEL_ALT)
+        call draw_button(hdc,ix,top+239,ix+min(iw,195),top+273,'CLEAR INPUT',COL_PANEL_ALT)
+        call draw_text(hdc,ix+min(iw,203),top+249,'Fault qualification is time-dependent',COL_DIM)
+
+        call draw_section_title_width(hdc,ix,top+283,'Disturbances / model boundary conditions',iw)
+        call draw_button(hdc,ix,top+309,ix+bw4,top+345,'LOAD +10 MW',COL_PANEL_ALT)
+        call draw_button(hdc,ix+bw4+8,top+309,ix+2*bw4+8,top+345,'LOAD -10 MW',COL_PANEL_ALT)
+        call draw_button(hdc,ix+2*(bw4+8),top+309,ix+3*bw4+16,top+345,'WIND -8 MW',COL_PANEL_ALT)
+        call draw_button(hdc,ix+3*(bw4+8),top+309,ix+4*bw4+24,top+345,'AMB +5 C',COL_PANEL_ALT)
+
+        call draw_section_title_width(hdc,ix,top+365,'Operator exercise evaluation',iw)
+        write(line,'("TRAINING SCORE ",I0,"/100   |   trips observed ",L1,"   |   unsafe attempts ",I0)') &
+            instructor_score(instructor),instructor%trip_seen,instructor%unsafe_attempts
+        call draw_text(hdc,ix+8,top+385,trim(line),COL_LIME)
+        write(line,'("ACK ",I0,"  /  RESET ",I0,"  /  RESTART ",I0," (accepted actions; F7 controls)")') &
+            instructor%ack_count,instructor%reset_count,instructor%restart_count
+        call draw_text(hdc,ix+8,top+402,trim(line),COL_MUTED)
+        call draw_panel_box_deep(hdc,ix,top+429,iw,max(100,min(226,height-470)))
+        first=max(1,instructor%log_count-7)
+        do i=first,instructor%log_count
+            j=i-first
+            write(line,'("t=",F7.2,"s  ",A)') instructor%log_s(i),trim(instructor%log_text(i))
+            call draw_text(hdc,ix+12,top+444+j*24,trim(line(1:min(65,len_trim(line)))), &
+                merge(COL_CYAN,COL_MUTED,mod(j,2)==0))
+        end do
+        call draw_text(hdc,ix,top+height-26, &
+            'I: switch tabs    SPACE: freeze/resume    F7: operator trip ACK/reset/start',COL_DIM)
+    end subroutine draw_instructor_screen
 
     subroutine draw_scenario_compare_header(hdc, x, y, width)
         type(c_ptr), value :: hdc
