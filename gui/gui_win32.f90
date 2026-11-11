@@ -5855,7 +5855,7 @@ contains
         bw=max(96,(width-36)/2)
         call draw_section_title_width(hdc,x,y,"GT TRIP / FIRST-OUT  (SIM ONLY)",width)
         call draw_panel_box(hdc,x,y+28,width,max(150,height-36))
-        call draw_text(hdc,x+pad,y+34,"TRAINING STATES - NO BREAKER / FLAME PROOF",COL_AMBER)
+        call draw_text(hdc,x+pad,y+34,"SIMULATION - NO HARDWARE PROOF",COL_AMBER)
         call draw_industrial_button(hdc,x+10,y+57,x+10+bw,y+84, &
             "EQUIPMENT STATUS",COL_CYAN,.not.trip_events_view)
         call draw_industrial_button(hdc,x+18+bw,y+57,x+18+2*bw,y+84, &
@@ -5926,19 +5926,17 @@ contains
         if(grid%gt_turning_gear_on) line="TURN GEAR ON (ASSUMED)"
         call draw_value_pair(hdc,x+pad,sy,"Turning gear",trim(line),COL_CYAN)
         sy=sy+19
-        line="TRAIN INPUT PROOF MISSING"
-        if(grid%gt_training_bypass) line="BYPASS ACTIVE / SIM ONLY"
-        call draw_value_pair(hdc,x+pad,sy,"Input quality",trim(line), &
-            merge(COL_RED,COL_MUTED,grid%gt_training_bypass))
-        sy=sy+18
+        ! The reason why a protection action is blocked is more important
+        ! than a second copy of the TRAIN BYPASS state (already a red button).
+        ! Keep it in the last visible status row at 1024px instead of below
+        ! the viewport, where an operator could not see an interlock denial.
         mask=gt_trip_permit_mask(grid)
         if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
-        line=gt_trip_reason_for_mask(mask)
-        if(grid%gt_phase==GT_ONLINE) line="Normal simulation / trip idle"
-        if(sy+16<=y+height-5) then
-            call draw_text(hdc,x+pad,sy, &
-                line(1:min(len_trim(line),max(1,(width-2*pad)/8))),COL_AMBER)
-        end if
+        line="INTERLOCK: "//trim(gt_trip_reason_for_mask(mask))
+        if(grid%gt_phase==GT_ONLINE) line="INTERLOCK: Trip sequence idle"
+        call draw_text(hdc,x+pad,sy, &
+            line(1:min(len_trim(line),max(1,(width-2*pad)/8))), &
+            merge(COL_AMBER,COL_GREEN,mask/=0))
     end subroutine draw_trip_sequence_narrow
 
     subroutine draw_trip_sequence_panel(hdc,x,y,width,height)
