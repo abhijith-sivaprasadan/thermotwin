@@ -225,7 +225,7 @@ jobs:
           path: build/uci551/
 
   real-weather-archive:
-    name: Live ERA5 weather integration (scheduled/manual; not run on PR)
+    name: Real ERA5 weather boundary integration (reanalysis, not GT test data)
     # External Open-Meteo HTTP is not a reproducible code-validation gate.
     # Only report actual fetched source data when this job has executed.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -273,7 +273,7 @@ jobs:
 
 
   lincoln-source-backed-dossier:
-    name: Live-source dossier (scheduled/manual; requires real ERA5)
+    name: Recruiter evidence dossier from UCI + ERA5 source artifacts
     # Deliberately SKIPPED for PRs, never mislabelled as live-source verified.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: [real-turbine-uci551, real-weather-archive]
@@ -312,7 +312,7 @@ jobs:
 
 
   historical-era5-seasonal-site-study:
-    name: Live ERA5 four-season study (scheduled/manual; not run on PR)
+    name: Original ERA5 four-season fixed-engine site sensitivity
     # Four separate remote 2025 reanalysis queries are provenance checks,
     # not deterministic pull-request regression tests.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
