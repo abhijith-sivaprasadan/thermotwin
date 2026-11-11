@@ -48,6 +48,20 @@ Outputs:
 - `build/uci994/manifest.json`: exact original source archive and member hashes, counts, time and units, split, audited CSV names; source ZIP retained for reproduction.
 - `build/uci994/forecast/heldout_microturbine_power_forecast.csv`: all actual source time/command/power readings for test 4 and 22, open-loop predictions, static baseline, residual and train-range flag.
 - `build/uci994/forecast/forecast_report.json`: fitted lag/coefficients and independently reserved experiment RMSE.
+- `build/uci994/forecast/real_microturbine_power_forecast.html`: self-contained measured versus predicted trace viewer.
+
+## Original measured-data evaluation (first independent-source CI run)
+
+Original UCI ZIP SHA-256 verified and pinned:
+`9a5b3fa76e24076c914b73378467539a550641e280015f5e2e88510b493f530f`.
+The actual initial source fetch (real observations, not fixtures) reported:
+
+- Training-only CV selected **tau = 128 s**.
+- On independently reserved test experiments 4 and 22, **18,283 scored samples** after excluding one first initial measurement per experiment.
+- **Open-loop dynamic RMSE 293.290 W** versus **static voltage baseline RMSE 377.689 W** (about 22% lower RMSE). These results are on a **3-kW nominal turbine**, not the 30 MW generic cycle. There is no guaranteed model advantage on another turbine, unobserved input schedule, or safety-critical transient.
+- Source, prediction, and model outputs are archived in the passing real-source CI job. This result is external experiment performance only, **not field-certified physical GT thermodynamic validation**.
+
+The generated `real_microturbine_power_forecast.html` also provides an offline interactive trace view with actual experiment time (seconds), observed measured power, open-loop predicted power, the baseline and command voltage at the selected point.
 
 ## Limitations and next stage
 
