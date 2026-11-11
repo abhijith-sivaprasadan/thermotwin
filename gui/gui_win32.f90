@@ -5288,6 +5288,15 @@ contains
         active_count = count(states)
         write(subtitle, '("Model alarms | active ",I0," | unack ",I0," | shelved ",I0)') &
             active_count, count(alarm_seen .and. .not. alarm_ack), count(alarm_shelved)
+        if (.not.alarm_audio_enabled) then
+            subtitle=trim(subtitle)//" | AUDIO OFF"
+        else if (hmi_alarm_has_audio_device()==0_c_int) then
+            subtitle=trim(subtitle)//" | AUDIO DEVICE UNAVAILABLE"
+        else if (alarm_audio_silenced) then
+            subtitle=trim(subtitle)//" | AUDIO SILENCED"
+        else
+            subtitle=trim(subtitle)//" | ORIGINAL AUDIO ARMED"
+        end if
         call draw_screen_caption(hdc, ix, top_y, iw, SCREEN_FULL_LABEL(SCREEN_ALARMS), trim(subtitle))
 
         btn_y = top_y + 76
@@ -5298,16 +5307,6 @@ contains
             "SILENCE", COL_PANEL_ALT, alarm_audio_silenced)
         call draw_industrial_button(hdc, ix + 513, btn_y, ix + 628, btn_y + 34, &
             merge("AUDIO ON ", "AUDIO OFF",alarm_audio_enabled),COL_CYAN,alarm_audio_enabled)
-        if (.not.alarm_audio_enabled) then
-            line = "ALARM AUDIO DISABLED - B"
-        else if (hmi_alarm_has_audio_device()==0_c_int) then
-            line = "NO AUDIO DEVICE / VISUAL ACTIVE"
-        else if (alarm_audio_silenced) then
-            line = "SILENCED / NOT ACKNOWLEDGED"
-        else
-            write(line,'("ORIGINAL P1/P2 TONES  /  V ",I0,"%")') alarm_volume_pct
-        end if
-        call draw_text(hdc, ix, btn_y + 40, trim(line), COL_MUTED)
 
         table_w = max(650, int(0.62_dp * real(iw, dp)))
         log_x = ix + table_w + 18
