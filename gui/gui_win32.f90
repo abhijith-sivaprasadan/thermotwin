@@ -5715,7 +5715,8 @@ contains
         if (alarm_id > ALARM_ORIGINAL_N) then
             eq_id=alarm_id-ALARM_ORIGINAL_N
             if (grid%eq_source(eq_id)==EQ_SRC_UNAVAILABLE) then
-                action_text="UNMONITORED - NO SENSOR"
+                action_text="NO TRAIN SENSOR"
+                if(alarm_seen(alarm_id)) action_text="INPUT LOST / BAD QUALITY"
             else
                 write(v_str,'(F6.1)') grid%eq_value(eq_id)
                 write(lim_str,'(F6.1)') EQ_THRESHOLD_ON(eq_id)
@@ -9268,9 +9269,9 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, w, h
         integer :: tile_w, gap, tx, i
-        character(len=20) :: labels(8)
-        logical :: states(8)
-        integer(c_int) :: colors(8)
+        character(len=20) :: labels(ALARM_COUNT)
+        logical :: states(ALARM_COUNT)
+        integer(c_int) :: colors(ALARM_COUNT)
 
         call alarm_labels(labels)
         call current_alarm_states(states)
@@ -9392,7 +9393,8 @@ contains
 
         if (alarm_id>ALARM_ORIGINAL_N) then
             if (grid%eq_source(alarm_id-ALARM_ORIGINAL_N)==EQ_SRC_UNAVAILABLE) then
-                text="NO DATA"
+                text="BAD DATA"
+                if (.not.alarm_seen(alarm_id)) text="NO DATA"
                 return
             end if
         end if
@@ -9421,6 +9423,8 @@ contains
         case ("RTN")
             color = COL_CYAN
         case ("SHLV", "UNSHLV", "NO DATA", "BADQ")
+            color = COL_DIM
+        case ("BAD DATA")
             color = COL_DIM
         case ("RESTORE")
             color = COL_CYAN
