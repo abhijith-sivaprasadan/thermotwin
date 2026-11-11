@@ -716,6 +716,13 @@ module thermotwin_win32_gui
         subroutine hmi_alarm_audio_stop() bind(C, name="hmi_alarm_audio_stop")
         end subroutine hmi_alarm_audio_stop
 
+        function hmi_save_bitmap_png(hbitmap, lpPath) bind(C, name="hmi_save_bitmap_png") result(ok)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hbitmap
+            type(c_ptr), value :: lpPath
+            integer(c_int) :: ok
+        end function hmi_save_bitmap_png
+
         function hmi_save_window_png(hwnd, lpPath) bind(C, name="hmi_save_window_png") result(ok)
             import :: c_int, c_ptr
             type(c_ptr), value :: hwnd
@@ -1124,19 +1131,23 @@ contains
                 select case(visual_qa_ticks)
                 case(12)
                     call visual_qa_capture("build\gui-visual-qa\01-original-overview.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\01-original-overview-1536.png")
                 case(13)
                     call set_hmi_screen(SCREEN_GT)
                 case(24)
                     call visual_qa_capture("build\gui-visual-qa\02-original-turbine.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\02-original-turbine-1536.png")
                 case(25)
                     call set_hmi_screen(SCREEN_ALARMS)
                 case(36)
                     call visual_qa_capture("build\gui-visual-qa\03-original-alarms.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\03-original-alarms-1536.png")
                 case(37)
                     grid%demand_MW=DEMAND_MAX_MW
                     grid%renewable_MW=0.0_dp
                 case(84)
                     call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
                 case(90)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
@@ -2752,6 +2763,37 @@ contains
             call log_debug("visual QA screenshot saved "//path)
         end if
     end subroutine visual_qa_capture
+
+    subroutine visual_qa_capture_virtual(path)
+        ! The same native Fortran/GDI+ drawing primitives render to an
+        ! actual in-memory 1536x960 Win32 bitmap. No mock screen or scale-up.
+        character(len=*), intent(in) :: path
+        type(c_ptr) :: mem,bitmap,oldobj,ignored
+        character(kind=c_char), allocatable, target :: cpath(:)
+        integer(c_int) :: saved,deleted
+        if (.not.visual_qa_mode .or. .not.c_associated(back_memdc)) return
+        mem=CreateCompatibleDC(back_memdc)
+        bitmap=CreateCompatibleBitmap(back_memdc,1536_c_int,960_c_int)
+        if (.not.c_associated(mem) .or. .not.c_associated(bitmap)) then
+            if(c_associated(bitmap)) deleted=DeleteObject(bitmap)
+            if(c_associated(mem)) deleted=DeleteDC(mem)
+            return
+        end if
+        oldobj=SelectObject(mem,bitmap)
+        if (native_renderer_ready) call hmi_begin_frame(mem)
+        call draw_dashboard(mem,1536,960)
+        if (native_renderer_ready) call hmi_end_frame()
+        call make_c_string(path,cpath)
+        saved=hmi_save_bitmap_png(bitmap,c_loc(cpath))
+        ignored=SelectObject(mem,oldobj)
+        deleted=DeleteObject(bitmap)
+        deleted=DeleteDC(mem)
+        if (saved == 0_c_int) then
+            call log_debug("virtual native screenshot failed "//path)
+        else
+            call log_debug("virtual native screenshot saved "//path)
+        end if
+    end subroutine visual_qa_capture_virtual
 
     subroutine export_screen_png()
         character(kind=c_char), allocatable, target :: c_path(:)

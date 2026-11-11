@@ -218,6 +218,19 @@ extern "C" int hmi_save_window_png(HWND hwnd, const char* path)
     return ok;
 }
 
+// True native high-resolution GUI screenshots: serialize an HBITMAP produced
+// by the real Fortran drawing functions. This is not bitmap rescaling.
+extern "C" int hmi_save_bitmap_png(HBITMAP bmp, const char* path)
+{
+    if (bmp == nullptr || path == nullptr || *path == '\0') return 0;
+    if (!gdiplus_ready && hmi_native_init() == 0) return 0;
+    Bitmap image(bmp, nullptr);
+    CLSID png_clsid{};
+    const std::wstring wide_path = widen(path);
+    return (get_encoder_clsid(L"image/png",&png_clsid) >= 0 &&
+            image.Save(wide_path.c_str(),&png_clsid,nullptr) == Ok) ? 1 : 0;
+}
+
 extern "C" void hmi_fill_rect(HDC hdc, int left, int top, int right, int bottom, int color)
 {
     if (hdc == nullptr) {

@@ -10,7 +10,11 @@ if (!$proc.WaitForExit(25000)) {
     throw "Original GUI screenshot harness timed out; graphical desktop unavailable"
 }
 Write-Host ("Original GUI exited code " + $proc.ExitCode)
-$expected = @("01-original-overview.png","02-original-turbine.png","03-original-alarms.png","04-original-alarms-stress.png")
+$expected = @(
+"01-original-overview.png","01-original-overview-1536.png",
+"02-original-turbine.png","02-original-turbine-1536.png",
+"03-original-alarms.png","03-original-alarms-1536.png",
+"04-original-alarms-stress.png","04-original-alarms-stress-1536.png")
 Add-Type -AssemblyName System.Drawing
 foreach($name in $expected) {
     $path = Join-Path $folder $name
