@@ -2290,6 +2290,10 @@ contains
              grid%gt_first_out_s/=gui_first_out_time_seen)) then
             gui_first_out_seen=grid%gt_first_out
             gui_first_out_time_seen=grid%gt_first_out_s
+            ! A latched unacknowledged GT trip is a P1 annunciator demand
+            ! even if no grid/equipment alarm is concurrently active.
+            alarm_audio_silenced=.false.
+            alarm_audio_new_event=.true.
             call set_notice("GT TRIP / FIRST OUT: "//trim(gt_trip_cause_text(grid%gt_first_out))// &
                  " - F7 > TRIP SEQUENCE")
         end if
@@ -2368,6 +2372,9 @@ contains
             end if
             priority = 2
         end do
+        ! The GT first-out latch is distinct from ordinary annunciator
+        ! rows; ACK ALL must not silently acknowledge turbine protection.
+        if(grid%gt_trip_latched .and. .not.grid%gt_trip_ack) priority=1
         if (priority==0) then
             alarm_audio_new_event = .false.
             alarm_last_tone_s = -1.0e9_dp
