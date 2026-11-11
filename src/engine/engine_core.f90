@@ -692,7 +692,9 @@ contains
         call tag_set("FLEET.MARGINAL_UNIT",   real(st%fleet_marginal_unit, dp), "-", t)
         call publish_unit_tags(st, t)
         call tag_set("REN.AVAILABLE_MW",      st%renewable_MW,        "MW",     t)
-        call tag_set("REN.ACTUAL_MW",         effective_renewable_MW(st), "MW", t)
+        call tag_set("REN.PRE_LFSMO_MW",     effective_renewable_MW(st), "MW", t)
+        call tag_set("REN.ACTUAL_MW",         max(0.0_dp,effective_renewable_MW(st)- &
+            st%renewable_lfsmo_MW), "MW", t)
         call tag_set("REN.CURTAIL_MW",        st%renewable_curtail_MW, "MW",    t)
         call tag_set("REN.LFSMO_MW",          st%renewable_lfsmo_MW,  "MW",     t)
         call tag_set("BESS.POWER_MW",         st%storage_MW,          "MW",     t)
