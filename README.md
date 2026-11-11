@@ -29,6 +29,21 @@ independent scripts.
 
 The [independent evidence and acceptance audit](docs/ENGINEERING_ACCEPTANCE_2026-11-11.md) and [machine-readable capability inventory](docs/capability_evidence.json) distinguish implemented numerical models, external reanalysis, actual unrelated-turbine observations, mathematical pass-off methods, unsupported features, and **absent industrial validation**. The [untagged source-release candidate checklist](docs/RESEARCH_RELEASE_CANDIDATE_2026-11-11.md) explicitly does NOT publish a new version or DOI. CI generates a source-commit-pinned claim audit artifact; it does not perform measured-engine certification or GUI user acceptance.
 
+## Practical measured-turbine prediction use case (proposed v0.1)
+
+The [UCI #551 measured-turbine replay](docs/MEASURED_TURBINE_REPLAY_V01.md)
+trains a transparent condition-adjusted regression on actual 2011–2013
+measurements from one turbine, and generates **2014–2015 held-out
+measured-versus-predicted TEY** records and a self-contained interactive
+offline viewer. The prediction is conditional on same-record **measured**
+ambient/filter/TIT/TAT quantities; it is **not** a next-hour power forecast,
+real fault classifier, physical OEM turbine calibration, or simulated trip
+reconstruction. The UCI TEY unit/aggregation interpretation remains uncertain.
+
+Run: \`python scripts/fetch_uci_gt551.py --output-dir build/uci551\` then
+\`python -m scripts.replay_uci_gt551 --data-dir build/uci551 --out build/uci551/replay\`.
+Open \`build/uci551/replay/measured_turbine_replay.html\`.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
