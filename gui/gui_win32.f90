@@ -11,9 +11,9 @@ module thermotwin_win32_gui
         c_ptr, c_short, c_sizeof
     use precision_kinds, only: dp
     use engine_core
-    use engine_state, only: EQ_N, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
+    use engine_state, only: EQ_N, EQ_COMBUST, EQ_OIL, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
     use equipment_protection, only: equipment_name, equipment_unit, equipment_priority, EQ_THRESHOLD_ON
-    use alarm_drilldown, only: DrillObservation, DrillHistory, DRILL_N, &
+    use alarm_drilldown, only: DrillObservation, DrillHistory, DRILL_N, DRILL_PLANT_N, &
         DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
         drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
         drill_alarm_row_hit, drill_source_label
@@ -2693,6 +2693,9 @@ contains
                 alarm_seen(alarm_id)=.false.
                 alarm_ack(alarm_id)=.false.
                 alarm_shelved(alarm_id)=.false.
+            else
+                ! Inactive rows remain discoverable throughout the exercise.
+                alarm_drill_selected=alarm_id
             end if
             handled=.true.
             return
