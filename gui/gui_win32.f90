@@ -2098,8 +2098,10 @@ contains
 
     subroutine load_hmi_config()
         integer :: unit, ios, ival
+        logical :: profile_migrated
         character(len=160) :: raw
         character(len=64) :: key
+        profile_migrated = .false.
 
         open(newunit=unit, file=CONFIG_FILE, status="old", action="read", iostat=ios)
         if (ios /= 0) return
@@ -2113,6 +2115,8 @@ contains
             read(raw, *, iostat=ios) key, ival
             if (ios /= 0) cycle
             select case (trim(key))
+            case ("operator_profile_version")
+                profile_migrated = ival >= 1
             case ("screen")
                 hmi_screen = min(max(ival, SCREEN_OVERVIEW), SCREEN_COUNT)
             case ("location_profile")
@@ -2149,6 +2153,15 @@ contains
             end select
         end do
         close(unit)
+        if (.not.profile_migrated) then
+            ! First launch after the redesign: replace the obsolete 16-tab
+            ! black-blue skin, rather than silently loading an old INI palette.
+            ! User choices made after versioned migration remain persistent.
+            hmi_theme = THEME_OPERATOR
+            nav_rail_collapsed = .true.
+            hmi_screen = SCREEN_OVERVIEW
+            control_page = 1
+        end if
     end subroutine load_hmi_config
 
     subroutine save_hmi_config()
@@ -2157,6 +2170,7 @@ contains
         open(newunit=unit, file=CONFIG_FILE, status="replace", action="write", iostat=ios)
         if (ios /= 0) return
         write(unit, "(A)") "# ThermoTwin-F native HMI configuration"
+        write(unit, '("operator_profile_version ",I0)') 1
         write(unit, '("screen ",I0)') hmi_screen
         write(unit, '("window_fullscreen ",I0)') 1
         write(unit, '("location_profile ",I0)') grid%market_profile_id
