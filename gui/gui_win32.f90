@@ -1291,6 +1291,97 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\05-controls-bottom.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\05-controls-bottom-1536.png")
                 case(90)
+                    ! Continue into the instructor tab after the original HMI screenshots.
+                    call engine_init(grid)
+                    call reset_alarm_workflow()
+                    call set_hmi_screen(SCREEN_SCENARIO)
+                    instructor=InstructorSession()
+                    instructor_view=.false.
+                case(91)
+                    block
+                        integer :: ix,iw,top
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        call handle_mouse_down(hwnd,ix+iw-90,top+26)
+                        if(.not.instructor_view) then
+                            call log_debug("QA FAIL: instructor tab click did not open")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(93)
+                    call visual_qa_capture("build\gui-visual-qa\12-instructor-running.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\12-instructor-running-1536.png")
+                case(94)
+                    block
+                        integer :: ix,top
+                        ix=layout_main_left+18
+                        top=hmi_content_top(layout_main_top)+8
+                        call handle_mouse_down(hwnd,ix+30,top+126)
+                        if(.not.instructor%frozen) then
+                            call log_debug("QA FAIL: instructor freeze button")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(95)
+                    call visual_qa_capture("build\gui-visual-qa\13-instructor-frozen.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\13-instructor-frozen-1536.png")
+                case(96)
+                    block
+                        integer :: ix,iw,top,bw3
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        bw3=(iw-16)/3
+                        call handle_mouse_down(hwnd,ix+bw3+20,top+126)
+                        if(.not.instructor%saved) then
+                            call log_debug("QA FAIL: instructor snapshot capture")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        call handle_mouse_down(hwnd,ix+30,top+126)
+                        if(instructor%frozen) then
+                            call log_debug("QA FAIL: instructor resume button")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        call handle_mouse_down(hwnd,ix+30,top+208)
+                        if(instructor%fault_id/=EQ_OIL) then
+                            call log_debug("QA FAIL: instructor low oil fault injection")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(110)
+                    if(grid%gt_first_out/=GT_CAUSE_OIL) then
+                        call log_debug("QA FAIL: injected oil did not qualify real first-out")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                case(111)
+                    call visual_qa_capture("build\gui-visual-qa\14-instructor-oil-trip.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\14-instructor-oil-trip-1536.png")
+                case(112)
+                    block
+                        integer :: ix,iw,top,bw3
+                        ix=layout_main_left+18
+                        iw=layout_main_w-36
+                        top=hmi_content_top(layout_main_top)+8
+                        bw3=(iw-16)/3
+                        call handle_mouse_down(hwnd,ix+2*bw3+25,top+126)
+                        if(.not.instructor%frozen.or.grid%gt_phase/=GT_ONLINE.or. &
+                            instructor%fault_id/=0) then
+                            call log_debug("QA FAIL: instructor snapshot restore")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(114)
+                    call visual_qa_capture("build\gui-visual-qa\15-instructor-restored.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\15-instructor-restored-1536.png")
+                case(119)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
                     return
@@ -13174,7 +13265,7 @@ contains
         end if
         call draw_text(hdc,ix,top+83,trim(line),COL_MUTED)
 
-        call draw_section_title_width(hdc,ix,top+103,'Time and state',iw)
+        ! Header/status already labels time controls; leave buttons unobscured.
         call draw_industrial_button(hdc,ix,top+111,ix+bw3,top+145, &
             merge('RESUME','FREEZE',instructor%frozen),status_col,instructor%frozen)
         call draw_button(hdc,ix+bw3+8,top+111,ix+2*bw3+8,top+145,'SAVE SNAPSHOT',COL_PANEL_ALT)
