@@ -806,6 +806,17 @@ module thermotwin_win32_gui
             integer(c_int), value :: n_pts, color, width
         end subroutine hmi_draw_polyline
 
+        subroutine hmi_push_clip(hdc,left,top,right,bottom) bind(C,name="hmi_push_clip")
+            import :: c_ptr,c_int
+            type(c_ptr), value :: hdc
+            integer(c_int), value :: left,top,right,bottom
+        end subroutine hmi_push_clip
+
+        subroutine hmi_pop_clip(hdc) bind(C,name="hmi_pop_clip")
+            import :: c_ptr
+            type(c_ptr), value :: hdc
+        end subroutine hmi_pop_clip
+
         subroutine hmi_begin_frame(hdc) bind(C, name="hmi_begin_frame")
             import :: c_ptr
             type(c_ptr), value :: hdc
@@ -848,6 +859,8 @@ module thermotwin_win32_gui
     integer :: layout_slider_y(6) = [132, 218, 304, 390, 476, 562]
     integer :: layout_button_y = 682
     integer :: layout_footer_y = 820
+    integer :: control_scroll_y = 0
+    integer :: control_scroll_max = 0
     integer :: layout_nav_left = 366
     integer :: layout_nav_top = 20
     integer :: layout_nav_w = 58
@@ -1294,8 +1307,15 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - ui_control_stack_h(), layout_slider_y(6) + 62)
-        layout_footer_y = layout_control_bottom - 50
+        ! Preserve the original sliders AND the dispatch/scenario/export stack.
+        ! Scroll the body instead of pushing all buttons into the lower sliders.
+        layout_button_y=layout_slider_y(6)+66
+        layout_footer_y=layout_control_bottom-50
+        control_scroll_max=max(0, layout_button_y+6*ui_button_step()+ &
+            158+ui_button_h()-(layout_footer_y-22))
+        control_scroll_y=min(max(0,control_scroll_y),control_scroll_max)
+        layout_slider_y=layout_slider_y-control_scroll_y
+        layout_button_y=layout_button_y-control_scroll_y
 
         layout_nav_left = layout_control_left + layout_control_w + layout_gap
         layout_nav_top = layout_control_top
@@ -3459,6 +3479,8 @@ contains
         call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
         call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
+        if (native_renderer_ready) call hmi_push_clip(hdc,int(left+4,c_int), &
+            int(top+70,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
 
         write(value, '(F5.1," MW")') grid%demand_MW
         call draw_custom_slider(hdc, ID_DEMAND, layout_slider_x, layout_slider_y(1), layout_slider_w, &
@@ -3672,6 +3694,20 @@ contains
             end if
         end if
 
+        if (native_renderer_ready) call hmi_pop_clip(hdc)
+        if (control_scroll_max>0) then
+            block
+                integer :: scroll_top,scroll_bot,track_h,thumb_y
+                scroll_top=top+78
+                scroll_bot=layout_footer_y-28
+                track_h=max(1,scroll_bot-scroll_top-34)
+                thumb_y=scroll_top+int(real(track_h)* &
+                    real(control_scroll_y)/real(max(1,control_scroll_max)))
+                call fill_box(hdc,right-15,scroll_top,right-10,scroll_bot,COL_BORDER_SOFT)
+                call fill_soft_box(hdc,right-19,thumb_y,right-6,thumb_y+34,COL_CYAN)
+                call stroke_soft_box(hdc,right-19,thumb_y,right-6,thumb_y+34,COL_BORDER,1)
+            end block
+        end if
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
         write(line, '("Scan ",I0," ms | trends 250 ms | ",A)') int(TIMER_MS), trim(grid%market_profile_name)
         call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)

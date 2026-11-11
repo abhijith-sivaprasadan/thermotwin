@@ -61,6 +61,8 @@ void configure(Graphics& graphics)
 // it falls back to a per-call temporary so off-frame draws still work.
 Graphics* g_frame = nullptr;
 HDC       g_frame_hdc = nullptr;
+GraphicsState g_panel_clip_state{};
+bool g_panel_clip_active = false;
 
 struct FrameGfx {
     Graphics* g;
@@ -141,8 +143,26 @@ extern "C" void hmi_begin_frame(HDC hdc)
     g_frame_hdc = hdc;
 }
 
+extern "C" void hmi_push_clip(HDC hdc,int left,int top,int right,int bottom)
+{
+    if (!g_frame || hdc != g_frame_hdc || g_panel_clip_active) return;
+    g_panel_clip_state=g_frame->Save();
+    g_frame->SetClip(Rect(left,top,std::max(0,right-left),
+        std::max(0,bottom-top)),CombineModeIntersect);
+    g_panel_clip_active=true;
+}
+extern "C" void hmi_pop_clip(HDC hdc)
+{
+    if (!g_frame || hdc != g_frame_hdc || !g_panel_clip_active) return;
+    g_frame->Restore(g_panel_clip_state);
+    g_panel_clip_active=false;
+}
 extern "C" void hmi_end_frame()
 {
+    if (g_panel_clip_active && g_frame) {
+        g_frame->Restore(g_panel_clip_state);
+        g_panel_clip_active=false;
+    }
     if (g_frame != nullptr) { delete g_frame; g_frame = nullptr; }
     g_frame_hdc = nullptr;
 }
