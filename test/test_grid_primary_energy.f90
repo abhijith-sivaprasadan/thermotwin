@@ -111,6 +111,19 @@ program test_grid_primary_energy
     call check_close("tripped governor cannot add dispatch",qt%effective_gas_dispatch_pct,0.0_dp,1.0e-10_dp)
     call check_close("tripped governor reports zero electrical support",qt%governor_delta_MW,0.0_dp,1.0e-10_dp)
 
+    ! Open-loop thermodynamic experiments explicitly suppress governor action,
+    ! without misusing AUTO/MANUAL as a governor interlock.
+    qt=GridState()
+    qt%gas_capacity_MW=30.0_dp
+    qt%gas_dispatch_pct=65.0_dp
+    qt%governor_enabled=.false.
+    qt%frequency_Hz=49.0_dp
+    call tick_governor_setpoint(qt,0.25_dp)
+    call check_close("open-loop map test preserves commanded GT dispatch", &
+        qt%effective_gas_dispatch_pct,65.0_dp,1.0e-10_dp)
+    call check_close("open-loop map test eliminates governor forcing", &
+        qt%governor_offset_pct,0.0_dp,1.0e-10_dp)
+
     ! UFLS and LFSM-O affect the same reported imbalance as the swing RHS.
     qt=GridState()
     qt%gt_phase=GT_TRIPPED
