@@ -16,6 +16,10 @@ at 5.25 assert_near gt_first_out 1.0 0.01
 at 6.0  assert_below frequency_Hz 49.95
 at 8.0  assert_below frequency_Hz 49.50
 at 35.0 assert_below frequency_Hz 49.50
-at 50.0 assert_below imbalance_MW -5.0
+# After UFLS, imbalance is against SERVED demand, not gross demand.
+# A near-zero net mismatch is legitimate with a persistent underfrequency.
+at 50.0 assert_above ufls_shed_MW 1.0
+at 50.0 assert_below served_demand_MW 34.0
+at 50.0 assert_near imbalance_MW 0.0 1.0
 at 55.0 assert_above UFLS_stage 0.5
 at 55.0 assert_near gas_power_MW 0.0 0.001
