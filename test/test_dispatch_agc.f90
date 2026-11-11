@@ -123,7 +123,13 @@ program test_dispatch_agc
 
         st%storage_request_MW = 0.0_dp
         call apply_turbine_trip(st)
-        call expect_near("turbine trip drops gas to minimum", st%gas_dispatch_pct, GAS_MIN_PCT, 1.0e-12_dp, failures)
+        call expect_near("turbine trip commands OFF, not minimum dispatch", &
+            st%gas_dispatch_pct, 0.0_dp, 1.0e-12_dp, failures)
+        call expect_true("turbine trip isolates fuel and opens breaker", &
+            st%gt_trip_latched .and. .not.st%gt_fuel_valve_open .and. &
+            .not.st%gt_breaker_closed, failures)
+        call expect_true("turbine trip latches manual first-out", &
+            st%gt_first_out == GT_CAUSE_MANUAL, failures)
         call expect_true("turbine trip calls on the battery", st%storage_request_MW > 0.0_dp, failures)
         call expect_true("turbine trip re-arms AUTO", st%auto_balance, failures)
     end block

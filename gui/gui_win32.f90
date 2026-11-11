@@ -1179,6 +1179,7 @@ contains
                     call visual_qa_capture_virtual("build\gui-visual-qa\06-equipment-1536.png")
                 case(65)
                     alarm_page=3
+                    call apply_turbine_trip(grid)
                 case(76)
                     call visual_qa_capture("build\gui-visual-qa\07-trip-sequence.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\07-trip-sequence-1536.png")
