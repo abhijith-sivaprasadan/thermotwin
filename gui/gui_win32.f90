@@ -5932,8 +5932,12 @@ contains
         ! the viewport, where an operator could not see an interlock denial.
         mask=gt_trip_permit_mask(grid)
         if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING) &
+            mask=ibclr(gt_trip_restart_mask(grid),0)
         line="INTERLOCK: "//trim(gt_trip_reason_for_mask(mask))
         if(grid%gt_phase==GT_ONLINE) line="INTERLOCK: Trip sequence idle"
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING .and. mask==0) &
+            line="INTERLOCK: SIM START ACTIVE / NO HARDWARE PROOF"
         call draw_text(hdc,x+pad,sy, &
             line(1:min(len_trim(line),max(1,(width-2*pad)/8))), &
             merge(COL_AMBER,COL_GREEN,mask/=0))
@@ -5955,6 +5959,8 @@ contains
         cause=gt_trip_cause_text(grid%gt_first_out)
         mask=gt_trip_permit_mask(grid)
         if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING) &
+            mask=ibclr(gt_trip_restart_mask(grid),0)
         state_col=COL_LIME
         if(grid%gt_phase/=GT_ONLINE) state_col=COL_RED
         if(grid%gt_phase==GT_READY .or. grid%gt_phase>=GT_PURGING) state_col=COL_AMBER
@@ -6007,6 +6013,8 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Sensor permissives",trim(line),state_col);sy=sy+27
         line=gt_trip_reason_for_mask(mask)
         if(grid%gt_phase==GT_ONLINE) line="Normal simulation / no trip latch"
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING .and. mask==0) &
+            line="SIM START ACTIVE / no verified OEM start proof"
         call draw_text(hdc,x+pad,sy+8, &
             line(1:min(len_trim(line),max(1,(left_w-2*pad)/8))), &
             merge(COL_AMBER,COL_GREEN,mask/=0))
