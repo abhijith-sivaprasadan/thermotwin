@@ -1197,8 +1197,18 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\09-alarm-surge-map.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\09-alarm-surge-map-1536.png")
                 case(48)
-                    alarm_drill_selected=0
-                    alarm_page=2
+                    block
+                        integer :: dx,dy,dw,dh
+                        call alarm_drill_rect(dx,dy,dw,dh)
+                        call handle_mouse_down(hwnd,dx+100,dy+dh-30)
+                        if(alarm_drill_selected/=0 .or. hmi_screen/=SCREEN_GT) then
+                            call log_debug("QA FAIL: full engineering view action did not navigate")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                        call set_hmi_screen(SCREEN_ALARMS)
+                        alarm_page=2
+                    end block
                 case(49)
                     call handle_mouse_down(hwnd,layout_main_left+18+140, &
                         layout_main_top+360+4*48+12)
@@ -1211,7 +1221,16 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\10-alarm-oil-no-data.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\10-alarm-oil-no-data-1536.png")
                 case(52)
-                    alarm_drill_selected=0
+                    block
+                        integer :: dx,dy,dw,dh
+                        call alarm_drill_rect(dx,dy,dw,dh)
+                        call handle_mouse_down(hwnd,dx+dw-46,dy+24)
+                        if(alarm_drill_selected/=0) then
+                            call log_debug("QA FAIL: alarm context CLOSE button not responsive")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
                 case(84)
                     call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
@@ -1244,7 +1263,12 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\11-alarm-frequency.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\11-alarm-frequency-1536.png")
                 case(81)
-                    alarm_drill_selected=0
+                    call handle_key(hwnd,int(VK_ESCAPE,c_intptr_t))
+                    if(alarm_drill_selected/=0) then
+                        call log_debug("QA FAIL: alarm context ESC does not close")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
                 case(87)
