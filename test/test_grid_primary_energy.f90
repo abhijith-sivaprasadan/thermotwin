@@ -62,6 +62,18 @@ program test_grid_primary_energy
     call check_close("GFM actually delivered equals post-arbitration remainder", &
         qt%gfm_synth_MW,0.0_dp,1.0e-8_dp)
 
+    ! An explicitly disabled FCR commitment cannot inject hidden
+    ! conventional primary reserve MW into the frequency model.
+    qt=GridState()
+    qt%fcr_hold=.false.
+    qt%storage_request_MW=0.0_dp
+    qt%frequency_Hz=49.0_dp
+    call resolve_bess_injection(qt,0.25_dp)
+    call check_close("FCR disabled has no primary power injection", &
+        qt%BESS_primary_MW,0.0_dp,1.0e-10_dp)
+    call check_close("FCR disabled changes no BESS output", &
+        qt%storage_MW,0.0_dp,1.0e-10_dp)
+
     ! When energy would be exhausted part-way through a timestep, the
     ! delivered power is limited BEFORE integration, not clipped afterward.
     qt=GridState()
