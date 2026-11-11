@@ -20,7 +20,7 @@ foreach ($name in $expected) {
     try {
         if ($img.Width -lt 1024 -or $img.Height -lt 720) { throw "Invalid screenshot resolution: $name" }
         Write-Host ("Native screenshot {0}: {1}x{2} px; {3} bytes" -f $name, $img.Width, $img.Height, (Get-Item $path).Length)
-        {
+        if ($true) {
             $newWidth = 800
             $newHeight = [int][Math]::Round($img.Height * $newWidth / $img.Width)
             $thumb = New-Object System.Drawing.Bitmap($newWidth, $newHeight)
