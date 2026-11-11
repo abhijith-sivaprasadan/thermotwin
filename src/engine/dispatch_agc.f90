@@ -283,6 +283,12 @@ contains
         st%ROCOF_Hz_s = 0.0_dp
         st%governor_delta_MW = 0.0_dp
         st%BESS_primary_MW = 0.0_dp
+        st%gfm_request_MW = 0.0_dp
+        st%gfm_synth_MW = 0.0_dp
+        st%governor_offset_pct = 0.0_dp
+        st%effective_gas_dispatch_pct = 82.0_dp
+        st%served_demand_MW = 35.0_dp
+        st%ufls_shed_MW = 0.0_dp
         st%UFLS_shed_fraction = 0.0_dp
         st%ufls_thresh_1_Hz = UFLS_THRESH_1
         st%ufls_thresh_2_Hz = UFLS_THRESH_2
