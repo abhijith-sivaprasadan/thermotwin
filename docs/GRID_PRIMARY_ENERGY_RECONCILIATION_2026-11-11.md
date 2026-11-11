@@ -39,8 +39,8 @@ At any instant in the reduced electrical model:
 
 1. A disconnected GT has zero governor power; turbine dispatch remains isolated by the trip state machine.
 2. Fleet mode continues to have **no qualified unit-level governor** in this single-GT solver. The earlier fleet-wide primary MW term has deliberately been removed rather than presented as fuel-backed generation.
-3. GT droop changes actual off-design load and resulting fuel/shaft state, not a free `governor_delta_MW` summand. The offset is bounded by GAS_MIN/GAS_MAX and an illustrative setpoint ramp. It does not resolve real actuator dynamics.
-4. BESS state-of-charge energy caps apply across arbitrated base/FCR/GFM power, even for a long step with almost empty/full battery.
+3. GT droop changes actual off-design load and resulting fuel/shaft state, not a free `governor_delta_MW` summand. **Engineering open-loop scenarios explicitly set `governor_enabled=0`**, so isolated map comparisons are not contaminated by closed-loop frequency control. The standard live simulator keeps the governor enabled. The offset is bounded by GAS_MIN/GAS_MAX and an illustrative setpoint ramp. It does not resolve real actuator dynamics.
+4. BESS state-of-charge energy caps apply across arbitrated base/FCR/GFM power, even for a long step with almost empty/full battery. Conventional BESS primary response is armed only while `fcr_hold=1` and SOC is within the illustrative symmetric 20–80% reserve envelope, consistent with the model's existing FCR reserve remuneration condition. BESS manual/AGC dispatch remains separately controllable.
 5. GFM response is calculated from the prior timestep's frequency/ROCOF; it no longer accumulates into an operator BESS request. It remains a simplified sample-response model.
 6. UFLS stage logic continues to use instantaneous illustrative thresholds, but reported demand is separated into gross and served demand. LFSM-O renewable power is subtracted in both supply and frequency response.
 
@@ -60,6 +60,11 @@ At any instant in the reduced electrical model:
 | `GRID.SERVED_MW` | Actually served load after UFLS fraction |
 | `GRID.UFLS_SHED_MW` | Load removed from demand by UFLS |
 | `GRID.SUPPLY_MW` / `GRID.IMBALANCE_MW` | Net actual MW source/sink and difference vs served load |
+
+## Two separate test modes
+
+- **Open-loop thermodynamics:** `combined_cycle.scn` and `surge_ramp.scn` set `governor_enabled=0`, preserving independent requested-load versus calculated heat-rate/map regressions.
+- **Closed-loop primary controls:** `load_step.scn`, `turbine_trip.scn`, `gfm_bess_inertia.scn` keep the governor enabled. Numerical checkpoints now compare **served** rather than gross load after UFLS and check physical inverter and ramp bounds; old isolated dispatch fractions and fictitious sustained deficits are not retained as ground truth.
 
 ## Regression scope and evidence boundary
 
