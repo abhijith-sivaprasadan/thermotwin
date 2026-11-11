@@ -2533,8 +2533,14 @@ contains
         end if
         if(alarm_page==3) then
             if(point_in_rect(x,y,ix+10,btn_y+137,ix+124,btn_y+170)) then
-                call gt_trip_acknowledge(grid)
-                call set_notice("First-out acknowledged; trip latch remains.")
+                if(grid%gt_phase==GT_ONLINE) then
+                    call set_notice("No active GT trip to acknowledge.")
+                else if(grid%gt_trip_ack) then
+                    call set_notice("First-out already acknowledged; latch unchanged.")
+                else
+                    call gt_trip_acknowledge(grid)
+                    call set_notice("First-out acknowledged; trip latch remains.")
+                end if
                 handled=.true.
                 return
             else if(point_in_rect(x,y,ix+136,btn_y+137,ix+261,btn_y+170)) then
@@ -4340,7 +4346,7 @@ contains
         write(subtitle, '("AGC ",A," | ED ",A," | reserve ",F5.1," MW | inertia ",I4," MWs")') &
             merge("AUTO  ", "MANUAL", grid%auto_balance), merge("ROI", "STB", grid%roi_dispatch), &
             merge(grid%fleet_reserve_MW, grid%reserve_MW, grid%fleet_mode), &
-            nint(merge(grid%fleet_inertia_MWs, INERTIA_MWs, grid%fleet_mode))
+            nint(grid%grid_inertia_energy_MWs)
         call draw_screen_caption(hdc, ix, top_y, iw, SCREEN_FULL_LABEL(SCREEN_GRID), trim(subtitle))
 
         table_w = max(560, int(0.56_dp * real(iw, dp)))
@@ -5826,9 +5832,18 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Fuel isolation",trim(line),COL_MUTED);sy=sy+27
         write(line,'(F6.2,"% (estimated)")') grid%gt_rotor_est_pct
         call draw_value_pair(hdc,x+pad,sy,"Rotor coastdown",trim(line),COL_CYAN);sy=sy+27
-        line="LUBE SUPPORT / ON (ASSUMED)"
-        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT / OFF"
-        call draw_value_pair(hdc,x+pad,sy,"Auxiliary system",trim(line),COL_MUTED);sy=sy+27
+        line="BLEED CLOSED / LUBE ON (SIM)"
+        if(grid%gt_blowoff_open) line="BLEED OPEN / LUBE ON (SIM)"
+        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT OFF - INTERLOCK"
+        call draw_value_pair(hdc,x+pad,sy,"Bleed / lube",trim(line), &
+            merge(COL_CYAN,COL_RED,grid%gt_lube_support_on));sy=sy+27
+        line="STARTER OFF / FIELD OFF (SIM)"
+        if(grid%gt_start_motor_on) line="STARTER ON / FIELD OFF (SIM)"
+        if(grid%gt_generator_excitation_on) line="STARTER OFF / FIELD ON (SIM)"
+        call draw_value_pair(hdc,x+pad,sy,"Starter / field",trim(line),COL_MUTED);sy=sy+27
+        line="TURN GEAR OFF / SPEED EST ONLY"
+        if(grid%gt_turning_gear_on) line="TURN GEAR ON (ASSUMED)"
+        call draw_value_pair(hdc,x+pad,sy,"Slow-roll auxiliary",trim(line),COL_CYAN);sy=sy+27
         if(grid%gt_training_bypass) then
             line="BYPASS ENABLED - EDUCATIONAL ONLY"
             state_col=COL_RED
@@ -5839,8 +5854,10 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Sensor permissives",trim(line),state_col);sy=sy+27
         line=gt_trip_reason_for_mask(mask)
         if(grid%gt_phase==GT_ONLINE) line="Normal simulation / no trip latch"
-        call draw_text(hdc,x+pad,sy+8,trim(line),merge(COL_AMBER,COL_GREEN,mask/=0))
-        sy=sy+47
+        call draw_text(hdc,x+pad,sy+8, &
+            line(1:min(len_trim(line),max(1,(left_w-2*pad)/8))), &
+            merge(COL_AMBER,COL_GREEN,mask/=0))
+        sy=sy+40
         if(sy < y+height-112) then
             call draw_section_title_width(hdc,x+pad,sy,"SIMULATED OPERATOR PATH",left_w-2*pad)
             sy=sy+30
@@ -5867,11 +5884,17 @@ contains
         if(grid%gt_trip_log_count==0) then
             call draw_text(hdc,right_x+pad,y+44,"No trips in this simulation.",COL_DIM)
         else
+            ! First-out is permanent historical context even if the bounded
+            ! sequence log scrolls past the original trigger.
+            write(line,'("FIRST-OUT ",A,"  @ ",F7.2," s")') &
+                trim(gt_trip_cause_text(grid%gt_first_out)),grid%gt_first_out_s
+            call draw_text(hdc,right_x+pad,y+44, &
+                line(1:min(len_trim(line),max(1,(right_w-2*pad)/8))),COL_RED)
             ! Two-line records: short timestamp and clipped description.
             ! Never paint a 54-character event over the neighboring panel.
             start_idx=max(1,grid%gt_trip_log_count- &
-               max(1,(max(165,height-36)-70)/48)+1)
-            sy=y+44
+               max(1,(max(165,height-36)-95)/48)+1)
+            sy=y+70
             do i=start_idx,grid%gt_trip_log_count
                 if(sy>y+height-48) exit
                 write(line,'("t=",F7.2," s  /  event ",I0)') grid%gt_trip_log_s(i),i
