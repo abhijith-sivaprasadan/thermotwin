@@ -43,8 +43,8 @@ program test_measured_turbine_replay
     close(u)
     call replay_load(path,r,ok)
     call ck('out-of-order / short input fails closed',.not.ok.and.r%n==0)
-    open(newunit=u,file=path,status='delete')
-    close(u)
+    open(newunit=u,file=path,status='old')
+    close(u,status='delete')
     if(fails/=0) then
         write(*,'(A,I0)') 'FAIL measured replay parser checks: ',fails
         stop 1
