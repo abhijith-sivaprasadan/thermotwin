@@ -41,7 +41,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
         anomaly_detector rl_dispatch fault_classifier forecast_engine \
         p2x_electrolyser ccs_model gfm_bess grid_primary_balance tie_line mpc_agc \
-        equipment_protection gt_trip_sequence instructor_console alarm_drilldown engine_core scenario_runner
+        equipment_protection gt_trip_sequence instructor_console alarm_drilldown measured_turbine_replay engine_core scenario_runner
 
 # opcua_bridge is GUI-only: its C backend (open62541) is not linked into the
 # CLI or tests.  Compile separately and include only in GUI link targets.
@@ -123,6 +123,7 @@ $(BUILD)/equipment_protection.o:   $(BUILD)/engine_state.o $(BUILD)/precision_ki
 $(BUILD)/gt_trip_sequence.o:      $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o $(BUILD)/grid_frequency_physics.o
 $(BUILD)/instructor_console.o:    $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o
 $(BUILD)/alarm_drilldown.o:       $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o $(BUILD)/off_design.o $(BUILD)/hrsg.o
+$(BUILD)/measured_turbine_replay.o: $(BUILD)/precision_kinds.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o $(BUILD)/gt_trip_sequence.o
 $(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
 $(BUILD)/dnn_surrogate.o:          $(BUILD)/precision_kinds.o

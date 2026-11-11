@@ -24,6 +24,7 @@ module thermotwin_win32_gui
         DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
         drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
         drill_alarm_row_hit, drill_source_label
+    use measured_turbine_replay, only: MeasuredReplay, replay_load, replay_seek
     use exergy, only: ExergyResult, compute_exergy
     use exergy_uq,         only: ExergyUQ, run_exergy_uq
     use exergy_sobol,      only: SobolResult, run_exergy_sobol, SOBOL_NIN
@@ -100,6 +101,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_RIGHT = 39_c_int
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
     integer(c_int), parameter :: VK_I   = 73_c_int   ! F15 instructor-console toggle
+    integer(c_int), parameter :: VK_U   = 85_c_int   ! Ctrl+U: UCI 551 historical measured replay
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
     integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
@@ -990,6 +992,8 @@ module thermotwin_win32_gui
     logical :: scn_playing = .false.
     type(InstructorSession) :: instructor
     logical :: instructor_view=.false.   ! F15 instructor tab; existing comparison preserved
+    logical :: measured_view=.false.     ! F15 read-only UCI source replay
+    type(MeasuredReplay) :: measured_data
     type(Scenario) :: scn_active
     ! GUI-side checkpoint of scripted event cursors alongside the full GridState.
     type(Scenario) :: instructor_saved_scenario
@@ -1790,7 +1794,7 @@ contains
             active_control = ID_NONE
             return
         end if
-        ! F15 is split into independent scenario comparison and instructor tabs.
+        ! F15 includes read-only measured replay, instructor and A/B scenario tabs.
         if (hmi_screen==SCREEN_SCENARIO) then
             if (handle_instructor_mouse(x,y)) then
                 active_control=ID_NONE
@@ -1916,7 +1920,15 @@ contains
         case (ID_SHORTCUTS)
             shortcuts_popup_active = .not. shortcuts_popup_active
             active_control = ID_NONE
-        case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
+        case (ID_GAS)
+            if(grid%gt_phase/=GT_ONLINE) then
+                call set_notice('TURBINE DISPATCH LOCKED - open F7 > TRIP SEQUENCE for recovery.')
+                active_control=ID_NONE
+            else
+                previous=SetCapture(hwnd)
+                call update_active_slider(x)
+            end if
+        case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
             call update_active_slider(x)
         end select
@@ -1977,9 +1989,16 @@ contains
             select case (kval)
             case (VK_I)
                 call set_hmi_screen(SCREEN_SCENARIO)
+                measured_view=.false.
                 instructor_view=.true.
                 shortcuts_popup_active=.false.
                 call set_notice('Instructor console: use FREEZE, SAVE, injections and F7 drill.')
+                return
+            case (VK_U)
+                call set_hmi_screen(SCREEN_SCENARIO)
+                measured_view=.true.
+                instructor_view=.false.
+                call set_notice('UCI 551: LOCAL REPLAY, read-only; use LOAD CSV before browsing.')
                 return
             case (VK_K)
                 command_palette_active = .true.
@@ -2011,6 +2030,11 @@ contains
             end select
         end if
 
+        if (hmi_screen==SCREEN_SCENARIO.and.measured_view.and. &
+            (kval==VK_LEFT.or.kval==VK_RIGHT)) then
+            call replay_seek(measured_data,merge(-1,1,kval==VK_LEFT))
+            return
+        end if
         if (hmi_screen==SCREEN_SCENARIO.and.instructor_view.and.kval==VK_SPACE) then
             call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
             return
@@ -2110,7 +2134,10 @@ contains
         case (VK_6)
             grid%ou_active = .not. grid%ou_active
         case (VK_I)
-            if(hmi_screen==SCREEN_SCENARIO) instructor_view=.not.instructor_view
+            if(hmi_screen==SCREEN_SCENARIO) then
+                instructor_view=.not.instructor_view
+                measured_view=.false.
+            end if
         case (VK_E)
             call export_shift_csv(grid)
         case (VK_R)
@@ -3875,7 +3902,9 @@ contains
             case (SCREEN_ADVISORY)
                 call draw_advisory_screen(hdc, x0, content_y, w, content_h)
             case (SCREEN_SCENARIO)
-                if(instructor_view) then
+                if(measured_view) then
+                    call draw_measured_replay_screen(hdc,x0,content_y,w,content_h)
+                else if(instructor_view) then
                     call draw_instructor_screen(hdc,x0,content_y,w,content_h)
                 else
                     call draw_scenario_screen(hdc, x0, content_y, w, content_h)
@@ -10035,22 +10064,30 @@ contains
         integer(c_int), intent(in) :: color
         integer :: knob_x
         real(dp) :: f
+        integer(c_int) :: slider_color
+        logical :: trip_locked
         character(len=20) :: lo_text, hi_text
 
-        call draw_text(hdc, x, y - 34, label, COL_INK)
-        call draw_text(hdc, x + width - 78, y - 34, value_text, color)
+        trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
+        slider_color=merge(COL_DIM,color,trip_locked)
+            call draw_text(hdc, x, y - 34, label, merge(COL_DIM,COL_INK,trip_locked))
+            if(trip_locked) then
+                call draw_text(hdc,x+width-86,y-34,'TRIP LOCK',COL_AMBER)
+            else
+                call draw_text(hdc,x+width-78,y-34,value_text,color)
+            end if
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
         ! Flat pill track
         call fill_soft_box(hdc, x, y + 2, x + width, y + 8, COL_PANEL_DEEP)
-        call fill_soft_box(hdc, x, y + 2, knob_x, y + 8, color)
+        call fill_soft_box(hdc, x, y + 2, knob_x, y + 8, slider_color)
         call stroke_soft_box(hdc, x, y + 2, x + width, y + 8, COL_BORDER_SOFT, 1)
         if (focus_control_id == control_id) then
             call stroke_soft_box(hdc, x - 10, y - 36, x + width + 10, y + 42, COL_CYAN, 1)
         end if
         ! Clean lozenge knob — no 3D serrations
         call fill_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, COL_PANEL_ALT)
-        call stroke_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, color, &
+        call stroke_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, slider_color, &
             merge(2, 1, active_control == control_id))
         write(lo_text, '(I0)') nint(lo)
         write(hi_text, '(I0)') nint(hi)
@@ -13092,9 +13129,22 @@ contains
         ix=layout_main_left+18
         iw=layout_main_w-36
         top=hmi_content_top(layout_main_top)+8
+        if(point_in_rect(px,py,ix+iw-340,top+12,ix+iw-182,top+42)) then
+            measured_view=.not.measured_view
+            instructor_view=.false.
+            handled=.true.
+            return
+        end if
         if(point_in_rect(px,py,ix+iw-174,top+12,ix+iw,top+42)) then
             instructor_view=.not.instructor_view
+            measured_view=.false.
             handled=.true.
+            return
+        end if
+        if(measured_view) then
+            if(.not.point_in_rect(px,py,ix,top+55,ix+iw,layout_main_top+layout_main_h)) return
+            handled=.true.
+            call handle_measured_replay_mouse(px,py,ix,iw,top)
             return
         end if
         if(.not.instructor_view) return
@@ -13187,6 +13237,8 @@ contains
         call draw_screen_caption(hdc, ix, top_y, iw, &
             "F15  SCENARIO COMPARISON", &
             "A/B playback overlay with deterministic scenario traces")
+        call draw_industrial_button(hdc,ix+iw-340,top_y+12,ix+iw-182,top_y+42, &
+            'MEASURED [U]',COL_PANEL_ALT,.false.)
         call draw_industrial_button(hdc,ix+iw-174,top_y+12,ix+iw,top_y+42, &
             'INSTRUCTOR [I]',COL_PANEL_ALT,.false.)
 
@@ -13339,6 +13391,122 @@ contains
     end subroutine draw_scenario_screen
 
 
+
+    ! Read-only measured-data mode. Never mutates GridState, trained coefficients
+    ! or simulated interlocks. Local CSV is NOT cryptographically verified here.
+    subroutine handle_measured_replay_mouse(px,py,ix,iw,top)
+        integer,intent(in) :: px,py,ix,iw,top
+        logical :: accepted
+        integer :: plot_left,plot_right,lo,hi,k
+        if(point_in_rect(px,py,ix,top+112,ix+150,top+150)) then
+            call replay_load('build/uci551/replay/measured_vs_predicted_2014_2015.csv', &
+                             measured_data,accepted)
+            if(accepted) then
+                call set_notice('UCI 551 original data replay loaded. CSV hash not validated in GUI.')
+            else
+                call set_notice(trim(measured_data%status))
+            end if
+            return
+        end if
+        if(measured_data%n==0) return
+        if(point_in_rect(px,py,ix,top+178,ix+118,top+216)) then
+            call replay_seek(measured_data,-100)
+        else if(point_in_rect(px,py,ix+130,top+178,ix+245,top+216)) then
+            call replay_seek(measured_data,-1)
+        else if(point_in_rect(px,py,ix+257,top+178,ix+372,top+216)) then
+            call replay_seek(measured_data,1)
+        else if(point_in_rect(px,py,ix+384,top+178,ix+min(520,iw),top+216)) then
+            call replay_seek(measured_data,100)
+        else if(point_in_rect(px,py,ix+30,top+258,ix+iw-28,top+660)) then
+            lo=max(1,measured_data%index-100)
+            hi=min(measured_data%n,measured_data%index+100)
+            plot_left=ix+30
+            plot_right=ix+iw-28
+            k=lo+nint(real(max(0,min(plot_right-plot_left,px-plot_left)),dp) / &
+                      real(max(1,plot_right-plot_left),dp)*real(hi-lo,dp))
+            call replay_seek(measured_data,k-measured_data%index)
+        end if
+    end subroutine handle_measured_replay_mouse
+
+    subroutine draw_measured_replay_screen(hdc,x,y,width,height)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,width,height
+        integer :: ix,iw,top,lo,hi,i,px,py,oldx,oldy,oldq,oldr
+        integer :: gx,gy,gw,gh
+        real(dp) :: vmin,vmax,scale
+        character(len=192) :: label
+        ix=x+18
+        iw=width-36
+        top=y+8
+        call draw_screen_caption(hdc,ix,top,iw,'F15  REAL TURBINE REPLAY', &
+            'UCI 551 observed source data / read-only / NOT LIVE PLANT')
+        call draw_industrial_button(hdc,ix+iw-340,top+12,ix+iw-182,top+42, &
+            'SCENARIOS',COL_PANEL_ALT,.false.)
+        call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
+            'INSTRUCTOR [I]',COL_PANEL_ALT,.false.)
+        call draw_text(hdc,ix,top+67,'HISTORICAL ACTUAL MEASUREMENTS - independent of live GT model/trips',COL_CYAN)
+        call draw_text(hdc,ix,top+88,'2011-13 fit / 2014-15 test. TEY SOURCE UNITS, not independently verified MW.',COL_MUTED)
+        call draw_button(hdc,ix,top+112,ix+150,top+150,'LOAD CSV',COL_PANEL_ALT)
+        if(measured_data%n==0) then
+            call draw_text(hdc,ix+164,top+123,trim(measured_data%status),COL_AMBER)
+            call draw_text(hdc,ix,top+186,'First run: python scripts/fetch_uci_gt551.py --output-dir build/uci551',COL_MUTED)
+            call draw_text(hdc,ix,top+212, &
+                'Then: python -m scripts.replay_uci_gt551 --data-dir build/uci551 --out build/uci551/replay', &
+                COL_MUTED)
+            call draw_text(hdc,ix,top+250,'No synthetic turbine data substituted when files are absent.',COL_RED)
+            return
+        end if
+        write(label,'("LOCAL CSV / HASH NOT VERIFIED IN GUI  |  RECORD ",I0," / ",I0)') &
+            measured_data%index,measured_data%n
+        call draw_text(hdc,ix+164,top+123,trim(label),COL_AMBER)
+        call draw_button(hdc,ix,top+178,ix+118,top+216,'-100 rows',COL_PANEL_ALT)
+        call draw_button(hdc,ix+130,top+178,ix+245,top+216,'PREVIOUS',COL_PANEL_ALT)
+        call draw_button(hdc,ix+257,top+178,ix+372,top+216,'NEXT',COL_PANEL_ALT)
+        call draw_button(hdc,ix+384,top+178,ix+min(520,iw),top+216,'+100 rows',COL_PANEL_ALT)
+        i=measured_data%index
+        write(label,'("SOURCE YEAR ",I0,"   |   PUBLISHED ROW ",I0,"   |   NO EXACT TIMESTAMP")') &
+            measured_data%year(i),measured_data%source_row(i)
+        call draw_text(hdc,ix,top+232,trim(label),COL_INK)
+        gx=ix+30
+        gy=top+258
+        gw=max(80,iw-58)
+        gh=max(120,min(310,height-365))
+        call fill_soft_box(hdc,gx,gy,gx+gw,gy+gh,COL_PANEL_DEEP)
+        call stroke_soft_box(hdc,gx,gy,gx+gw,gy+gh,COL_BORDER_SOFT,1)
+        lo=max(1,i-100)
+        hi=min(measured_data%n,i+100)
+        vmin=min(minval(measured_data%measured(lo:hi)),minval(measured_data%predicted(lo:hi)))
+        vmax=max(maxval(measured_data%measured(lo:hi)),maxval(measured_data%predicted(lo:hi)))
+        scale=max(1.0_dp,vmax-vmin)
+        do i=lo,hi
+            px=gx+8+nint(real(i-lo,dp)/real(max(1,hi-lo),dp)*real(gw-16,dp))
+            py=gy+gh-10-nint((measured_data%measured(i)-vmin)/scale*real(gh-20,dp))
+            if(i>lo) call draw_line(hdc,oldx,oldy,px,py,COL_CYAN,2)
+            oldx=px
+            oldy=py
+            py=gy+gh-10-nint((measured_data%predicted(i)-vmin)/scale*real(gh-20,dp))
+            if(i>lo) call draw_line(hdc,oldq,oldr,px,py,COL_AMBER,2)
+            oldq=px
+            oldr=py
+        end do
+        i=measured_data%index
+        px=gx+8+nint(real(i-lo,dp)/real(max(1,hi-lo),dp)*real(gw-16,dp))
+        call draw_line(hdc,px,gy+6,px,gy+gh-6,COL_INK,1)
+        call draw_text(hdc,ix,gy+gh+11,'CYAN: measured TEY    AMBER: conditional estimate',COL_CYAN)
+        write(label,'("MEASURED ",F8.3,"  PREDICTED ",F8.3,"  ERROR OBS-PRED ",SP,F8.3,SS)') &
+            measured_data%measured(i),measured_data%predicted(i),measured_data%residual(i)
+        call draw_text(hdc,ix,gy+gh+38,trim(adjustl(label)),COL_INK)
+        write(label,'("Observed ambient ",F6.1," C  /  TIT ",F7.1," C  |  ",A)') &
+            measured_data%ambient(i),measured_data%tit(i), &
+            merge('OUTSIDE TRAINING RANGE','WITHIN TRAINING RANGE ',measured_data%outside(i))
+        call draw_text(hdc,ix,gy+gh+62,trim(adjustl(label)), &
+            merge(COL_AMBER,COL_MUTED,measured_data%outside(i)))
+        call draw_text(hdc,ix,gy+gh+85, &
+            'Source-ordered replay only. Never feeds fuel, trip, breaker, model time or OPC UA.',COL_MUTED)
+        call draw_text(hdc,ix,max(gy+gh+110,top+height-26), &
+            'Ctrl+U: measured tab | Left/Right: rows | source ZIP hashes checked by Python producer',COL_DIM)
+    end subroutine draw_measured_replay_screen
+
     ! Separate instructional surface; original F15 comparison stays intact.
     subroutine draw_instructor_screen(hdc,x,y,width,height)
         type(c_ptr),value :: hdc
@@ -13359,6 +13527,8 @@ contains
             call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
                 'OFFLINE TRAINING / simulated faults only - NOT plant control')
         end if
+        call draw_industrial_button(hdc,ix+iw-340,top+12,ix+iw-182,top+42, &
+            'MEASURED [U]',COL_PANEL_ALT,.false.)
         call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
             'SCENARIOS [I]',COL_PANEL_ALT,.false.)
 
