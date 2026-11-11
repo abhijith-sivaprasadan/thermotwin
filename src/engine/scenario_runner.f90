@@ -850,7 +850,9 @@ contains
             "renewable_curtail_MW,storage_request_MW,storage_MW,BESS_primary_MW,"// &
             "battery_soc_pct,reserve_MW,UFLS_stage,margin_usd_h,CO2_intensity_g_kWh,"// &
             "heat_rate_kJ_kWh,flame_temp_ad_K,nox_mg_nm3_15o2,co_mg_nm3_15o2,"// &
-            "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW"
+            "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW,"// &
+            "served_demand_MW,ufls_shed_MW,renewable_lfsmo_MW,effective_gas_dispatch_pct,"// &
+            "governor_delta_MW,battery_energy_MWh"
     end subroutine open_recorder
 
     subroutine record_row(unit, t_now, st)
@@ -861,12 +863,15 @@ contains
         write(unit, '(*(ES16.8,:,","))') t_now, st%frequency_Hz, st%nominal_frequency_Hz, &
             st%ROCOF_Hz_s, st%demand_MW, st%supply_MW, st%imbalance_MW, st%gas_dispatch_pct, &
             st%gas_power_MW, st%plant_power_MW, st%steam_power_MW, st%renewable_MW, &
-            effective_renewable_MW(st), st%renewable_curtail_MW, st%storage_request_MW, &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW), &
+            st%renewable_curtail_MW, st%storage_request_MW, &
             st%storage_MW, st%BESS_primary_MW, st%battery_soc_pct, st%reserve_MW, &
             real(st%UFLS_stage, dp), st%margin_usd_h, st%CO2_intensity_g_kWh, &
             st%heat_rate_kJ_kWh, st%flame_temp_ad_K, st%nox_mg_nm3_15o2, &
             st%co_mg_nm3_15o2, st%flashback_margin_pct, st%turbine_cooling_air_pct, &
-            st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW
+            st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW, &
+            st%served_demand_MW, st%ufls_shed_MW, st%renewable_lfsmo_MW, &
+            st%effective_gas_dispatch_pct, st%governor_delta_MW, st%battery_energy_MWh
     end subroutine record_row
 
 end module scenario_runner
