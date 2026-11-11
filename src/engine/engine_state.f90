@@ -15,6 +15,8 @@ module engine_state
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: bottoming_power_MW, thermal_generation_MW
     public :: limited_storage_power, append_history, history_index
+    public :: EQ_N, EQ_SURGE, EQ_OVERSPEED, EQ_EXHAUST, EQ_COMBUST, EQ_OIL, EQ_BEARING, EQ_GENERATOR
+    public :: EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
 
     ! --- Operator-adjustable ranges -------------------------------------
     real(dp), parameter, public :: DEMAND_MIN_MW = 10.0_dp
@@ -65,6 +67,13 @@ module engine_state
     real(dp), parameter, public :: CURTAIL_RAMP_MW_PER_S = 10.0_dp  ! inverter-fast
 
     real(dp), parameter, public :: PI_DP = 3.14159265358979323846_dp
+    ! Equipment protection: seven pedagogical condition monitors, NOT OEM protection.
+    ! Model-backed only where physically meaningful inputs exist. Other signals
+    ! are unavailable until a separate explicitly labeled TRAINING source exists.
+    integer, parameter :: EQ_N = 7
+    integer, parameter :: EQ_SURGE = 1, EQ_OVERSPEED = 2, EQ_EXHAUST = 3
+    integer, parameter :: EQ_COMBUST = 4, EQ_OIL = 5, EQ_BEARING = 6, EQ_GENERATOR = 7
+    integer, parameter :: EQ_SRC_UNAVAILABLE = 0, EQ_SRC_MODEL = 1, EQ_SRC_TRAINING = 2
     integer,  parameter, public :: HISTORY_N = 240
     integer,  parameter, public :: DA_H     = 24   ! day-ahead planning horizon (hours)
     integer,  parameter, public :: GT_OPT_N = 20   ! P2 optimizer scan points (30%→100%)
@@ -237,6 +246,16 @@ module engine_state
         real(dp) :: hist_frequency_Hz(HISTORY_N) = 50.0_dp
         real(dp) :: hist_demand_MW(HISTORY_N) = 35.0_dp
         real(dp) :: hist_gas_dispatch_pct(HISTORY_N) = 82.0_dp
+        ! Condition monitoring, independent of protection actuation or trip sequencing.
+        logical :: eq_alarm(EQ_N) = .false.
+        integer :: eq_source(EQ_N) = EQ_SRC_UNAVAILABLE
+        real(dp) :: eq_value(EQ_N) = 0.0_dp
+        real(dp) :: eq_breach_s(EQ_N) = 0.0_dp
+        real(dp) :: eq_clear_s(EQ_N) = 0.0_dp
+        ! Instructor/test sensor inputs. No values are invented by the engine.
+        logical :: eq_training_present(EQ_N) = .false.
+        real(dp) :: eq_training_value(EQ_N) = 0.0_dp
+        real(dp) :: eq_training_stamp_s(EQ_N) = -1.0_dp
         logical :: auto_balance = .true.
         ! Day-ahead MINLP optimizer results (written by minlp_dayahead every ~5 s)
         logical  :: da_solved       = .false.

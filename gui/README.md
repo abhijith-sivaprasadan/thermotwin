@@ -89,6 +89,23 @@ The screenshot QA includes both true native 1024×768 window frames and
 native 1536×960 offscreen HMI renders (not scaled screenshots), plus a
 scroll-bottom frame documenting scenario/export reachability.
 
+## Equipment-specific alarm conditions (v0.1)
+
+The original eight grid and plant alarm points remain under **GRID / PLANT**
+on the existing F7 alarm-management screen. **EQUIPMENT** now provides seven
+additional condition-monitor channels for compressor surge margin, rotor
+overspeed, high turbine exhaust temperature, combustion dynamics, low lube
+oil pressure, bearing temperature and modeled generator grid-frequency
+deviation. Model-derived conditions are explicitly tagged **MODEL** and
+the four unavailable physical sensor categories display **NO DATA**, not
+false healthy values. Later instructor tests can supply explicit **TRAIN**
+readings; no fake sensor values are generated during normal operation.
+
+Threshold values are pedagogical and deliberately *not* OEM calibration.
+See the [equipment alarm engineering basis](../docs/EQUIPMENT_PROTECTION_v0.1.md)
+for source quality, precise thresholds, hysteresis, timer logic, unit tests,
+known limitations and the boundary to future trip sequencing.
+
 ## Build
 
 From the repository root on Windows with MinGW/gfortran:

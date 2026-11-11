@@ -23,6 +23,7 @@ module engine_core
         market_profile_name, MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU, &
         MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     use grid_dynamics, only: tick_frequency_dynamics
+    use equipment_protection, only: reset_equipment_monitor, tick_equipment_monitor
     use dispatch_agc, only: tick_auto_balance, tick_frequency_support, balance_now, reset_controls, &
         ramp_renewable_curtailment_to, should_curtail_renewables, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
@@ -111,6 +112,7 @@ contains
 
         call set_property_model(PROP_VARIABLE)
         call reset_controls(st)
+        call reset_equipment_monitor(st)
         st%prev_gas_dispatch_pct = st%gas_dispatch_pct
         st%gas_ramp_pct_per_s = 0.0_dp
         call refresh_model(st)
@@ -146,6 +148,7 @@ contains
         call refresh_model(st, dt_s)            ! gas/steam power, imbalance, economics
         call update_battery_soc(st, dt_s)       ! SOC tracking
         call tick_frequency_dynamics(st, dt_s)  ! swing eq + primary response + UFLS
+        call tick_equipment_monitor(st, dt_s)   ! condition ONLY, no automatic trip
         st%CO2_cumulative_t = st%CO2_cumulative_t + &
             st%CO2_rate_kg_s * dt_s / 1000.0_dp
         ! Daily CO2 accumulation (resets every 86400 sim-seconds)

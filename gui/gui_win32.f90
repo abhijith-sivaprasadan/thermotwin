@@ -11,6 +11,8 @@ module thermotwin_win32_gui
         c_ptr, c_short, c_sizeof
     use precision_kinds, only: dp
     use engine_core
+    use engine_state, only: EQ_N, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
+    use equipment_protection, only: equipment_name, equipment_unit, equipment_priority, EQ_THRESHOLD_ON
     use exergy, only: ExergyResult, compute_exergy
     use exergy_uq,         only: ExergyUQ, run_exergy_uq
     use exergy_sobol,      only: SobolResult, run_exergy_sobol, SOBOL_NIN
@@ -221,7 +223,9 @@ module thermotwin_win32_gui
     integer, parameter :: ICON_TIE = 4
     integer, parameter :: ICON_MPC = 5
     integer, parameter :: ICON_OU  = 6
-    integer, parameter :: ALARM_COUNT = 8
+    integer, parameter :: ALARM_ORIGINAL_N = 8
+    integer, parameter :: ALARM_PAGE_ROWS = 8
+    integer, parameter :: ALARM_COUNT = ALARM_ORIGINAL_N + EQ_N
     integer, parameter :: ALARM_LOG_N = 36
     integer, parameter :: ALARM_P2_SHELVE_SECONDS = 600
     real(dp), parameter :: ALARM_P1_REPEAT_S = 8.0_dp
@@ -884,6 +888,8 @@ module thermotwin_win32_gui
     integer :: fl_ring(4) = 0              ! [5.0-D1] flagship hit rects (l,t,r,b): health ring
     integer :: fl_card(4,3) = 0            !          3 KPI cards (margin / CO2 / reserve)
     integer :: fl_tile(4,6) = 0            !          6 subsystem tiles (P2X/CCS/GFM/TIE/MPC/OU)
+    integer :: alarm_page = 1 ! 1 existing grid/plant; 2 equipment conditions
+    logical :: eq_quality_prev(EQ_N) = .false.
     logical :: alarm_prev(ALARM_COUNT) = .false.
     logical :: alarm_seen(ALARM_COUNT) = .false.
     logical :: alarm_ack(ALARM_COUNT) = .false.
@@ -1164,6 +1170,13 @@ contains
                 case(84)
                     call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
+                case(53)
+                    alarm_page=2
+                case(64)
+                    call visual_qa_capture("build\gui-visual-qa\06-equipment.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\06-equipment-1536.png")
+                case(65)
+                    alarm_page=1
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
                 case(87)
@@ -2216,6 +2229,8 @@ contains
 
     subroutine reset_alarm_workflow()
         alarm_prev = .false.
+        eq_quality_prev = (grid%eq_source /= EQ_SRC_UNAVAILABLE)
+        alarm_page = 1
         alarm_seen = .false.
         alarm_ack = .false.
         alarm_shelved = .false.
@@ -2237,6 +2252,30 @@ contains
 
         call current_alarm_states(states)
         do i = 1, ALARM_COUNT
+            ! Data-quality edge cases are NOT a normal return to service.
+            ! Preserve a distinct BADQ event and an explicit NO DATA row.
+            if (i>ALARM_ORIGINAL_N) then
+                block
+                    integer :: k
+                    k = i-ALARM_ORIGINAL_N
+                    if (grid%eq_source(k)==EQ_SRC_UNAVAILABLE) then
+                        if (eq_quality_prev(k)) then
+                            alarm_seen(i)=.true.
+                            alarm_ack(i)=.false.
+                            alarm_shelved(i)=.false.
+                            alarm_shelve_until_s(i)=0.0_dp
+                            call log_alarm_event(i,"BADQ")
+                        end if
+                        eq_quality_prev(k)=.false.
+                        alarm_prev(i)=.false.
+                        cycle
+                    end if
+                    if (.not.eq_quality_prev(k)) then
+                        if (alarm_seen(i)) call log_alarm_event(i,"RESTORE")
+                        eq_quality_prev(k)=.true.
+                    end if
+                end block
+            end if
             if (states(i) .and. .not. alarm_prev(i)) then
                 alarm_seen(i) = .true.
                 alarm_ack(i) = .false.
@@ -2397,7 +2436,7 @@ contains
         integer, intent(in) :: x, y
         logical :: handled
         integer :: x0, y0, w, h, content_y, content_h, top_y, btn_y, bx, row_y, row_h, i
-        integer :: ix, iw, table_w
+        integer :: ix, iw, table_w, alarm_id
         logical :: states(ALARM_COUNT)
 
         handled = .false.
@@ -2440,28 +2479,41 @@ contains
             return
         end if
 
+        ! Distinct paged lists preserve the original 48 px row geometry.
+        if (point_in_rect(x,y,ix,btn_y+49,ix+142,btn_y+79)) then
+            alarm_page=1
+            handled=.true.
+            return
+        end if
+        if (point_in_rect(x,y,ix+153,btn_y+49,ix+300,btn_y+79)) then
+            alarm_page=2
+            handled=.true.
+            return
+        end if
         call current_alarm_states(states)
         row_y = btn_y + 122
-        row_h = max(34, (content_y + content_h - 158 - row_y) / ALARM_COUNT)
-        do i = 1, ALARM_COUNT
+        row_h = 48
+        do i = 1, ALARM_PAGE_ROWS
+            alarm_id = ALARM_ORIGINAL_N*(alarm_page-1)+i
+            if (alarm_id>ALARM_COUNT) exit
             if (point_in_rect(x, y, ix + 8, row_y, ix + table_w - 8, row_y + row_h - 3)) then
-                if (alarm_seen(i) .and. states(i) .and. .not. alarm_ack(i)) then
-                    alarm_ack(i) = .true.
-                    call log_alarm_event(i, "ACK")
-                else if (alarm_seen(i) .and. states(i) .and. &
-                         trim(alarm_priority_text(i)) == "P2") then
-                    alarm_shelved(i) = .not.alarm_shelved(i)
-                    if (alarm_shelved(i)) then
-                        alarm_shelve_until_s(i) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
+                if (alarm_seen(alarm_id) .and. states(alarm_id) .and. .not. alarm_ack(alarm_id)) then
+                    alarm_ack(alarm_id) = .true.
+                    call log_alarm_event(alarm_id, "ACK")
+                else if (alarm_seen(alarm_id) .and. states(alarm_id) .and. &
+                         trim(alarm_priority_text(alarm_id)) == "P2") then
+                    alarm_shelved(alarm_id) = .not.alarm_shelved(alarm_id)
+                    if (alarm_shelved(alarm_id)) then
+                        alarm_shelve_until_s(alarm_id) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
                     else
-                        alarm_shelve_until_s(i) = 0.0_dp
+                        alarm_shelve_until_s(alarm_id) = 0.0_dp
                         alarm_audio_new_event = .true.
                     end if
-                    call log_alarm_event(i, merge("SHLV  ", "UNSHLV", alarm_shelved(i)))
-                else if (alarm_seen(i)) then
-                    alarm_seen(i) = .false.
-                    alarm_ack(i) = .false.
-                    alarm_shelved(i) = .false.
+                    call log_alarm_event(alarm_id, merge("SHLV  ", "UNSHLV", alarm_shelved(alarm_id)))
+                else if (alarm_seen(alarm_id)) then
+                    alarm_seen(alarm_id) = .false.
+                    alarm_ack(alarm_id) = .false.
+                    alarm_shelved(alarm_id) = .false.
                 end if
                 handled = .true.
                 return
@@ -3930,7 +3982,7 @@ contains
                 n_alm = count([grid%alarm_surge, grid%alarm_turbine_max, &
                                grid%alarm_ufls_active, grid%alarm_underfreq, &
                                grid%alarm_overfreq, grid%alarm_hrsg_pinch, &
-                               grid%alarm_low_reserve, grid%alarm_low_soc])
+                               grid%alarm_low_reserve, grid%alarm_low_soc]) + count(grid%eq_alarm)
                 if (n_alm > 0) then
                     write(cnt_s, '(I2)') n_alm
                     bx2 = tx2 - 22
@@ -5496,7 +5548,7 @@ contains
     subroutine draw_alarms_screen(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
-        integer :: ix, iw, top_y, btn_y, row_y, row_h, log_x, log_w, table_w, i, active_count
+        integer :: ix, iw, top_y, btn_y, row_y, row_h, log_x, log_w, table_w, i, alarm_id, active_count
         logical :: states(ALARM_COUNT)
         character(len=20) :: labels(ALARM_COUNT)
         integer(c_int) :: colors(ALARM_COUNT), state_color
@@ -5536,21 +5588,34 @@ contains
         log_w = max(260, iw - table_w - 18)
         ! [5.0-A4] Fixed comfortable rows (were stretched to ~120 px, two-thirds empty);
         ! the reclaimed space below carries an ISA-18.2 alarm-performance KPI strip.
-        call draw_section_title_width(hdc, ix, btn_y + 54, "Alarm list", table_w)
+        call draw_industrial_button(hdc,ix,btn_y+49,ix+142,btn_y+79, &
+            "GRID / PLANT",COL_CYAN,alarm_page==1)
+        call draw_industrial_button(hdc,ix+153,btn_y+49,ix+300,btn_y+79, &
+            "EQUIPMENT",COL_CYAN,alarm_page==2)
+        if (alarm_page==2) then
+            write(line,'("MODEL ",I0," / TRAIN ",I0," / NO DATA ",I0)') &
+                count(grid%eq_source==EQ_SRC_MODEL),count(grid%eq_source==EQ_SRC_TRAINING), &
+                count(grid%eq_source==EQ_SRC_UNAVAILABLE)
+            call draw_text(hdc,ix+310,btn_y+56,trim(line),COL_MUTED)
+        end if
         block
             integer :: list_h, kp_y, kp_w, kp_gap, kc, nP1, nP2
             character(len=16) :: vtxt
             row_h  = 48
-            list_h = 40 + ALARM_COUNT * row_h + 12
+            list_h = 40 + ALARM_PAGE_ROWS * row_h + 12
             call draw_panel_box(hdc, ix, btn_y + 82, table_w, list_h)
             call draw_text(hdc, ix + 12,  btn_y + 96, "Priority",        COL_MUTED)
             call draw_text(hdc, ix + 96,  btn_y + 96, "Alarm",           COL_MUTED)
             call draw_text(hdc, ix + 306, btn_y + 96, "State",           COL_MUTED)
-            call draw_text(hdc, ix + 410, btn_y + 96, "Operator action", COL_MUTED)
+            call draw_text(hdc, ix + 410, btn_y + 96, "Action / source", COL_MUTED)
             row_y = btn_y + 122
-            do i = 1, ALARM_COUNT
-                call draw_alarm_row(hdc, ix + 8, row_y, table_w - 16, row_h - 4, i, labels(i), states(i), colors(i))
-                row_y = row_y + row_h
+            do i = 1, ALARM_PAGE_ROWS
+                alarm_id=ALARM_ORIGINAL_N*(alarm_page-1)+i
+                if (alarm_id <= ALARM_COUNT) then
+                    call draw_alarm_row(hdc, ix+8,row_y,table_w-16,row_h-4, &
+                        alarm_id,labels(alarm_id),states(alarm_id),colors(alarm_id))
+                end if
+                row_y=row_y+row_h
             end do
 
             nP1 = 0;  nP2 = 0
@@ -5584,15 +5649,16 @@ contains
             integer :: sy, log_top
             call draw_panel_box(hdc, log_x, btn_y + 82, log_w, 196)
             sy = btn_y + 96
-            call draw_value_pair(hdc, log_x + 12, sy, "Configured points", "8", COL_INK);  sy = sy + 26
+            write(line,'(I0)') ALARM_COUNT
+            call draw_value_pair(hdc, log_x + 12, sy, "Alarm points", trim(line), COL_INK); sy=sy+26
             write(line, '(I0)') active_count
             call draw_value_pair(hdc, log_x + 12, sy, "Standing alarms", trim(adjustl(line)), merge(COL_RED, COL_GREEN, active_count > 0));  sy = sy + 26
             write(line, '(I0)') count(alarm_seen .and. .not. alarm_ack)
             call draw_value_pair(hdc, log_x + 12, sy, "Unacknowledged", trim(adjustl(line)), merge(COL_AMBER, COL_MUTED, any(alarm_seen .and. .not. alarm_ack)));  sy = sy + 26
             write(line, '(I0)') count(alarm_shelved)
             call draw_value_pair(hdc, log_x + 12, sy, "Shelved", trim(adjustl(line)), merge(COL_CYAN, COL_MUTED, any(alarm_shelved)));  sy = sy + 26
-            write(line, '(I0)') alarm_log_count
-            call draw_value_pair(hdc, log_x + 12, sy, "Events this run", trim(adjustl(line)), COL_MUTED);  sy = sy + 26
+            write(line,'(I0,"/",I0)') count(grid%eq_source/=EQ_SRC_UNAVAILABLE),EQ_N
+            call draw_value_pair(hdc, log_x+12,sy,"Equip monitored",trim(line),COL_MUTED); sy=sy+26
             line = "None"
             do i = 1, ALARM_COUNT
                 if (states(i)) then;  line = labels(i);  exit;  end if
@@ -5622,6 +5688,8 @@ contains
         integer(c_int), intent(in) :: color
         character(len=8) :: state_text
         character(len=56) :: action_text
+        character(len=12) :: v_str, lim_str, unit_str, source_str
+        integer :: eq_id
         integer(c_int) :: state_color, body
 
         state_text = alarm_state_text(alarm_id, active)
@@ -5643,6 +5711,21 @@ contains
             action_text = "Returned - click row or ACK ALL to clear"
         else
             action_text = "Normal"
+        end if
+        if (alarm_id > ALARM_ORIGINAL_N) then
+            eq_id=alarm_id-ALARM_ORIGINAL_N
+            if (grid%eq_source(eq_id)==EQ_SRC_UNAVAILABLE) then
+                action_text="NO TRAIN SENSOR"
+                if(alarm_seen(alarm_id)) action_text="INPUT LOST / BAD QUALITY"
+            else
+                write(v_str,'(F6.1)') grid%eq_value(eq_id)
+                write(lim_str,'(F6.1)') EQ_THRESHOLD_ON(eq_id)
+                unit_str=equipment_unit(eq_id)
+                source_str="MODEL"
+                if (grid%eq_source(eq_id)==EQ_SRC_TRAINING) source_str="TRAIN"
+                action_text=trim(source_str)//" "//trim(adjustl(v_str))// &
+                    "/"//trim(adjustl(lim_str))//" "//trim(unit_str)
+            end if
         end if
         call draw_text(hdc, x + 410, y + 8, trim(action_text), COL_MUTED)
     end subroutine draw_alarm_row
@@ -9186,9 +9269,9 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, w, h
         integer :: tile_w, gap, tx, i
-        character(len=20) :: labels(8)
-        logical :: states(8)
-        integer(c_int) :: colors(8)
+        character(len=20) :: labels(ALARM_COUNT)
+        logical :: states(ALARM_COUNT)
+        integer(c_int) :: colors(ALARM_COUNT)
 
         call alarm_labels(labels)
         call current_alarm_states(states)
@@ -9256,6 +9339,7 @@ contains
         states(6) = grid%alarm_turbine_max
         states(7) = grid%alarm_surge
         states(8) = grid%alarm_hrsg_pinch
+        states(9:ALARM_COUNT) = grid%eq_alarm
     end subroutine current_alarm_states
 
     subroutine alarm_labels(labels)
@@ -9269,6 +9353,12 @@ contains
         labels(6) = "TURBINE LIMIT"
         labels(7) = "SURGE MARGIN"
         labels(8) = "HRSG PINCH"
+        block
+            integer :: i
+            do i=1,EQ_N
+                labels(ALARM_ORIGINAL_N+i)=equipment_name(i)
+            end do
+        end block
     end subroutine alarm_labels
 
     subroutine alarm_colors(colors)
@@ -9282,6 +9372,18 @@ contains
         colors(6) = COL_AMBER
         colors(7) = COL_RED
         colors(8) = COL_AMBER
+        block
+            integer :: i
+            do i=1,EQ_N
+                if (grid%eq_source(i)==EQ_SRC_UNAVAILABLE) then
+                    colors(ALARM_ORIGINAL_N+i)=COL_DIM
+                else if (equipment_priority(i)==1) then
+                    colors(ALARM_ORIGINAL_N+i)=COL_RED
+                else
+                    colors(ALARM_ORIGINAL_N+i)=COL_AMBER
+                end if
+            end do
+        end block
     end subroutine alarm_colors
 
     function alarm_state_text(alarm_id, active) result(text)
@@ -9289,6 +9391,13 @@ contains
         logical, intent(in) :: active
         character(len=8) :: text
 
+        if (alarm_id>ALARM_ORIGINAL_N) then
+            if (grid%eq_source(alarm_id-ALARM_ORIGINAL_N)==EQ_SRC_UNAVAILABLE) then
+                text="BAD DATA"
+                if (.not.alarm_seen(alarm_id)) text="NO DATA"
+                return
+            end if
+        end if
         if (active .and. alarm_shelved(alarm_id)) then
             text = "SHLV"
         else if (active .and. alarm_ack(alarm_id)) then
@@ -9313,8 +9422,12 @@ contains
             color = COL_AMBER
         case ("RTN")
             color = COL_CYAN
-        case ("SHLV", "UNSHLV")
+        case ("SHLV", "UNSHLV", "NO DATA", "BADQ")
             color = COL_DIM
+        case ("BAD DATA")
+            color = COL_DIM
+        case ("RESTORE")
+            color = COL_CYAN
         case default
             color = COL_MUTED
         end select
@@ -9331,6 +9444,13 @@ contains
             text = "P2"
         case default
             text = "P3"
+            if (alarm_id>ALARM_ORIGINAL_N .and. alarm_id<=ALARM_COUNT) then
+                if(equipment_priority(alarm_id-ALARM_ORIGINAL_N)==1) then
+                    text="P1"
+                else if(equipment_priority(alarm_id-ALARM_ORIGINAL_N)==2) then
+                    text="P2"
+                end if
+            end if
         end select
     end function alarm_priority_text
 
