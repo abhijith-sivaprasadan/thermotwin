@@ -24,6 +24,18 @@ program test_gt_trip_sequence
     call check("first-out has simulation timestamp",st%gt_first_out_s==st%elapsed_s)
     call check("breaker open and fuel isolated immediately",&
        .not.st%gt_breaker_closed .and. .not.st%gt_fuel_valve_open)
+    call check("dependent generator excitation and starter isolated",&
+       .not.st%gt_generator_excitation_on .and. .not.st%gt_start_motor_on)
+    call check("trip commands assumed lube support and open compressor bleed",&
+       st%gt_lube_support_on .and. st%gt_blowoff_open)
+    call check("separate accepted trigger, first-out and breaker SOE entries",&
+       st%gt_trip_log_count>=6 .and. &
+       index(st%gt_trip_log_text(1),"TRIGGER ACCEPTED")==1 .and. &
+       index(st%gt_trip_log_text(2),"FIRST OUT LATCHED")==1 .and. &
+       index(st%gt_trip_log_text(3),"GEN BREAKER OPEN")==1)
+    call check("SOE timestamps preserve causal model order",&
+       st%gt_trip_log_s(1)<=st%gt_trip_log_s(2) .and. &
+       st%gt_trip_log_s(2)<=st%gt_trip_log_s(3))
     call refresh_model(st)
     call check("tripped GT breaker output zero",st%gas_power_MW==0.0_dp)
     call check("trip fuel and combustion input zero",&
@@ -93,12 +105,25 @@ program test_gt_trip_sequence
     end do
     call check("rundown reaches lockout",out%gt_phase==GT_LOCKOUT)
     call check("turning gear assumption shown only at rotor rest",out%gt_turning_gear_on)
+    call check("rundown lockout timestamp preserved",&
+       out%gt_lockout_time_s>=out%gt_first_out_s)
+    call check("generator excitation and starter remain isolated throughout coastdown",&
+       .not.out%gt_generator_excitation_on .and. .not.out%gt_start_motor_on)
     call check("required unavailable sensors block reset by default",&
        btest(gt_trip_permit_mask(out),3))
     call gt_trip_reset_latch(out,accepted)
     call check("reset denied when sensor input missing",.not.accepted)
     call gt_trip_toggle_training_bypass(out)
     call check("operator has to enable explicit educational bypass",out%gt_training_bypass)
+    out%gt_breaker_closed=.true.
+    call check("failed generator breaker isolation blocks reset even under TRAIN BYPASS",&
+       btest(gt_trip_permit_mask(out),7))
+    call gt_trip_reset_latch(out,accepted)
+    call check("reset denied if breaker remains closed",.not.accepted)
+    out%gt_breaker_closed=.false.
+    out%gt_lube_support_on=.false.
+    call check("lost auxiliary lube support blocks reset",btest(gt_trip_permit_mask(out),7))
+    out%gt_lube_support_on=.true.
     call check("remaining reset mask clear",gt_trip_permit_mask(out)==0)
     out%eq_alarm(EQ_OIL)=.true.
     call check("training bypass cannot override a real standing alarm",&
@@ -116,6 +141,10 @@ program test_gt_trip_sequence
     call check("start enters purging with fuel and breaker isolated",&
        accepted .and. out%gt_phase==GT_PURGING .and. &
        .not.out%gt_breaker_closed .and. .not.out%gt_fuel_valve_open)
+    call check("restart engages assumed starter and keeps generator field off",&
+       out%gt_start_motor_on .and. .not.out%gt_generator_excitation_on)
+    call check("restart request timestamp is kept separately from first-out",&
+       out%gt_restart_request_time_s>=out%gt_first_out_s)
     do k=1,240
         out%elapsed_s=out%elapsed_s+0.25_dp
         call gt_trip_advance(out,0.25_dp)
@@ -125,10 +154,25 @@ program test_gt_trip_sequence
             out%gas_power_MW==0.0_dp .and. .not.out%gt_breaker_closed)
         if(out%gt_phase==GT_PURGING) then
             call check("purge timer never marks flame present",.not.out%gt_flame_on)
+            call check("purge keeps starter energized, bleed open and exciter off",&
+                out%gt_start_motor_on .and. out%gt_blowoff_open .and. &
+                .not.out%gt_generator_excitation_on)
+        else if(out%gt_phase==GT_IGNITING .or. out%gt_phase==GT_ACCELERATING) then
+            call check("startup fuel and flame assumption only after purge",&
+                out%gt_purge_timer_done .and. out%gt_fuel_valve_open .and. &
+                out%gt_flame_on .and. out%gt_start_motor_on)
+        else if(out%gt_phase==GT_SYNCHRONIZING) then
+            call check("sync stage prepares field and removes starter, breaker remains open",&
+                out%gt_generator_excitation_on .and. &
+                .not.out%gt_start_motor_on .and. .not.out%gt_breaker_closed)
         end if
     end do
     call check("illustrative startup reaches ONLINE",out%gt_phase==GT_ONLINE)
     call check("breaker closes only at end of startup",out%gt_breaker_closed)
+    call check("successful sync ends with field enabled and starter disengaged",&
+        out%gt_generator_excitation_on .and. .not.out%gt_start_motor_on)
+    call check("retained original first-out is not overwritten by restart",&
+        out%gt_first_out==GT_CAUSE_MANUAL)
     call check("training bypass not left permanently asserted",.not.out%gt_training_bypass)
     call check("first-out event remains in historical log",out%gt_first_out==GT_CAUSE_MANUAL)
 
@@ -148,6 +192,43 @@ program test_gt_trip_sequence
     call check("qualified training overspeed triggers first out",&
        ft%gt_phase==GT_TRIPPED .and. ft%gt_first_out==GT_CAUSE_OVERSPEED)
 
+    ! Earliest confirmed training threshold edge wins, not array ordering.
+    call gt_trip_reset_state(ft)
+    ft%elapsed_s=12.0_dp
+    ft%eq_alarm(EQ_OVERSPEED)=.true.
+    ft%eq_source(EQ_OVERSPEED)=EQ_SRC_TRAINING
+    ft%eq_alarm_since_s(EQ_OVERSPEED)=11.0_dp
+    ft%eq_alarm(EQ_OIL)=.true.
+    ft%eq_source(EQ_OIL)=EQ_SRC_TRAINING
+    ft%eq_alarm_since_s(EQ_OIL)=10.0_dp
+    call gt_trip_monitor(ft)
+    call check("earliest timestamped threshold is first out (OIL)",&
+       ft%gt_first_out==GT_CAUSE_OIL .and. ft%gt_first_out_s==12.0_dp)
+    event_n=ft%gt_trip_log_count
+    ft%elapsed_s=13.0_dp
+    ft%eq_alarm(EQ_COMBUST)=.true.
+    ft%eq_source(EQ_COMBUST)=EQ_SRC_TRAINING
+    ft%eq_alarm_since_s(EQ_COMBUST)=13.0_dp
+    call gt_trip_monitor(ft)
+    call check("secondary alarm logged after trip without replacing first out",&
+       ft%gt_first_out==GT_CAUSE_OIL .and. ft%gt_trip_log_count==event_n+1 .and. &
+       index(ft%gt_trip_log_text(ft%gt_trip_log_count),"FOLLOW-ON TRAIN ALARM")==1)
+    call gt_trip_monitor(ft)
+    call check("one follow-on log per alarm onset",ft%gt_trip_log_count==event_n+1)
+    call gt_trip_reset_state(ft)
+    ft%eq_alarm=.false.
+    ft%eq_source=EQ_SRC_UNAVAILABLE
+    ft%eq_alarm_since_s=-1.0_dp
+    ft%elapsed_s=14.0_dp
+    ft%eq_alarm(EQ_OVERSPEED)=.true.
+    ft%eq_source(EQ_OVERSPEED)=EQ_SRC_TRAINING
+    ft%eq_alarm_since_s(EQ_OVERSPEED)=14.0_dp
+    ft%eq_alarm(EQ_OIL)=.true.
+    ft%eq_source(EQ_OIL)=EQ_SRC_TRAINING
+    ft%eq_alarm_since_s(EQ_OIL)=14.0_dp
+    call gt_trip_monitor(ft)
+    call check("simultaneous onset deterministic precedence: overspeed first",&
+       ft%gt_first_out==GT_CAUSE_OVERSPEED)
     call gt_trip_reset_state(ft)
     ft%fleet_mode=.true.
     call gt_trip_request(ft,GT_CAUSE_MANUAL,accepted)
@@ -161,6 +242,13 @@ program test_gt_trip_sequence
     guard%eq_source=EQ_SRC_UNAVAILABLE
     guard%eq_training_present=.false.
     guard%gt_phase=GT_READY
+    guard%gt_trip_ack=.true.
+    guard%gt_rotor_est_pct=0.0_dp
+    guard%gt_turning_gear_on=.true.
+    guard%gt_breaker_closed=.false.
+    guard%gt_fuel_valve_open=.false.
+    guard%gt_flame_on=.false.
+    guard%gt_generator_excitation_on=.false.
     guard%gt_training_bypass=.true.
     guard%gt_pretrip_fuel_kg_s=1.0_dp
     call gt_trip_start(guard,accepted)
@@ -180,6 +268,13 @@ program test_gt_trip_sequence
     guard%eq_source=EQ_SRC_UNAVAILABLE
     guard%eq_training_present=.false.
     guard%gt_phase=GT_READY
+    guard%gt_trip_ack=.true.
+    guard%gt_rotor_est_pct=0.0_dp
+    guard%gt_turning_gear_on=.true.
+    guard%gt_breaker_closed=.false.
+    guard%gt_fuel_valve_open=.false.
+    guard%gt_flame_on=.false.
+    guard%gt_generator_excitation_on=.false.
     guard%gt_training_bypass=.true.
     call gt_trip_start(guard,accepted)
     guard%eq_alarm(EQ_OIL)=.true.
@@ -218,6 +313,44 @@ program test_gt_trip_sequence
     call gt_trip_advance(guard,0.25_dp)
     call check("standing alarm blocks simulated sync breaker closure", &
         guard%gt_phase==GT_TRIPPED .and. .not.guard%gt_breaker_closed)
+
+    call gt_trip_reset_state(guard)
+    guard%eq_alarm=.false.
+    guard%eq_source=EQ_SRC_UNAVAILABLE
+    guard%gt_phase=GT_READY
+    guard%gt_trip_ack=.true.
+    guard%gt_rotor_est_pct=0.0_dp
+    guard%gt_turning_gear_on=.true.
+    guard%gt_breaker_closed=.false.
+    guard%gt_fuel_valve_open=.false.
+    guard%gt_flame_on=.false.
+    guard%gt_generator_excitation_on=.false.
+    guard%gt_training_bypass=.true.
+    call gt_trip_start(guard,accepted)
+    guard%gt_start_motor_on=.false.
+    call gt_trip_advance(guard,0.25_dp)
+    call check("starter dropped during purge causes fail-closed new trip",&
+        guard%gt_phase==GT_TRIPPED .and. guard%gt_trip_latched .and. &
+        guard%gt_first_out==GT_CAUSE_START_ABORT .and. &
+        .not.guard%gt_fuel_valve_open)
+
+    call gt_trip_reset_state(guard)
+    guard%gt_phase=GT_SYNCHRONIZING
+    guard%gt_trip_ack=.true.
+    guard%gt_breaker_closed=.false.
+    guard%gt_fuel_valve_open=.true.
+    guard%gt_flame_on=.true.
+    guard%gt_generator_excitation_on=.true.
+    guard%gt_start_motor_on=.false.
+    guard%gt_purge_timer_done=.true.
+    guard%gt_rotor_est_pct=100.0_dp
+    guard%gt_training_bypass=.true.
+    guard%frequency_Hz=49.0_dp
+    call check("sync phase blocks off-frequency simulated breaker closure",&
+       btest(gt_trip_restart_mask(guard),8))
+    call gt_trip_advance(guard,0.25_dp)
+    call check("off-frequency synchronization attempt aborts without closing breaker",&
+       guard%gt_phase==GT_TRIPPED .and. .not.guard%gt_breaker_closed)
 
     if(failures>0) then
         write(*,'("FAIL GT trip validation: ",I0)') failures

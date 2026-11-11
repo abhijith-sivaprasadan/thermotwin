@@ -113,7 +113,7 @@ contains
         st%gt_turning_gear_on=.false.
         st%gt_purge_timer_done=.false.
         st%gt_lockout_time_s=-1.0_dp
-        st%gt_followon_alarm_seen=.false.
+        st%gt_followon_alarm_seen=st%eq_alarm .and. st%eq_source==EQ_SRC_TRAINING
         ! Keep estimated speed unchanged on an aborted simulated startup.
         if(was_online) st%gt_rotor_est_pct=max(15.0_dp,st%gt_rotor_est_pct)
         st%gt_exhaust_est_K=max(st%ambient_C+273.15_dp,st%exhaust_K)
@@ -137,6 +137,16 @@ contains
         call gt_log(st,"FUEL SHUT / FLAME OFF / STARTER INHIBIT (SIM)")
         call gt_log(st,"BLEED OPEN / LUBE SUPPORT ON (ASSUMED)")
         call gt_log(st,"AGC GT / CCS / MPC / RL ISOLATED (SIM)")
+        ! Capture other simultaneous qualified alarms, without replacing
+        ! the latched first-out. All receive the same model timestamp when
+        ! observed on the same engine tick.
+        block
+            integer :: i
+            do i=1,EQ_N
+                if(.not.st%gt_followon_alarm_seen(i)) cycle
+                call gt_log(st,"ACTIVE AT TRIP: "//trim(equipment_name(i)))
+            end do
+        end block
     end subroutine gt_trip_request
 
     ! Timestamped equipment confirmation is preferable to array order.

@@ -25,6 +25,8 @@ module scenario_runner
     use precision_kinds, only: dp
     use engine_state
     use engine_core, only: engine_init, engine_step, refresh_model, apply_market_profile
+    use gt_trip_sequence, only: gt_trip_acknowledge, gt_trip_reset_latch, &
+        gt_trip_start, gt_trip_toggle_training_bypass, gt_trip_permit_mask, gt_trip_restart_mask
     use dispatch_agc, only: balance_now, reset_controls, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -587,6 +589,18 @@ contains
         case ("load_step");     call apply_load_step(st)
         case ("cloud_ramp");    call apply_cloud_ramp(st)
         case ("turbine_trip");  call apply_turbine_trip(st)
+        case ("gt_ack");       call gt_trip_acknowledge(st)
+        case ("gt_reset")
+            block
+                logical :: accepted
+                call gt_trip_reset_latch(st,accepted)
+            end block
+        case ("gt_start")
+            block
+                logical :: accepted
+                call gt_trip_start(st,accepted)
+            end block
+        case ("gt_training_bypass"); call gt_trip_toggle_training_bypass(st)
         case ("trip_gt1")
             st%fleet_unit_online(FLEET_GT1) = .false.
             st%fleet_unit_setpoint_MW(FLEET_GT1) = 0.0_dp
@@ -710,6 +724,16 @@ contains
         case ("effective_gas_dispatch_pct"); value = st%effective_gas_dispatch_pct
         case ("gt_phase");             value = real(st%gt_phase,dp)
         case ("gt_trip_latched");      value = merge(1.0_dp,0.0_dp,st%gt_trip_latched)
+        case ("gt_trip_ack");          value = merge(1.0_dp,0.0_dp,st%gt_trip_ack)
+        case ("gt_trip_log_count");    value = real(st%gt_trip_log_count,dp)
+        case ("gt_reset_mask");        value = real(gt_trip_permit_mask(st),dp)
+        case ("gt_restart_mask");      value = real(gt_trip_restart_mask(st),dp)
+        case ("gt_excitation_on");     value = merge(1.0_dp,0.0_dp,st%gt_generator_excitation_on)
+        case ("gt_start_motor_on");    value = merge(1.0_dp,0.0_dp,st%gt_start_motor_on)
+        case ("gt_blowoff_open");      value = merge(1.0_dp,0.0_dp,st%gt_blowoff_open)
+        case ("gt_lube_support_on");   value = merge(1.0_dp,0.0_dp,st%gt_lube_support_on)
+        case ("gt_turning_gear_on");   value = merge(1.0_dp,0.0_dp,st%gt_turning_gear_on)
+        case ("gt_purge_timer_done");  value = merge(1.0_dp,0.0_dp,st%gt_purge_timer_done)
         case ("gt_breaker_closed");    value = merge(1.0_dp,0.0_dp,st%gt_breaker_closed)
         case ("gt_fuel_valve_open");   value = merge(1.0_dp,0.0_dp,st%gt_fuel_valve_open)
         case ("gt_first_out");         value = real(st%gt_first_out,dp)
