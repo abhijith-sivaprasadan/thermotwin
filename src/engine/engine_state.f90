@@ -15,6 +15,10 @@ module engine_state
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: bottoming_power_MW, thermal_generation_MW
     public :: limited_storage_power, append_history, history_index
+    public :: GT_ONLINE, GT_TRIPPED, GT_RUNDOWN, GT_LOCKOUT, GT_READY
+    public :: GT_PURGING, GT_IGNITING, GT_ACCELERATING, GT_SYNCHRONIZING
+    public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
+    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL, GT_TRIP_LOG_N
     public :: EQ_N, EQ_SURGE, EQ_OVERSPEED, EQ_EXHAUST, EQ_COMBUST, EQ_OIL, EQ_BEARING, EQ_GENERATOR
     public :: EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
 
@@ -74,6 +78,13 @@ module engine_state
     integer, parameter :: EQ_SURGE = 1, EQ_OVERSPEED = 2, EQ_EXHAUST = 3
     integer, parameter :: EQ_COMBUST = 4, EQ_OIL = 5, EQ_BEARING = 6, EQ_GENERATOR = 7
     integer, parameter :: EQ_SRC_UNAVAILABLE = 0, EQ_SRC_MODEL = 1, EQ_SRC_TRAINING = 2
+    ! *Research-training state machine*, not certified machinery protection.
+    integer, parameter :: GT_ONLINE=0, GT_TRIPPED=1, GT_RUNDOWN=2
+    integer, parameter :: GT_LOCKOUT=3, GT_READY=4, GT_PURGING=5
+    integer, parameter :: GT_IGNITING=6, GT_ACCELERATING=7, GT_SYNCHRONIZING=8
+    integer, parameter :: GT_CAUSE_NONE=0, GT_CAUSE_MANUAL=1
+    integer, parameter :: GT_CAUSE_OVERSPEED=2, GT_CAUSE_COMBUST=3, GT_CAUSE_OIL=4
+    integer, parameter :: GT_TRIP_LOG_N=24
     integer,  parameter, public :: HISTORY_N = 240
     integer,  parameter, public :: DA_H     = 24   ! day-ahead planning horizon (hours)
     integer,  parameter, public :: GT_OPT_N = 20   ! P2 optimizer scan points (30%→100%)
@@ -256,6 +267,33 @@ module engine_state
         logical :: eq_training_present(EQ_N) = .false.
         real(dp) :: eq_training_value(EQ_N) = 0.0_dp
         real(dp) :: eq_training_stamp_s(EQ_N) = -1.0_dp
+        ! Separate operator demand, generator disconnect and shaft rundown.
+        ! The following are synthetic state-machine quantities. They are
+        ! NOT OEM control-system signals, verified shaft dynamics, or measured
+        ! temperature/pressure conditions.
+        integer :: gt_phase = GT_ONLINE
+        integer :: gt_first_out = GT_CAUSE_NONE
+        real(dp) :: gt_first_out_s = -1.0_dp
+        real(dp) :: gt_phase_s = 0.0_dp
+        real(dp) :: gt_rotor_est_pct = 100.0_dp  ! illustrative coastdown surrogate
+        real(dp) :: gt_exhaust_est_K = 800.0_dp
+        real(dp) :: gt_steam_decay_MW = 0.0_dp
+        real(dp) :: gt_pretrip_fuel_kg_s = 0.0_dp
+        logical :: gt_trip_latched = .false.
+        logical :: gt_trip_ack = .false.
+        logical :: gt_training_bypass = .false.
+        logical :: gt_breaker_closed = .true.
+        logical :: gt_fuel_valve_open = .true.
+        logical :: gt_flame_on = .true.
+        logical :: gt_blowoff_open = .false.
+        logical :: gt_lube_support_on = .true.
+        logical :: gt_turning_gear_on = .false.
+        logical :: gt_purge_timer_done = .false.
+        integer :: gt_trip_seq = 0
+        integer :: gt_trip_log_count = 0
+        real(dp) :: gt_trip_log_s(GT_TRIP_LOG_N) = 0.0_dp
+        character(len=54) :: gt_trip_log_text(GT_TRIP_LOG_N) = ""
+        character(len=96) :: gt_trip_last_denial = ""
         logical :: auto_balance = .true.
         ! Day-ahead MINLP optimizer results (written by minlp_dayahead every ~5 s)
         logical  :: da_solved       = .false.
