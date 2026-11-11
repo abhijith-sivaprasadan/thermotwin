@@ -6668,9 +6668,11 @@ contains
         integer,intent(in) :: x,y,w,h,id
         type(DrillObservation),intent(in) :: obs
         integer :: i,j,n,good,xx,yy,old_x,old_y,gx,gy,gw,gh,idx
-        real(dp) :: lo,hi,v,norm,span,first_t,last_t
+        integer :: cursor_idx
+        real(dp) :: lo,hi,v,norm,span,first_t,last_t,target_t,best_dt
         logical :: prev_good,usable
         character(len=64) :: label
+        character(len=96) :: cursor_label
         call fill_soft_box(hdc,x,y,x+w,y+h,COL_PANEL_ALT)
         call stroke_soft_box(hdc,x,y,x+w,y+h,COL_BORDER_SOFT,1)
         gx=x+14; gy=y+24
@@ -6736,6 +6738,37 @@ contains
         end do
         if(n==1) call hmi_fill_pie(hdc,int(old_x,c_int),int(old_y,c_int), &
             4_c_int,0.0_c_float,360.0_c_float,COL_LIME)
+        ! Cursor uses the nearest stored timestamp, preserving missing-data gaps.
+        ! It never interpolates across invalid samples to manufacture a measurement.
+        if(mouse_hover_valid.and.n>0.and. &
+            point_in_rect(mouse_hover_x,mouse_hover_y,gx,gy,gx+gw,gy+gh)) then
+            target_t=first_t+span*real(mouse_hover_x-gx,dp)/real(max(1,gw),dp)
+            best_dt=huge(1.0_dp)
+            cursor_idx=0
+            do j=1,n
+                idx=drill_history_index(alarm_drill_hist,j)
+                if(idx<=0) cycle
+                if(abs(alarm_drill_hist%time_s(idx)-target_t)<best_dt) then
+                    best_dt=abs(alarm_drill_hist%time_s(idx)-target_t)
+                    cursor_idx=idx
+                end if
+            end do
+            call draw_line(hdc,mouse_hover_x,gy,mouse_hover_x,gy+gh,COL_CYAN,1)
+            if(cursor_idx>0) then
+                if(alarm_drill_hist%valid(id,cursor_idx)) then
+                    v=alarm_drill_hist%value(id,cursor_idx)
+                    yy=gy+gh-nint(real(gh,dp)*clamp_real((v-lo)/max(hi-lo,1.0e-9_dp),0.0_dp,1.0_dp))
+                    call hmi_fill_pie(hdc,int(mouse_hover_x,c_int),int(yy,c_int), &
+                        4_c_int,0.0_c_float,360.0_c_float,COL_CYAN)
+                    write(cursor_label,'("t=",F7.2,"s  ",F9.3," ",A," [MODEL/TRAIN]")') &
+                        alarm_drill_hist%time_s(cursor_idx),v,trim(obs%unit)
+                else
+                    write(cursor_label,'("t=",F7.2,"s  NO DATA")') alarm_drill_hist%time_s(cursor_idx)
+                end if
+                call fill_soft_box(hdc,gx+5,gy+4,gx+min(gw-5,322),gy+27,COL_PANEL_DEEP)
+                call draw_text(hdc,gx+10,gy+8,trim(adjustl(cursor_label)),COL_CYAN)
+            end if
+        end if
         write(label,'("REAL SAMPLES ",I0," / ",I0)') good,n
         call draw_text(hdc,gx+4,y+h-21,trim(label),COL_CYAN)
     end subroutine draw_alarm_drill_trend
