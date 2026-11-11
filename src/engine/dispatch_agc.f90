@@ -8,6 +8,7 @@
 module dispatch_agc
     use precision_kinds, only: dp
     use engine_state
+    use gt_trip_sequence, only: gt_trip_request
     implicit none
     private
 
@@ -74,6 +75,12 @@ contains
         else if (abs(gap_MW) <= 0.50_dp .and. st%renewable_curtail_MW > 0.0_dp .and. &
                  st%renewable_reserve_value_usd_h < st%renewable_curtail_cost_usd_h) then
             call ramp_renewable_curtailment_to(st, 0.0_dp, dt_s)
+        end if
+
+        ! Trip isolation dominates AGC even while BESS/RES support continue.
+        if(st%gt_phase/=GT_ONLINE .and. .not.st%fleet_mode) then
+            st%gas_dispatch_pct=0.0_dp
+            return
         end if
 
         ! Stage 4: turbine follows the remaining steady dispatch requirement.
@@ -144,6 +151,9 @@ contains
     subroutine balance_now(st)
         type(GridState), intent(inout) :: st
         real(dp) :: bess_snap_MW, needed_gas_MW
+
+        ! A manual BALANCE request cannot energize a tripped generator.
+        if(st%gt_phase/=GT_ONLINE .and. .not.st%fleet_mode) return
 
         if (st%fleet_mode) then
             st%renewable_curtail_MW = 0.0_dp
@@ -232,14 +242,17 @@ contains
 
     subroutine apply_turbine_trip(st)
         type(GridState), intent(inout) :: st
+        logical :: accepted
         if (st%fleet_mode) then
             st%fleet_unit_online(FLEET_CC1) = .false.
             st%fleet_unit_setpoint_MW(FLEET_CC1) = 0.0_dp
             st%fleet_unit_actual_MW(FLEET_CC1) = 0.0_dp
             st%storage_request_MW = min(st%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
         else
-            st%gas_dispatch_pct = GAS_MIN_PCT
-            st%storage_request_MW = min(st%storage_request_MW + 8.0_dp, STORAGE_MAX_MW)
+            call gt_trip_request(st,GT_CAUSE_MANUAL,accepted)
+            if (accepted) then
+                st%storage_request_MW = min(st%storage_request_MW+8.0_dp,STORAGE_MAX_MW)
+            end if
         end if
         st%auto_balance = .true.
     end subroutine apply_turbine_trip
@@ -248,6 +261,9 @@ contains
     subroutine reset_controls(st)
         type(GridState), intent(inout) :: st
 
+        ! Resetting sliders is not a protection reset. Engine-init explicitly
+        ! resets the trip sequence before calling this routine for a NEW RUN.
+        if(st%gt_phase/=GT_ONLINE .or. st%gt_trip_latched) return
         st%auto_balance = .true.
         st%battery_energy_MWh = BATTERY_CAPACITY_MWH * BATTERY_INITIAL_SOC_PCT / 100.0_dp
         st%battery_soc_pct = BATTERY_INITIAL_SOC_PCT

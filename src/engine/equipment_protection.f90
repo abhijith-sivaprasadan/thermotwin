@@ -5,7 +5,7 @@ module equipment_protection
     use precision_kinds, only: dp
     use engine_state, only: GridState, EQ_N, EQ_SURGE, EQ_OVERSPEED, EQ_EXHAUST, &
         EQ_COMBUST, EQ_OIL, EQ_BEARING, EQ_GENERATOR, EQ_SRC_MODEL, &
-        EQ_SRC_TRAINING, EQ_SRC_UNAVAILABLE
+        EQ_SRC_TRAINING, EQ_SRC_UNAVAILABLE, GT_ONLINE
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
@@ -87,10 +87,12 @@ contains
                 ! Off-design map margin is *modelled*, not measured surge.
                 value = st%surge_margin_pct
                 valid = ieee_is_finite(value) .and. value >= -50.0_dp .and. value <= 100.0_dp
+                valid = valid .and. st%gt_phase==GT_ONLINE
                 if (valid) src = EQ_SRC_MODEL
             case (EQ_EXHAUST)
                 value = st%exhaust_K
                 valid = ieee_is_finite(value) .and. value > 0.0_dp .and. value < 2500.0_dp
+                valid = valid .and. st%gt_phase==GT_ONLINE
                 if (valid) src = EQ_SRC_MODEL
             case (EQ_GENERATOR)
                 ! Electrical grid-frequency *proxy*, not rotor or generator relay.

@@ -106,6 +106,18 @@ See the [equipment alarm engineering basis](../docs/EQUIPMENT_PROTECTION_v0.1.md
 for source quality, precise thresholds, hysteresis, timer logic, unit tests,
 known limitations and the boundary to future trip sequencing.
 
+## GT first-out trip and explicitly simulated restart (v0.1)
+
+The single-unit **GT TRIP** now disconnects generator output and isolates
+simulated fuel rather than merely dropping dispatch to 20%.
+Open **F7 > TRIP SEQUENCE** to inspect the first-out event, turbine state,
+rundown estimate and reset block reasons. ACK, RESET and SIM RESTART are
+separate actions. Missing sensors require explicit **TRAIN BYPASS** for
+an educational restart, and bypass cannot ignore standing conditions.
+
+Read [trip sequence](../docs/GT_TRIP_SEQUENCE_v0.1.md) and the
+[simulator correctness ledger](../docs/SIMULATOR_CORRECTNESS_LEDGER.md).
+
 ## Build
 
 From the repository root on Windows with MinGW/gfortran:

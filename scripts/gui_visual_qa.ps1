@@ -16,7 +16,8 @@ $expected = @(
 "03-original-alarms.png","03-original-alarms-1536.png",
 "04-original-alarms-stress.png","04-original-alarms-stress-1536.png",
 "05-controls-bottom.png","05-controls-bottom-1536.png",
-"06-equipment.png","06-equipment-1536.png")
+"06-equipment.png","06-equipment-1536.png",
+"07-trip-sequence.png","07-trip-sequence-1536.png")
 Add-Type -AssemblyName System.Drawing
 foreach($name in $expected) {
     $path = Join-Path $folder $name
