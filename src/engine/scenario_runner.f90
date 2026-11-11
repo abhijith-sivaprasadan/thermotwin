@@ -695,7 +695,10 @@ contains
         case ("storage_MW");            value = st%storage_MW
         case ("battery_soc_pct");       value = st%battery_soc_pct
         case ("battery_energy_MWh");    value = st%battery_energy_MWh
+        case ("gfm_delivered_MW");      value = st%gfm_synth_MW
+        case ("gfm_request_MW");        value = st%gfm_request_MW
         case ("gas_dispatch_pct");      value = st%gas_dispatch_pct
+        case ("effective_gas_dispatch_pct"); value = st%effective_gas_dispatch_pct
         case ("gt_phase");             value = real(st%gt_phase,dp)
         case ("gt_trip_latched");      value = merge(1.0_dp,0.0_dp,st%gt_trip_latched)
         case ("gt_breaker_closed");    value = merge(1.0_dp,0.0_dp,st%gt_breaker_closed)
@@ -759,6 +762,8 @@ contains
         case ("PR_op");                 value = st%PR_op
         case ("gas_ramp_pct_per_s");    value = st%gas_ramp_pct_per_s
         case ("supply_MW");             value = st%supply_MW
+        case ("served_demand_MW");      value = st%served_demand_MW
+        case ("ufls_shed_MW");          value = st%ufls_shed_MW
         case ("imbalance_MW");          value = st%imbalance_MW
         case ("reserve_MW");            value = st%reserve_MW
         case ("frequency_Hz");          value = st%frequency_Hz
