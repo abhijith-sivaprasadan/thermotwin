@@ -454,6 +454,14 @@ contains
         st%steam_capacity_MW = merge(steam_cap%net_power_MW, 0.0_dp, st%combined_cycle)
         st%plant_capacity_MW = st%gas_capacity_MW + st%steam_capacity_MW
 
+        ! A direct refresh_model() call (without engine_step) must also honour
+        ! current operator setpoints, not a cached earlier effective dispatch.
+        if(st%gt_phase/=GT_ONLINE) then
+            st%effective_gas_dispatch_pct=0.0_dp
+        else
+            st%effective_gas_dispatch_pct=clamp_real(st%gas_dispatch_pct+st%governor_offset_pct, &
+                GAS_MIN_PCT,GAS_MAX_PCT)
+        end if
         ! Governor changes the off-design load request *before* the physical
         ! solve, so its electrical response, fuel and exhaust share one state.
         load_fraction = clamp_real(st%effective_gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
