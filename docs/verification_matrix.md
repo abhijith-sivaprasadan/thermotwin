@@ -8,6 +8,7 @@ the diagnostic CoolProp comparison is not a full accuracy pass gate.
 |---|---|---|---|
 | Compressor outlet | Hand reference, 679.5 K | 3 K | `test/test_cycle_solver.f90` |
 | Net power | Hand reference, 30.4 MW | 1.5 MW | `test/test_cycle_solver.f90` |
+| Shaft work per kg inlet air | (P_turbine - P_compressor) / air mass flow; turbine gas includes fuel | 1e-6 J/kg | `test/test_cycle_solver.f90` |
 | Efficiency | Hand reference, 0.312 | 0.010 | `test/test_cycle_solver.f90` |
 | Heat rate | 3600 / efficiency | 1e-3 kJ/kWh | `test/test_cycle_solver.f90` |
 | Net power plus exhaust | Energy accounting bound | 60–100% of fuel input; not a closed conservation residual | `test/test_cycle_solver.f90` |

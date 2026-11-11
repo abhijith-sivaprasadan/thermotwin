@@ -85,7 +85,10 @@ contains
 
         res%w_compressor_J_kg   = w_c
         res%w_turbine_J_kg      = w_t
-        res%w_net_specific_J_kg = w_t - w_c
+        ! Turbine specific work is J/kg hot GAS, compressor is J/kg AIR.
+        ! Rebase both shaft-power terms to compressor-inlet air mass (J/kg air).
+        ! This is pre-drivetrain mechanical specific work, not electric power.
+        res%w_net_specific_J_kg = (1.0_dp + f) * w_t - w_c
         res%fuel_air_ratio      = f
         res%fuel_flow_kg_s      = mdot_fuel
         res%mdot_air_kg_s       = mdot_air
