@@ -1,0 +1,54 @@
+name: Native Windows GUI visual acceptance (experimental)
+
+on:
+  push:
+    paths:
+      - 'gui/**'
+      - 'src/**'
+      - 'scripts/gui_visual_qa.ps1'
+      - '.github/workflows/gui-visual-qa.yml'
+  pull_request:
+    paths:
+      - 'gui/**'
+      - 'src/**'
+      - 'scripts/gui_visual_qa.ps1'
+      - '.github/workflows/gui-visual-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-screen-capture:
+    name: Native Win32 offline GUI screenshot smoke (not manual acceptance)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-gcc
+      - name: Expose MSYS2 compiler
+        shell: pwsh
+        run: |
+          'C:\msys64\ucrt64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Compile strictly offline native GUI
+        run: make -j4 gui-offline
+      - name: Capture real Win32 client pixels at three screens
+        shell: pwsh
+        run: ./scripts/gui_visual_qa.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-win32-gui-visual-qa
+          path: |
+            build/gui-visual-qa/*.png
+            build/gui-visual-qa/*.jpg
+            gui_debug.log
+          if-no-files-found: warn

@@ -846,6 +846,9 @@ module thermotwin_win32_gui
     character(len=20) :: alarm_log_name(ALARM_LOG_N) = ""
     character(len=8) :: alarm_log_state(ALARM_LOG_N) = ""
     logical :: native_renderer_ready = .false.
+    ! CI-only screenshot capture of the actual native GDI window.
+    logical :: visual_qa_mode = .false.
+    integer :: visual_qa_ticks = 0
     type(c_ptr) :: back_memdc = c_null_ptr
     type(c_ptr) :: back_bitmap = c_null_ptr
     type(c_ptr) :: back_old_bitmap = c_null_ptr
@@ -1018,6 +1021,8 @@ contains
         type(PaintStruct) :: ps
         type(c_ptr) :: hdc
         integer(c_int) :: ok
+        character(len=8) :: qa_flag
+        integer :: qa_status
 
         select case (msg)
         case (WM_CREATE)
@@ -1028,6 +1033,15 @@ contains
             call engine_init(grid)
             call load_hmi_config()
             call apply_theme()                 ! [6.0-P1] activate the selected palette at launch
+            qa_flag = ""
+            call get_environment_variable("THERMOTWIN_GUI_VISUAL_QA", qa_flag, status=qa_status)
+            visual_qa_mode = qa_status == 0 .and. trim(qa_flag) == "1"
+            visual_qa_ticks = 0
+            if (visual_qa_mode) then
+                boot_ticks = 0
+                call set_hmi_screen(SCREEN_OVERVIEW)
+                call log_debug("visual QA: native screenshot capture enabled")
+            end if
             call refresh_model(grid)
             call append_history(grid)
             history_sample_ms_accum = 0
@@ -1073,6 +1087,25 @@ contains
             if (boot_ticks > 0) boot_ticks = boot_ticks - 1
             if (notice_ticks > 0) notice_ticks = notice_ticks - 1
             call update_demo_tour()
+            if (visual_qa_mode) then
+                visual_qa_ticks = visual_qa_ticks + 1
+                select case (visual_qa_ticks)
+                case (12)
+                    call visual_qa_capture("build\gui-visual-qa\01-overview.png")
+                case (13)
+                    call set_hmi_screen(SCREEN_GT)
+                case (24)
+                    call visual_qa_capture("build\gui-visual-qa\02-turbine.png")
+                case (25)
+                    call set_hmi_screen(SCREEN_ALARMS)
+                case (36)
+                    call visual_qa_capture("build\gui-visual-qa\03-alarms.png")
+                case (38)
+                    ok = DestroyWindow(hwnd)
+                    lres = 0_c_intptr_t
+                    return
+                end select
+            end if
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -2555,6 +2588,20 @@ contains
         call set_hmi_screen(demo_screen_index)
         demo_last_switch_tick = anim_tick
     end subroutine update_demo_tour
+
+    subroutine visual_qa_capture(path)
+        character(len=*), intent(in) :: path
+        character(kind=c_char), allocatable, target :: cpath(:)
+        integer(c_int) :: saved
+        if (.not. visual_qa_mode .or. .not. c_associated(h_main)) return
+        call make_c_string(path, cpath)
+        saved = hmi_save_window_png(h_main, c_loc(cpath))
+        if (saved == 0_c_int) then
+            call log_debug("visual QA: screenshot failed: "//path)
+        else
+            call log_debug("visual QA: screenshot saved: "//path)
+        end if
+    end subroutine visual_qa_capture
 
     subroutine export_screen_png()
         character(kind=c_char), allocatable, target :: c_path(:)
