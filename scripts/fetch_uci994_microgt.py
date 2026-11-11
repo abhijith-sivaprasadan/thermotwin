@@ -26,6 +26,9 @@ TRAIN = (1, 9, 20, 21, 23, 24)
 TEST = (4, 22)
 EXPERIMENTS = set(TRAIN + TEST)
 EXPECTED_TOTAL = 71225
+# Frozen, source-audited original UCI download observed in CI on 2026-11-11.
+# If UCI deliberately republishes content, review it rather than silently using new readings.
+ORIGINAL_ZIP_SHA256 = "9a5b3fa76e24076c914b73378467539a550641e280015f5e2e88510b493f530f"
 MAX_ARCHIVE = 30_000_000
 MAX_MEMBER = 20_000_000
 COLUMNS = ("time", "input_voltage", "el_power")
@@ -160,6 +163,8 @@ def run(argv=None) -> dict:
                 raise ValueError("Original UCI archive HTTP status " + str(reply.status))
             raw = reply.read(MAX_ARCHIVE + 1)
         retrieved = datetime.now(timezone.utc).isoformat()
+    if sha(raw) != ORIGINAL_ZIP_SHA256:
+        raise ValueError("Canonical original UCI 994 source ZIP hash changed; review original archive")
     experiments = source_experiments(raw)
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
