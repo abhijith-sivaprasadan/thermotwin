@@ -1975,6 +1975,12 @@ contains
         end if
         if (ctrl_down()) then
             select case (kval)
+            case (VK_I)
+                call set_hmi_screen(SCREEN_SCENARIO)
+                instructor_view=.true.
+                shortcuts_popup_active=.false.
+                call set_notice('Instructor console: use FREEZE, SAVE, injections and F7 drill.')
+                return
             case (VK_K)
                 command_palette_active = .true.
                 shortcuts_popup_active = .false.
