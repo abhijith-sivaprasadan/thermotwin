@@ -182,6 +182,7 @@ module engine_state
         real(dp) :: PR_op = 15.0_dp
         real(dp) :: gas_ramp_pct_per_s = 0.0_dp
         real(dp) :: prev_gas_dispatch_pct = 82.0_dp ! previous effective load for surge ramp
+        logical :: governor_enabled = .true.      ! closed-loop governor exercise on by default
         real(dp) :: governor_offset_pct = 0.0_dp   ! additive primary governor request
         real(dp) :: effective_gas_dispatch_pct = 82.0_dp
         ! Phase 3 combined-cycle bottoming system
