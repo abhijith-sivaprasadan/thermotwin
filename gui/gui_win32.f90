@@ -2931,6 +2931,26 @@ contains
             if (point_in_rect(x,y,ix,by+84,ix+bw,by+118)) control_id=ID_EXPORT_CSV
             if (point_in_rect(x,y,ix+bw+16,by+84,ix+2*bw+16,by+118)) control_id=ID_EXPORT_PDF
         end select
+        ! Retain the legacy research scenario A/B comparison actions.
+        if (hmi_screen==SCREEN_SCENARIO) then
+            block
+                integer :: tx,tw,ty,one_w,other_x,other_w,cmp_w,cmp_x,cmp_y
+                tx=layout_main_left+18
+                tw=layout_main_w-36
+                ty=hmi_content_top(layout_main_top)+8
+                one_w=tw*42/100
+                other_x=tx+one_w+20
+                other_w=tw-one_w-20
+                cmp_w=104
+                cmp_y=ty+118
+                cmp_x=other_x+other_w-(3*cmp_w+16)
+                if (point_in_rect(x,y,cmp_x,cmp_y,cmp_x+cmp_w,cmp_y+34)) control_id=ID_SCN_B_PREV
+                if (point_in_rect(x,y,cmp_x+cmp_w+8,cmp_y, &
+                    cmp_x+2*cmp_w+8,cmp_y+34)) control_id=ID_SCN_B_NEXT
+                if (point_in_rect(x,y,cmp_x+2*(cmp_w+8),cmp_y, &
+                    cmp_x+3*cmp_w+16,cmp_y+34)) control_id=ID_SCN_COMPARE
+            end block
+        end if
         if (point_in_rect(x,y,layout_main_left+layout_main_w-68,layout_main_top+8, &
             layout_main_left+layout_main_w-6,layout_main_top+40)) control_id=ID_SHORTCUTS
     end function hit_test_control
@@ -3549,7 +3569,8 @@ contains
         else
             info="MANUAL"
         end if
-        call draw_text(hdc,x+w-114,y+12,trim(info)//" MODE",COL_MUTED)
+        call draw_text(hdc,x+w-210,y+12,trim(info)//" MODE",COL_MUTED)
+        call draw_text(hdc,x+w-74,y+12,"? KEYS",COL_MUTED)
         call draw_nav_bar(hdc,x,y+64,w,36)
         call current_alarm_states(states)
         ncrit=count(states([1,5,7]))
