@@ -1122,6 +1122,11 @@ contains
                 case (36)
                     call visual_qa_capture("build\gui-visual-qa\03-alarms.png")
                 case (38)
+                    ! Exercise a genuine in-model disturbance; not a fabricated sensor.
+                    call apply_turbine_trip(grid)
+                case (52)
+                    call visual_qa_capture("build\gui-visual-qa\04-alarms-trip.png")
+                case (54)
                     ok = DestroyWindow(hwnd)
                     lres = 0_c_intptr_t
                     return
@@ -1435,7 +1440,7 @@ contains
             return
         end if
         ! [5.0-B/D1] Flagship landing: FLAGSHIP/DETAIL toggle + KPI/subsystem drill-downs.
-        if (hmi_screen == SCREEN_OVERVIEW) then
+        if (hmi_screen == SCREEN_OVERVIEW .and. .not.operator_layout) then
             block
                 integer :: tgl_r, tgl_l, tgl_t, tgl_b, fp_fl
                 tgl_r = layout_main_left + layout_main_w - PAD_PANEL_X
@@ -1470,7 +1475,8 @@ contains
             active_control = ID_NONE
             return
         end if
-        fp_target = hit_test_faceplate(x, y)
+        fp_target = FP_NONE
+        if (.not.operator_layout) fp_target = hit_test_faceplate(x, y)
         if (fp_target /= FP_NONE) then
             faceplate_id = fp_target
             active_control = ID_NONE
@@ -1481,6 +1487,11 @@ contains
         select case (active_control)
         case (ID_CTRL_PAGE1:ID_CTRL_PAGE3)
             control_page = int(active_control-ID_CTRL_PAGE1)+1
+            select case(control_page)
+            case(1); focus_control_id=ID_DEMAND
+            case(2); focus_control_id=ID_AMBIENT
+            case(3); focus_control_id=ID_SCN_PREV
+            end select
             active_control = ID_NONE
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
@@ -2693,7 +2704,32 @@ contains
 
     subroutine cycle_focus(delta)
         integer, intent(in) :: delta
-        integer :: i, idx
+        integer :: i,idx,n
+        integer(c_int) :: allowed(10)
+        if (operator_layout) then
+            allowed=ID_NONE
+            select case(control_page)
+            case(1)
+                n=10
+                allowed(1:n)=[ID_DEMAND,ID_RENEWABLE,ID_STORAGE,ID_GAS,ID_AUTO, &
+                    ID_BALANCE,ID_LOAD_STEP,ID_CLOUD_RAMP,ID_TURBINE_TRIP,ID_RESET]
+            case(2)
+                n=7
+                allowed(1:n)=[ID_AMBIENT,ID_TIT,ID_CC_MODE,ID_FCR_HOLD, &
+                    ID_ROI_MODE,ID_MARKET_PROFILE,ID_MARKET_REPLAY]
+            case default
+                n=5
+                allowed(1:n)=[ID_SCN_PREV,ID_SCN_NEXT,ID_SCN_RUN_STOP, &
+                    ID_EXPORT_CSV,ID_EXPORT_PDF]
+            end select
+            idx=0
+            do i=1,n
+                if (allowed(i)==focus_control_id) idx=i
+            end do
+            idx=modulo(idx-1+delta,n)+1
+            focus_control_id=allowed(idx)
+            return
+        end if
         idx = 1
         do i = 1, FOCUS_COUNT
             if (FOCUS_IDS(i) == focus_control_id) then
@@ -3552,8 +3588,34 @@ contains
         if (faceplate_id/=FP_NONE) call draw_kpi_faceplate_popup(hdc,x,y,w,h)
         if (help_overlay_active) call draw_help_overlay(hdc,x,y,w,h)
         if (shortcuts_popup_active) call draw_shortcuts_popup(hdc,x,y,w)
+        call draw_operator_nav_tooltip(hdc)
         call draw_global_overlays(hdc,x,y,w,h)
     end subroutine draw_operator_dashboard
+
+    ! Context label for each narrow navigation icon. Actual pointer input,
+    ! not decorative animation; all sixteen destinations remain accessible.
+    subroutine draw_operator_nav_tooltip(hdc)
+        type(c_ptr), value :: hdc
+        integer :: row_y,row_h,i,xx,yy,ww
+        if (.not.mouse_hover_valid .or. .not.nav_rail_collapsed) return
+        if (mouse_hover_x < layout_nav_left+5 .or. &
+            mouse_hover_x > layout_nav_left+layout_nav_w-5) return
+        row_h=34
+        row_y=layout_nav_top+70
+        do i=1,SCREEN_COUNT
+            if (point_in_rect(mouse_hover_x,mouse_hover_y,layout_nav_left+6,row_y, &
+                layout_nav_left+layout_nav_w-6,row_y+row_h)) then
+                xx=layout_main_left+5
+                yy=max(layout_main_top+64,min(layout_main_top+layout_main_h-38,row_y))
+                ww=min(252,max(188,layout_main_w-16))
+                call fill_box(hdc,xx,yy,xx+ww,yy+34,COL_PANEL_ALT)
+                call stroke_soft_box(hdc,xx,yy,xx+ww,yy+34,COL_BORDER,1)
+                call draw_text(hdc,xx+10,yy+9,trim(SCREEN_FULL_LABEL(i)),COL_INK)
+                exit
+            end if
+            row_y=row_y+row_h+4
+        end do
+    end subroutine draw_operator_nav_tooltip
 
     subroutine draw_operator_overview(hdc,x,y,w,h)
         type(c_ptr), value :: hdc
@@ -3729,7 +3791,9 @@ contains
             write(v,'(F5.1," %")') grid%gas_dispatch_pct
             call draw_custom_slider(hdc,ID_GAS,layout_slider_x,layout_slider_y(4),layout_slider_w, &
                 "GT SETPOINT",trim(adjustl(v)),grid%gas_dispatch_pct,GAS_MIN_PCT,GAS_MAX_PCT,COL_MUTED)
-            call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34,"AUTO / MAN",COL_PANEL_ALT,grid%auto_balance)
+            call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34, &
+                merge("AUTO ON", "MANUAL ",grid%auto_balance), &
+                merge(COL_CYAN,COL_PANEL_ALT,grid%auto_balance),grid%auto_balance)
             call draw_industrial_button(hdc,b2,by,x+w-14,by+34,"BALANCE",COL_PANEL_ALT,.false.)
             call draw_industrial_button(hdc,x+14,by+42,x+14+b1,by+76,"LOAD +10",COL_PANEL_ALT,.false.)
             call draw_industrial_button(hdc,b2,by+42,x+w-14,by+76,"CLOUD -15",COL_PANEL_ALT,.false.)

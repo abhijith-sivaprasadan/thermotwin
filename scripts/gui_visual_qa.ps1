@@ -11,7 +11,7 @@ if (!$proc.WaitForExit(25000)) {
     throw "Native GUI screenshot harness exceeded 25 seconds; runner may not have interactive desktop"
 }
 Write-Host ("Win32 GUI process exit code: " + $proc.ExitCode)
-$expected = @("01-overview.png","02-turbine.png","03-alarms.png")
+$expected = @("01-overview.png","02-turbine.png","03-alarms.png","04-alarms-trip.png")
 Add-Type -AssemblyName System.Drawing
 foreach ($name in $expected) {
     $path = Join-Path $folder $name
