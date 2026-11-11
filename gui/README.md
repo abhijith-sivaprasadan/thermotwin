@@ -20,10 +20,22 @@ The drawing stack now uses a small C++/GDI+ helper linked into the same
 such as text, lines, and panel shapes; Fortran remains the owner of the plant
 state, controls, and thermodynamic calculations.
 
-The HMI launches as a borderless work-area console so it fills the usable
-desktop without being hidden behind the Windows taskbar. The current skin is a
-true OLED-black plant-console theme with beveled gauges, inset faceplates, and
-high-contrast alarm colors.
+The HMI launches as a borderless work-area console. Its default **operator
+workstation** is now a graphite-gray, deliberately subdued interface with
+four primary pages (Overview, Dispatch, Gas Turbine, Alarms), numerically
+labeled KPIs, explicit alarm priorities, and real data-linked trends. The
+other twelve exploratory screens remain accessible from the 16-screen rail.
+The source behind these values is the **simulation**, not a physical plant.
+
+The setpoint panel has three independently clickable **Grid / Engine / Event**
+pages to eliminate the previous slider/button overlaps at narrow sizes. Alarm
+audio uses native Windows system sounds. P1 unacknowledged standing alarms
+repeat at about 3 simulated timer seconds, P2 at about 6; sound is rate-limited
+and never plays in screenshot CI. **Silence does not acknowledge**. P1 cannot
+be shelved; P2 may be shelved for at most 600 simulated seconds; new alarms
+re-arm audible notification. Press **B** to toggle sound (setting persisted).
+F7 opens the alarm page. Neither these controls nor the visuals establish
+ISA-18.2/IEC-62682 conformance or process-safety suitability.
 
 ## Build
 
@@ -92,3 +104,19 @@ The GUI also writes a short startup trace to `gui_debug.log`.
 - Add CSV export for time-series scenarios.
 - Add operator presets for stress events such as renewable drop, demand spike
   and generator trip.
+
+
+## Actual native screenshot QA
+
+The separate [Windows visual QA workflow](../.github/workflows/gui-visual-qa.yml)
+builds the *offline* executable and launches the real Win32 program on a
+Windows runner with the environment variable THERMOTWIN_GUI_VISUAL_QA=1. It
+captures native client pixels for overview, turbine and alarm pages as PNG
+files. It also verifies the files are present and each image has at least
+1024×720 resolution. The workflow artifact is named
+**native-win32-gui-visual-qa**; review its PNG files, not mockups.
+
+This is a compile/render smoke test. It does **not** click buttons, measure
+audio output, test a client's OPC UA connection, or qualify binary
+redistribution. See [manual acceptance](../docs/GUI_ACCEPTANCE.md) and
+[operator design and findings](../docs/HMI_OPERATOR_DESIGN_2026-11-11.md).
