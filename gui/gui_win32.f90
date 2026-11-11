@@ -140,6 +140,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: ID_SCN_B_PREV   = 218_c_int
     integer(c_int), parameter :: ID_SCN_B_NEXT   = 219_c_int
     integer(c_int), parameter :: ID_SCN_COMPARE  = 220_c_int
+    integer(c_int), parameter :: ID_CTRL_PAGE1 = 301_c_int
+    integer(c_int), parameter :: ID_CTRL_PAGE2 = 302_c_int
+    integer(c_int), parameter :: ID_CTRL_PAGE3 = 303_c_int
     integer(c_int), parameter :: ID_NONE = 0_c_int
     integer(c_int), parameter :: FOCUS_COUNT = 23_c_int
     integer(c_int), parameter :: FOCUS_IDS(FOCUS_COUNT) = [integer(c_int) :: &
@@ -238,8 +241,9 @@ module thermotwin_win32_gui
     integer, parameter :: THEME_AURORA   = 4   ! [6.0-P10] premium graphite + teal accent
     integer, parameter :: THEME_GLASS    = 5   ! [6.0-P10] holographic indigo + violet/cyan
     integer, parameter :: THEME_HICON    = 6   ! [6.0-P9]  high-contrast control room
-    integer, parameter :: THEME_COUNT      = 7
-    integer :: hmi_theme = THEME_BLUEPRINT
+    integer, parameter :: THEME_OPERATOR = 7
+    integer, parameter :: THEME_COUNT      = 8
+    integer :: hmi_theme = THEME_OPERATOR
 
     integer(c_int) :: COL_BG         = int(Z'00050809', c_int) ! dark navy-black
     integer(c_int) :: COL_BG_GRID    = int(Z'000B0E14', c_int) ! subtle blue grid
@@ -886,6 +890,8 @@ module thermotwin_win32_gui
     integer :: demo_last_switch_tick = 0
     integer :: demo_screen_index = SCREEN_OVERVIEW
     logical :: nav_rail_collapsed = .true.
+    logical :: operator_layout = .true.
+    integer :: control_page = 1  ! 1 dispatch; 2 thermodynamic; 3 scenarios/export
     integer :: density_mode = 1      ! 0 compact, 1 comfortable, 2 presentation
     integer :: ui_scale_pct = 100
     logical :: color_blind_safe = .false.
@@ -1245,7 +1251,11 @@ contains
 
         layout_control_left = layout_margin
         layout_control_top = layout_margin
-        layout_control_w = min(max(320, layout_canvas_w / 5), 400)
+        if (operator_layout) then
+            layout_control_w = min(320, max(245, layout_canvas_w / 4))
+        else
+            layout_control_w = min(max(320, layout_canvas_w / 5), 400)
+        end if
         layout_control_bottom = layout_canvas_h - layout_margin
         layout_slider_x = layout_control_left + 26
         layout_slider_w = layout_control_w - 58
@@ -1260,20 +1270,35 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - ui_control_stack_h(), layout_slider_y(6) + 62)
+        if (operator_layout) then
+            slider_gap = min(92, max(74, (layout_canvas_h - 360) / 5))
+            layout_slider_y(1) = layout_control_top + 148
+            layout_slider_y(2) = layout_slider_y(1) + slider_gap
+            layout_slider_y(3) = layout_slider_y(2) + slider_gap
+            layout_slider_y(4) = layout_slider_y(3) + slider_gap
+            layout_slider_y(5) = layout_slider_y(1)
+            layout_slider_y(6) = layout_slider_y(2)
+            layout_button_y = min(layout_control_bottom - 182, layout_slider_y(4) + 57)
+        else
+            layout_button_y = min(layout_control_bottom - ui_control_stack_h(), layout_slider_y(6) + 62)
+        end if
         layout_footer_y = layout_control_bottom - 50
 
         layout_nav_left = layout_control_left + layout_control_w + layout_gap
         layout_nav_top = layout_control_top
         layout_nav_bottom = layout_control_bottom
         if (nav_rail_collapsed) then
-            layout_nav_w = 58
+            layout_nav_w = merge(54, 58, operator_layout)
         else
             layout_nav_w = min(220, max(178, layout_canvas_w / 9))
         end if
         layout_main_left = layout_nav_left + layout_nav_w + max(10, layout_gap / 2)
         layout_main_top = layout_margin
-        layout_main_w = max(620, layout_canvas_w - layout_margin - layout_main_left)
+        if (operator_layout) then
+            layout_main_w = max(1, layout_canvas_w - layout_margin - layout_main_left)
+        else
+            layout_main_w = max(620, layout_canvas_w - layout_margin - layout_main_left)
+        end if
         layout_main_h = layout_canvas_h - 2 * layout_margin
     end subroutine compute_layout
 
@@ -1454,6 +1479,9 @@ contains
 
         active_control = hit_test_control(x, y)
         select case (active_control)
+        case (ID_CTRL_PAGE1:ID_CTRL_PAGE3)
+            control_page = int(active_control-ID_CTRL_PAGE1)+1
+            active_control = ID_NONE
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
             active_control = ID_NONE
@@ -1769,6 +1797,32 @@ contains
         COL_RED   = int(Z'00303BFF', c_int);  COL_BLUE  = int(Z'00FF840A', c_int)
         COL_CYAN  = int(Z'00E6AD32', c_int);  COL_LIME  = int(Z'0058D130', c_int)
         select case (hmi_theme)
+        case (THEME_OPERATOR)
+            ! Muted control-room neutral palette. Normal equipment is never neon.
+            COL_BG          = int(Z'00201F1E', c_int)
+            COL_BG_GRID     = int(Z'00201F1E', c_int)
+            COL_PANEL       = int(Z'002B2928', c_int)
+            COL_PANEL_ALT   = int(Z'00363330', c_int)
+            COL_PANEL_DEEP  = int(Z'001B1B1B', c_int)
+            COL_BORDER      = int(Z'00504A45', c_int)
+            COL_BORDER_SOFT = int(Z'003A3532', c_int)
+            COL_INK         = int(Z'00F0EBE6', c_int)
+            COL_MUTED       = int(Z'00B7AEA5', c_int)
+            COL_DIM         = int(Z'008C8075', c_int)
+            COL_BEZEL_RING  = COL_BORDER
+            COL_BEZEL_HI    = COL_BORDER
+            COL_GAUGE_FACE  = COL_PANEL
+            COL_GAUGE_TRACK = COL_PANEL_DEEP
+            COL_BTN_HI      = COL_PANEL_ALT
+            COL_BTN_SH      = COL_BG
+            COL_BTN_BODY    = COL_PANEL
+            COL_CYAN        = int(Z'00CFB18C', c_int)
+            COL_BLUE        = COL_CYAN
+            COL_LIME        = COL_INK
+            COL_GREEN       = int(Z'00B8AD9F', c_int)
+            COL_AMBER       = int(Z'005FAFE1', c_int)
+            COL_RED         = int(Z'006168D8', c_int)
+            dark_mode = .true.
         case (THEME_BLUEPRINT)
             ! [6.0] Blueprint — deep-black CAD ground with a cool drafting grid + cyan accents
             COL_BG          = int(Z'000A0908', c_int)
@@ -2076,6 +2130,8 @@ contains
                 color_blind_safe = ival /= 0
             case ("nav_rail_collapsed")
                 nav_rail_collapsed = ival /= 0
+            case ("operator_layout")
+                operator_layout = ival /= 0
             case ("alarm_sound_enabled")
                 alarm_sound_enabled = ival /= 0
             end select
@@ -2104,6 +2160,7 @@ contains
         write(unit, '("ui_scale_pct ",I0)') ui_scale_pct
         write(unit, '("color_blind_safe ",I0)') merge(1, 0, color_blind_safe)
         write(unit, '("nav_rail_collapsed ",I0)') merge(1, 0, nav_rail_collapsed)
+        write(unit, '("operator_layout ",I0)') merge(1, 0, operator_layout)
         write(unit, '("alarm_sound_enabled ",I0)') merge(1, 0, alarm_sound_enabled)
         write(unit, "(A)") "units SI"
         write(unit, "(A)") "api_eia_key"
@@ -2717,84 +2774,60 @@ contains
     end function int_text
 
     function hit_test_control(x, y) result(control_id)
-        integer, intent(in) :: x, y
+        integer, intent(in) :: x,y
         integer(c_int) :: control_id
-        integer :: bx1, bx2, bx3, by, bw, bh, gap, step
-
-        control_id = ID_NONE
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(1) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(1) + 38)) control_id = ID_DEMAND
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(2) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(2) + 38)) control_id = ID_RENEWABLE
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(3) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(3) + 38)) control_id = ID_STORAGE
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(4) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(4) + 38)) control_id = ID_GAS
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(5) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(5) + 38)) control_id = ID_AMBIENT
-        if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(6) - 38, &
-                layout_slider_x + layout_slider_w + 14, layout_slider_y(6) + 38)) control_id = ID_TIT
-
-        gap = KPI_TILE_GAP
-        bh = ui_button_h()
-        step = ui_button_step()
-        bx1 = layout_control_left + 16
-        bx3 = layout_control_left + layout_control_w - 16
-        bw = (bx3 - bx1 - gap) / 2
-        bx2 = bx1 + bw + gap
-        by = layout_button_y
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_AUTO
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_BALANCE
-        by = layout_button_y + step
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_CC_MODE
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_FCR_HOLD
-        by = layout_button_y + 2 * step
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_ROI_MODE
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_LOAD_STEP
-        by = layout_button_y + 3 * step
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_CLOUD_RAMP
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_TURBINE_TRIP
-        by = layout_button_y + 4 * step
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_MARKET_PROFILE
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_MARKET_REPLAY
-        by = layout_button_y + 5 * step
-        if (point_in_rect(x, y, bx1, by, bx3, by + bh)) control_id = ID_RESET
-        ! Scenario name box: click cycles to next scenario (when not playing)
-        by = layout_button_y + 6 * step + 58
-        if (point_in_rect(x, y, bx1, by, bx3, by + bh) .and. .not. scn_playing) &
-            control_id = ID_SCN_NEXT
-        by = layout_button_y + 6 * step + 108
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_SCN_PREV
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_SCN_RUN_STOP
-        by = layout_button_y + 6 * step + 158
-        if (point_in_rect(x, y, bx1, by, bx1 + bw, by + bh)) control_id = ID_EXPORT_CSV
-        if (point_in_rect(x, y, bx2, by, bx3, by + bh)) control_id = ID_EXPORT_PDF
-        if (hmi_screen == SCREEN_SCENARIO) then
-            block
-                integer :: ix, iw, top_y, col1_w, col2_x, col2_w, cmp_x, cmp_y, cmp_w
-                ix = layout_main_left + 18
-                iw = layout_main_w - 36
-                top_y = hmi_content_top(layout_main_top) + 8
-                col1_w = iw * 42 / 100
-                col2_x = ix + col1_w + 20
-                col2_w = iw - col1_w - 20
-                cmp_w = 104
-                cmp_y = top_y + 118
-                cmp_x = col2_x + col2_w - (3 * cmp_w + 2 * gap)
-                if (point_in_rect(x, y, cmp_x, cmp_y, cmp_x + cmp_w, cmp_y + bh)) &
-                    control_id = ID_SCN_B_PREV
-                if (point_in_rect(x, y, cmp_x + cmp_w + gap, cmp_y, &
-                        cmp_x + 2 * cmp_w + gap, cmp_y + bh)) &
-                    control_id = ID_SCN_B_NEXT
-                if (point_in_rect(x, y, cmp_x + 2 * (cmp_w + gap), cmp_y, &
-                        cmp_x + 3 * cmp_w + 2 * gap, cmp_y + bh)) &
-                    control_id = ID_SCN_COMPARE
-            end block
+        integer :: ix,bw,by,third,i
+        control_id=ID_NONE
+        ix=layout_control_left+14
+        third=max(1,(layout_control_w-28)/3)
+        if (point_in_rect(x,y,ix,layout_control_top+70, &
+            layout_control_left+layout_control_w-14,layout_control_top+107)) then
+            i=min(2,max(0,(x-ix)/third))
+            control_id=ID_CTRL_PAGE1+int(i,c_int)
+            return
         end if
-        ! [?] shortcuts button in main-area header bar (top-right)
-        if (point_in_rect(x, y, layout_main_left + layout_main_w - 68, layout_main_top + 8, &
-                layout_main_left + layout_main_w - 6, layout_main_top + 40)) &
-            control_id = ID_SHORTCUTS
+        if (point_in_rect(x,y,layout_slider_x-10,layout_slider_y(1)-36, &
+            layout_slider_x+layout_slider_w+10,layout_slider_y(1)+30)) then
+            if (control_page==1) control_id=ID_DEMAND
+            if (control_page==2) control_id=ID_AMBIENT
+        end if
+        if (point_in_rect(x,y,layout_slider_x-10,layout_slider_y(2)-36, &
+            layout_slider_x+layout_slider_w+10,layout_slider_y(2)+30)) then
+            if (control_page==1) control_id=ID_RENEWABLE
+            if (control_page==2) control_id=ID_TIT
+        end if
+        if (control_page==1) then
+            if (point_in_rect(x,y,layout_slider_x-10,layout_slider_y(3)-36, &
+                layout_slider_x+layout_slider_w+10,layout_slider_y(3)+30)) control_id=ID_STORAGE
+            if (point_in_rect(x,y,layout_slider_x-10,layout_slider_y(4)-36, &
+                layout_slider_x+layout_slider_w+10,layout_slider_y(4)+30)) control_id=ID_GAS
+        end if
+        if (control_id/=ID_NONE) return
+        bw=(layout_control_w-44)/2
+        by=layout_button_y
+        select case(control_page)
+        case(1)
+            if (point_in_rect(x,y,ix,by,ix+bw,by+34)) control_id=ID_AUTO
+            if (point_in_rect(x,y,ix+bw+16,by,ix+2*bw+16,by+34)) control_id=ID_BALANCE
+            if (point_in_rect(x,y,ix,by+42,ix+bw,by+76)) control_id=ID_LOAD_STEP
+            if (point_in_rect(x,y,ix+bw+16,by+42,ix+2*bw+16,by+76)) control_id=ID_CLOUD_RAMP
+            if (point_in_rect(x,y,ix,by+84,ix+bw,by+118)) control_id=ID_TURBINE_TRIP
+            if (point_in_rect(x,y,ix+bw+16,by+84,ix+2*bw+16,by+118)) control_id=ID_RESET
+        case(2)
+            if (point_in_rect(x,y,ix,by,ix+bw,by+34)) control_id=ID_CC_MODE
+            if (point_in_rect(x,y,ix+bw+16,by,ix+2*bw+16,by+34)) control_id=ID_FCR_HOLD
+            if (point_in_rect(x,y,ix,by+42,ix+2*bw+16,by+76)) control_id=ID_ROI_MODE
+            if (point_in_rect(x,y,ix,by+84,ix+bw,by+118)) control_id=ID_MARKET_PROFILE
+            if (point_in_rect(x,y,ix+bw+16,by+84,ix+2*bw+16,by+118)) control_id=ID_MARKET_REPLAY
+        case(3)
+            if (point_in_rect(x,y,ix,by,ix+bw,by+34)) control_id=ID_SCN_PREV
+            if (point_in_rect(x,y,ix+bw+16,by,ix+2*bw+16,by+34)) control_id=ID_SCN_NEXT
+            if (point_in_rect(x,y,ix,by+42,ix+2*bw+16,by+76)) control_id=ID_SCN_RUN_STOP
+            if (point_in_rect(x,y,ix,by+84,ix+bw,by+118)) control_id=ID_EXPORT_CSV
+            if (point_in_rect(x,y,ix+bw+16,by+84,ix+2*bw+16,by+118)) control_id=ID_EXPORT_PDF
+        end select
+        if (point_in_rect(x,y,layout_main_left+layout_main_w-68,layout_main_top+8, &
+            layout_main_left+layout_main_w-6,layout_main_top+40)) control_id=ID_SHORTCUTS
     end function hit_test_control
 
     function hit_test_nav(x, y) result(screen_id)
@@ -2832,6 +2865,17 @@ contains
         nav_h = 32
         if (.not. point_in_rect(x, y, layout_main_left, nav_y, &
                 layout_main_left + layout_main_w, nav_y + nav_h)) return
+        if (operator_layout) then
+            tab_w=max(1,(layout_main_w-16)/4)
+            i=min(4,max(1,(x-layout_main_left-8)/tab_w+1))
+            select case(i)
+            case(1); screen_id=SCREEN_OVERVIEW
+            case(2); screen_id=SCREEN_GRID
+            case(3); screen_id=SCREEN_GT
+            case(4); screen_id=SCREEN_ALARMS
+            end select
+            return
+        end if
         tab_w = max(1, layout_main_w / SCREEN_COUNT)
         do i = 1, SCREEN_COUNT
             tab_x = layout_main_left + (i - 1) * tab_w
@@ -3337,247 +3381,84 @@ contains
 
     subroutine draw_control_panel(hdc)
         type(c_ptr), value :: hdc
-        character(len=40) :: value
-        character(len=64) :: line, button_text, scn_txt
-        integer :: left, top, right, bottom, title_x, panel_top, panel_bottom, row_gap
-        integer :: bx1, bx2, bx3, by, btn_w, btn_h, btn_gap, btn_step
-        real(dp) :: scn_prog
-
-        left = layout_control_left
-        top = layout_control_top
-        right = layout_control_left + layout_control_w
-        bottom = layout_control_bottom
-        title_x = left + 24
-
-        ! Panel shell — rounded soft box
-        call draw_panel_box_deep(hdc, left, top, right - left, bottom - top)
-        ! Title area with cyan left edge accent
-        call fill_box(hdc, left, top, right, top + 62, COL_PANEL)
-        call fill_box(hdc, left, top, left + 5, top + 62, COL_CYAN)
-        call hmi_fill_alpha_rect(hdc, int(right - 80, c_int), int(top, c_int), &
-            int(right, c_int), int(top + 62, c_int), COL_CYAN, 15_c_int)
-        call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
-        call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
-        call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
-
-        write(value, '(F5.1," MW")') grid%demand_MW
-        call draw_custom_slider(hdc, ID_DEMAND, layout_slider_x, layout_slider_y(1), layout_slider_w, &
-            "Load demand", trim(adjustl(value)), &
-            grid%demand_MW, DEMAND_MIN_MW, DEMAND_MAX_MW, COL_RED)
-
-        write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(grid), grid%renewable_MW
-        call draw_custom_slider(hdc, ID_RENEWABLE, layout_slider_x, layout_slider_y(2), layout_slider_w, &
-            "Renewable dispatch", trim(adjustl(value)), &
-            effective_renewable_MW(grid), 0.0_dp, RENEWABLE_MAX_MW, &
-            merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
-
-        write(value, '(SP,F6.1," MW")') grid%storage_request_MW
-        call draw_custom_slider(hdc, ID_STORAGE, layout_slider_x, layout_slider_y(3), layout_slider_w, &
-            "Battery command", trim(adjustl(value)), &
-            grid%storage_request_MW, STORAGE_MIN_MW, STORAGE_MAX_MW, COL_BLUE)
-
-        write(value, '(I3," %")') nint(grid%gas_dispatch_pct)
-        call draw_custom_slider(hdc, ID_GAS, layout_slider_x, layout_slider_y(4), layout_slider_w, &
-            "Turbine dispatch", trim(adjustl(value)), &
-            grid%gas_dispatch_pct, GAS_MIN_PCT, GAS_MAX_PCT, COL_LIME)
-
-        write(value, '(I3," C")') nint(grid%ambient_C)
-        call draw_custom_slider(hdc, ID_AMBIENT, layout_slider_x, layout_slider_y(5), layout_slider_w, &
-            "Ambient air", trim(adjustl(value)), &
-            grid%ambient_C, -20.0_dp, 45.0_dp, COL_AMBER)
-
-        write(value, '(I4," K")') nint(grid%TIT_K)
-        call draw_custom_slider(hdc, ID_TIT, layout_slider_x, layout_slider_y(6), layout_slider_w, &
-            "Turbine inlet temp", trim(adjustl(value)), &
-            grid%TIT_K, 1200.0_dp, 1600.0_dp, COL_RED)
-
-        btn_gap = 12
-        btn_h = ui_button_h()
-        btn_step = ui_button_step()
-        bx1 = left + 16
-        bx3 = right - 16
-        btn_w = (bx3 - bx1 - btn_gap) / 2
-        bx2 = bx1 + btn_w + btn_gap
-        by = layout_button_y
-
-        call draw_text(hdc, title_x, by - 28, "Dispatch controls", COL_MUTED)
-
-        ! AUTO/MAN latching mode button
-        if (grid%auto_balance) then
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "AUTO ON", COL_GREEN, .true.)
+        integer :: x,y,w,bottom,bw,b1,b2,by
+        character(len=48) :: v
+        x=layout_control_left
+        y=layout_control_top
+        w=layout_control_w
+        bottom=layout_control_bottom
+        if (.not.operator_layout) then
+            call fill_box(hdc,x,y,x+w,bottom,COL_PANEL_DEEP)
+            call draw_text(hdc,x+14,y+24,"Use Ctrl+L for the operator control desk.",COL_MUTED)
+            return
+        end if
+        call fill_box(hdc,x,y,x+w,bottom,COL_PANEL_DEEP)
+        call stroke_soft_box(hdc,x,y,x+w,bottom,COL_BORDER,1)
+        call draw_title_text(hdc,x+14,y+14,"SETPOINTS",COL_INK)
+        call draw_text(hdc,x+14,y+42,"SIMULATED / LOCAL CONTROLS",COL_MUTED)
+        bw=(w-28)/3
+        call fill_box(hdc,x+14,y+70,x+w-14,y+107,COL_PANEL)
+        call fill_box(hdc,x+14+(control_page-1)*bw,y+103, &
+            x+14+control_page*bw-2,y+107,COL_CYAN)
+        call draw_text(hdc,x+18,y+79,"GRID",COL_INK)
+        call draw_text(hdc,x+18+bw,y+79,"ENGINE",COL_INK)
+        call draw_text(hdc,x+18+2*bw,y+79,"EVENT",COL_INK)
+        b1=(w-44)/2
+        b2=x+30+b1
+        by=layout_button_y
+        select case(control_page)
+        case(1)
+            write(v,'(F5.1," MW")') grid%demand_MW
+            call draw_custom_slider(hdc,ID_DEMAND,layout_slider_x,layout_slider_y(1),layout_slider_w, &
+                "LOAD DEMAND",trim(adjustl(v)),grid%demand_MW,DEMAND_MIN_MW,DEMAND_MAX_MW,COL_MUTED)
+            write(v,'(F5.1," MW")') grid%renewable_MW
+            call draw_custom_slider(hdc,ID_RENEWABLE,layout_slider_x,layout_slider_y(2),layout_slider_w, &
+                "RENEWABLE",trim(adjustl(v)),grid%renewable_MW,0.0_dp,RENEWABLE_MAX_MW,COL_MUTED)
+            write(v,'(SP,F5.1," MW")') grid%storage_request_MW
+            call draw_custom_slider(hdc,ID_STORAGE,layout_slider_x,layout_slider_y(3),layout_slider_w, &
+                "BESS COMMAND",trim(adjustl(v)),grid%storage_request_MW,STORAGE_MIN_MW,STORAGE_MAX_MW,COL_MUTED)
+            write(v,'(F5.1," %")') grid%gas_dispatch_pct
+            call draw_custom_slider(hdc,ID_GAS,layout_slider_x,layout_slider_y(4),layout_slider_w, &
+                "GAS TURBINE",trim(adjustl(v)),grid%gas_dispatch_pct,GAS_MIN_PCT,GAS_MAX_PCT,COL_MUTED)
+            call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34,"AUTO / MAN",COL_PANEL_ALT,grid%auto_balance)
+            call draw_industrial_button(hdc,b2,by,x+w-14,by+34,"BALANCE",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,x+14,by+42,x+14+b1,by+76,"LOAD +10",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by+42,x+w-14,by+76,"CLOUD -15",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,x+14,by+84,x+14+b1,by+118,"GT TRIP",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by+84,x+w-14,by+118,"RESET",COL_PANEL_ALT,.false.)
+        case(2)
+            write(v,'(F5.1," C")') grid%ambient_C
+            call draw_custom_slider(hdc,ID_AMBIENT,layout_slider_x,layout_slider_y(5),layout_slider_w, &
+                "AMBIENT",trim(adjustl(v)),grid%ambient_C,-20.0_dp,45.0_dp,COL_MUTED)
+            write(v,'(I5," K")') nint(grid%TIT_K)
+            call draw_custom_slider(hdc,ID_TIT,layout_slider_x,layout_slider_y(6),layout_slider_w, &
+                "FIRING TEMP",trim(adjustl(v)),grid%TIT_K,1200.0_dp,1600.0_dp,COL_MUTED)
+            call draw_text(hdc,x+14,layout_slider_y(6)+70,"OPERATING PARAMETERS",COL_MUTED)
+            call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34,"GT / CC",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by,x+w-14,by+34,"FCR HOLD",COL_PANEL_ALT,grid%fcr_hold)
+            call draw_industrial_button(hdc,x+14,by+42,x+w-14,by+76,"STABILITY / ROI",COL_PANEL_ALT,grid%roi_dispatch)
+            call draw_industrial_button(hdc,x+14,by+84,x+14+b1,by+118,"ZONE",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by+84,x+w-14,by+118,"REPLAY",COL_PANEL_ALT,grid%market_load_replay_enabled)
+        case(3)
+            call draw_text(hdc,x+14,y+143,"SCENARIO EXERCISE",COL_MUTED)
+            write(v,'(I0," / ",I0)') scn_selected,N_SCENARIOS
+            call draw_title_text(hdc,x+14,y+171,trim(adjustl(v)),COL_INK)
+            call draw_text(hdc,x+14,y+207,trim(SCN_LABEL(scn_selected)),COL_MUTED)
+            call draw_industrial_button(hdc,x+14,by,x+14+b1,by+34,"PREVIOUS",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by,x+w-14,by+34,"NEXT",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,x+14,by+42,x+w-14,by+76, &
+                merge("STOP SCENARIO", "RUN SCENARIO ",scn_playing),COL_PANEL_ALT,scn_playing)
+            call draw_industrial_button(hdc,x+14,by+84,x+14+b1,by+118,"CSV",COL_PANEL_ALT,.false.)
+            call draw_industrial_button(hdc,b2,by+84,x+w-14,by+118,"REPORT",COL_PANEL_ALT,.false.)
+        end select
+        call draw_line(hdc,x+14,bottom-63,x+w-14,bottom-63,COL_BORDER,1)
+        write(v,'("FREQ ",F7.3," Hz")') grid%frequency_Hz
+        call draw_text(hdc,x+14,bottom-51,trim(adjustl(v)),COL_INK)
+        if (opcua_active()) then
+            call draw_text(hdc,x+14,bottom-26,"OPC UA  /  LOCAL ACTIVE",COL_MUTED)
         else
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "MANUAL", COL_PANEL_ALT, .false.)
+            call draw_text(hdc,x+14,bottom-26,"OPC UA  /  OFFLINE",COL_MUTED)
         end if
-        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-            "BALANCE 1X", COL_PANEL, .false.)
-        call draw_focus_box(hdc, ID_AUTO, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_BALANCE, bx2, by, bx3, by + btn_h)
-
-        by = layout_button_y + btn_step
-        if (grid%fleet_mode) then
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "FLEET", COL_CYAN, .true.)
-        else if (grid%combined_cycle) then
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "COMBINED", COL_CYAN, .true.)
-        else
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "GT ONLY", COL_PANEL_ALT, .false.)
-        end if
-        if (grid%fcr_hold) then
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "FCR HOLD", COL_CYAN, .true.)
-        else
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "FREE BESS", COL_PANEL_ALT, .false.)
-        end if
-        call draw_focus_box(hdc, ID_CC_MODE, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_FCR_HOLD, bx2, by, bx3, by + btn_h)
-
-        by = layout_button_y + 2 * btn_step
-        if (grid%roi_dispatch) then
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "ROI MODE", COL_GREEN, .true.)
-        else
-            call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-                "STABILITY", COL_AMBER, .true.)
-        end if
-        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-            "LOAD +10", COL_PANEL, .false.)
-        call draw_focus_box(hdc, ID_ROI_MODE, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_LOAD_STEP, bx2, by, bx3, by + btn_h)
-
-        by = layout_button_y + 3 * btn_step
-        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-            "CLOUD -15", COL_PANEL, .false.)
-        if (grid%fleet_mode) then
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "CC1 TRIP", COL_RED, .false.)
-        else
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "TURB TRIP", COL_RED, .false.)
-        end if
-        call draw_focus_box(hdc, ID_CLOUD_RAMP, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_TURBINE_TRIP, bx2, by, bx3, by + btn_h)
-
-        by = layout_button_y + 4 * btn_step
-        button_text = "ZONE "//trim(grid%market_power_zone)
-        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-            trim(button_text), COL_CYAN, grid%market_weather_enabled)
-        if (grid%market_load_replay_enabled) then
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "REPLAY ON", COL_GREEN, .true.)
-        else
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "REPLAY", COL_PANEL_ALT, .false.)
-        end if
-        call draw_focus_box(hdc, ID_MARKET_PROFILE, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_MARKET_REPLAY, bx2, by, bx3, by + btn_h)
-
-        by = layout_button_y + 5 * btn_step
-        call draw_industrial_button(hdc, bx1, by, bx3, by + btn_h, &
-            "RESET", COL_PANEL, .false.)
-        call draw_focus_box(hdc, ID_RESET, bx1, by, bx3, by + btn_h)
-
-        ! Scenario playback selector
-        by = layout_button_y + 6 * btn_step + 20
-        call fill_box(hdc, title_x, by, right - 24, by + 1, COL_BORDER_SOFT)
-        call draw_text(hdc, title_x, by + 10, "Scenario playback", COL_MUTED)
-
-        by = layout_button_y + 6 * btn_step + 58
-        call fill_soft_box(hdc, bx1, by, bx3, by + btn_h, COL_PANEL_ALT)
-        call stroke_soft_box(hdc, bx1, by, bx3, by + btn_h, &
-            merge(COL_GREEN, COL_BORDER_SOFT, scn_playing), 1)
-        write(scn_txt, '(I0,"/",I0,"  ",A)') scn_selected, N_SCENARIOS, &
-            trim(SCN_LABEL(scn_selected))
-        call draw_text(hdc, bx1 + 10, by + 11, trim(adjustl(scn_txt)), &
-            merge(COL_GREEN, COL_INK, scn_playing))
-        call draw_focus_box(hdc, ID_SCN_NEXT, bx1, by, bx3, by + btn_h)
-        if (scn_playing .and. scn_active%duration_s > 0.0_dp) then
-            scn_prog = min(1.0_dp, grid%elapsed_s / scn_active%duration_s)
-            call fill_box(hdc, bx1 + 1, by + btn_h - 4, &
-                bx1 + 1 + int(scn_prog * real(bx3 - bx1 - 2, dp)), &
-                by + btn_h - 1, COL_GREEN)
-        end if
-
-        by = layout_button_y + 6 * btn_step + 108
-        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-            "<< SCN", COL_PANEL, .false.)
-        if (scn_playing) then
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "STOP SCN", COL_RED, .true.)
-        else
-            call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-                "RUN SCN >>", COL_LIME, .false.)
-        end if
-        call draw_focus_box(hdc, ID_SCN_PREV, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_SCN_RUN_STOP, bx2, by, bx3, by + btn_h)
-
-        ! Export report buttons
-        by = layout_button_y + 6 * btn_step + 158
-        call draw_industrial_button(hdc, bx1, by, bx1 + btn_w, by + btn_h, &
-            "EXPORT CSV", COL_CYAN, .false.)
-        call draw_industrial_button(hdc, bx2, by, bx3, by + btn_h, &
-            "GEN PDF", COL_GREEN, .false.)
-        call draw_focus_box(hdc, ID_EXPORT_CSV, bx1, by, bx1 + btn_w, by + btn_h)
-        call draw_focus_box(hdc, ID_EXPORT_PDF, bx2, by, bx3, by + btn_h)
-
-        panel_top = layout_button_y + 6 * btn_step + 208
-        panel_bottom = layout_footer_y - 28
-        if (panel_bottom - panel_top > 70) then
-            row_gap = max(20, (panel_bottom - panel_top - 48) / 5)
-            call fill_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_PANEL_ALT)
-            call stroke_soft_box(hdc, title_x, panel_top, right - 24, panel_bottom, COL_BORDER_SOFT, 1)
-            call draw_text(hdc, title_x + 10, panel_top + 10, "Plant telemetry", COL_MUTED)
-            if (opcua_active()) then
-                call draw_text(hdc, right - 88, panel_top + 10, "OPC 4840", COL_GREEN)
-            end if
-            write(line, '("Freq  ",F7.3," Hz")') grid%frequency_Hz
-            call draw_text(hdc, title_x + 10, panel_top + 34, adjustl(line), frequency_color())
-            if (grid%fleet_mode) then
-                write(line, '("Fleet ",F5.1,"/",I3," MW")') grid%fleet_total_MW, nint(grid%fleet_online_capacity_MW)
-                call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), COL_CYAN)
-                write(line, '("Rsv   ",F5.1,"/",F4.1," MW")') grid%fleet_reserve_MW, grid%fleet_reserve_requirement_MW
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), &
-                    merge(COL_RED, COL_CYAN, grid%fleet_reserve_binding))
-                write(line, '("LMP   $",I3,"/MWh")') nint(grid%fleet_lmp_usd_MWh)
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), COL_GREEN)
-                write(line, '("Inert ",I4," MWs  MU",I1)') nint(grid%fleet_inertia_MWs), grid%fleet_marginal_unit
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 4 * row_gap, adjustl(line), COL_MUTED)
-            else if (grid%combined_cycle) then
-                write(line, '("ST    ",F5.1,"/",F4.1," MW")') grid%steam_power_MW, grid%steam_capacity_MW
-                call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), COL_CYAN)
-                write(line, '("HRSG  ",F5.1," MW rec")') grid%hrsg_recovered_heat_MW
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), COL_MUTED)
-                write(line, '("Pinch ",F5.1," K  Stack ",I3)') grid%hrsg_pinch_K, nint(grid%hrsg_stack_T_K)
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), &
-                    merge(COL_AMBER, COL_CYAN, grid%alarm_hrsg_pinch))
-                write(line, '("Eta   ",F5.1,"%  Cond ",F4.1)') &
-                    grid%plant_efficiency * 100.0_dp, grid%condenser_pressure_kPa
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 4 * row_gap, adjustl(line), COL_GREEN)
-            else
-                write(line, '("RES   ",F5.1,"/",F4.1," MW")') effective_renewable_MW(grid), grid%renewable_MW
-                call draw_text(hdc, title_x + 10, panel_top + 34 + row_gap, adjustl(line), &
-                    merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
-                write(line, '("ROCOF ",SP,F5.3," Hz/s")') grid%ROCOF_Hz_s
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 2 * row_gap, adjustl(line), COL_MUTED)
-                write(line, '("Rsv  ",F6.1," MW  S",I1)') grid%reserve_MW, grid%UFLS_stage
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 3 * row_gap, adjustl(line), &
-                    merge(COL_RED, COL_CYAN, grid%alarm_ufls_active))
-                write(line, '("SOC  ",F5.1,"%  Gov",SP,F5.1)') &
-                    grid%battery_soc_pct, grid%governor_delta_MW
-                call draw_text(hdc, title_x + 10, panel_top + 34 + 4 * row_gap, adjustl(line), COL_BLUE)
-            end if
-        end if
-
-        call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
-        write(line, '("Scan ",I0," ms | trends 250 ms | ",A)') int(TIMER_MS), trim(grid%market_profile_name)
-        call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)
-        write(line, '("Price $",I3,"/MWh | Gas $",F4.1,"/GJ | CO2 $",I3,"/t")') &
-            nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj, nint(grid%carbon_price_usd_t)
-        call draw_text(hdc, title_x, layout_footer_y + 20, trim(adjustl(line)), COL_DIM)
     end subroutine draw_control_panel
 
     subroutine draw_nav_rail(hdc)
@@ -3651,71 +3532,32 @@ contains
 
     subroutine draw_nav_bar(hdc, x, y, width, height)
         type(c_ptr), value :: hdc
-        integer, intent(in) :: x, y, width, height
-        integer :: i, tab_w, tx, tx2, key_x, n_alm, bx2, icon_x, icon_y
-        integer(c_int) :: body, accent, text_col, glyph_col
-        character(len=32) :: label
-        character(len=3)  :: cnt_s
-
-        call fill_box(hdc, x, y, x + width, y + height, COL_PANEL_DEEP)
-        call draw_line(hdc, x, y, x + width, y, COL_BORDER, 1)
-        call draw_line(hdc, x, y + height, x + width, y + height, COL_BORDER_SOFT, 1)
-        tab_w = max(1, width / SCREEN_COUNT)
-        do i = 1, SCREEN_COUNT
-            tx = x + (i - 1) * tab_w
-            tx2 = merge(x + width, tx + tab_w - 2, i == SCREEN_COUNT)
-            if (i == hmi_screen) then
-                body = COL_PANEL_ALT
-                accent = COL_CYAN
-                text_col = COL_INK
-            else
-                body = COL_PANEL_DEEP
-                accent = COL_BORDER_SOFT
-                text_col = COL_MUTED
+        integer, intent(in) :: x,y,width,height
+        integer :: i,bx,tab_w
+        integer(c_int) :: c
+        integer,parameter :: ids(4)=[SCREEN_OVERVIEW,SCREEN_GRID,SCREEN_GT,SCREEN_ALARMS]
+        character(len=12),parameter :: labels(4)=[character(len=12) :: &
+            "OVERVIEW","DISPATCH","GAS TURBINE","ALARMS"]
+        call fill_box(hdc,x,y,x+width,y+height,COL_PANEL_DEEP)
+        if (.not.operator_layout) then
+            tab_w=max(1,width/SCREEN_COUNT)
+            do i=1,SCREEN_COUNT
+                bx=x+(i-1)*tab_w
+                c=COL_MUTED
+                if (hmi_screen==i) c=COL_INK
+                call draw_text(hdc,bx+4,y+7,trim(int_text(i)),c)
+            end do
+            return
+        end if
+        tab_w=max(1,(width-16)/4)
+        do i=1,4
+            bx=x+8+(i-1)*tab_w
+            c=COL_MUTED
+            if (hmi_screen==ids(i)) then
+                c=COL_INK
+                call fill_box(hdc,bx,y+height-3,bx+tab_w-4,y+height,COL_CYAN)
             end if
-            call fill_soft_box(hdc, tx + 1, y + 3, tx2, y + height - 3, body)
-            call fill_box(hdc, tx + 1, y + 3, tx + 4, y + height - 3, accent)
-            if (i == hmi_screen) then
-                ! Bottom accent bar spans full tab width
-                call fill_box(hdc, tx + 1, y + height - 4, tx2, y + height - 1, COL_CYAN)
-                call stroke_soft_box(hdc, tx + 1, y + 3, tx2, y + height - 3, COL_BORDER, 1)
-            end if
-            icon_y = y + height / 2 + 1
-            glyph_col = merge(COL_CYAN, COL_MUTED, i == hmi_screen)
-            if (tab_w >= 96) then
-                icon_x = tx + 17
-                call draw_nav_icon(hdc, icon_x, icon_y, i, glyph_col)
-                write(label, '("F",I0," ",A)') i, trim(SCREEN_NAV_LABEL(i))
-                key_x = tx + 34
-            else if (tab_w >= 62) then
-                icon_x = tx + 14
-                call draw_nav_icon(hdc, icon_x, icon_y, i, glyph_col)
-                write(label, '("F",I0)') i
-                key_x = tx + 30
-            else
-                write(label, '("F",I0)') i
-                key_x = tx + max(6, (tab_w - 14) / 2)
-            end if
-            call draw_text(hdc, key_x, y + 8, trim(label), text_col)
-            ! Red alarm count badge on the SCREEN_ALARMS tab
-            if (i == SCREEN_ALARMS) then
-                n_alm = count([grid%alarm_surge, grid%alarm_turbine_max, &
-                               grid%alarm_ufls_active, grid%alarm_underfreq, &
-                               grid%alarm_overfreq, grid%alarm_hrsg_pinch, &
-                               grid%alarm_low_reserve, grid%alarm_low_soc])
-                if (n_alm > 0) then
-                    write(cnt_s, '(I2)') n_alm
-                    bx2 = tx2 - 22
-                    block
-                        integer :: pa
-                        pa = 18 + nint(26.0_dp * (0.5_dp + 0.5_dp * sin(real(anim_tick, dp) * 0.45_dp)))
-                        call fill_box(hdc, bx2, y + 5, bx2 + 18, y + height - 5, COL_RED)
-                        call hmi_fill_alpha_rect(hdc, int(bx2, c_int), int(y + 5, c_int), &
-                            int(bx2 + 18, c_int), int(y + height - 5, c_int), COL_INK, int(pa, c_int))  ! [6.0-P5] breathing
-                        call draw_text(hdc, bx2 + 2, y + 9, trim(adjustl(cnt_s)), COL_INK)
-                    end block
-                end if
-            end if
+            call draw_text(hdc,bx+7,y+8,trim(labels(i)),c)
         end do
     end subroutine draw_nav_bar
 
