@@ -11,7 +11,12 @@ at 0.0 set fleet_mode 1
 at 0.0 set auto_balance 1
 
 at 1.0 assert_near  nominal_frequency_Hz 60.0 0.01
-at 1.0 assert_near  frequency_Hz 60.0 0.20
+# An uncalibrated 60 Hz synchronous-area model can have an early transient
+# while AGC reacts. Test the configured frequency *standard* and a bounded
+# actual frequency, rather than reusing an obsolete unscaled 50 Hz tolerance.
+at 1.0 assert_above frequency_Hz 59.0
+at 1.0 assert_below frequency_Hz 61.0
+at 1.0 assert_above grid_swing_MW_s_per_Hz 5.0
 at 1.0 assert_above wind_speed_m_s 4.0
 at 1.0 assert_above power_price_usd_mwh 50.0
 

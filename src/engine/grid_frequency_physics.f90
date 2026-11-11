@@ -104,6 +104,7 @@ contains
         min_Hz=min(st%frequency_Hz,f_end)
         ! A projected excursion beyond the simulator's +/-3 Hz integration
         ! domain is reported, NOT hidden by artificial 47 Hz clipping.
-        valid=abs(min_Hz-f0)<=3.0_dp
+        valid=abs(st%frequency_Hz-f0)<=3.0_dp .and. &
+            abs(f_end-f0)<=3.0_dp .and. abs(min_Hz-f0)<=3.0_dp
     end subroutine grid_fixed_loss_horizon_min
 end module grid_frequency_physics
