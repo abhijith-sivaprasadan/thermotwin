@@ -689,7 +689,8 @@ contains
         select case (trim(name))
         case ("demand_MW");             value = st%demand_MW
         case ("renewable_MW");          value = st%renewable_MW
-        case ("renewable_actual_MW");   value = effective_renewable_MW(st)
+        case ("renewable_actual_MW");   value = max(0.0_dp, &
+            effective_renewable_MW(st)-st%renewable_lfsmo_MW)
         case ("renewable_curtail_MW");  value = st%renewable_curtail_MW
         case ("renewable_lfsmo_MW");    value = st%renewable_lfsmo_MW
         case ("storage_request_MW");    value = st%storage_request_MW
