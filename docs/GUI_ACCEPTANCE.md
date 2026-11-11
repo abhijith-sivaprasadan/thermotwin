@@ -25,3 +25,28 @@ Record tester, machine/OS/build, Windows display scaling/resolution, commit SHA,
 ## Release decision
 
 Mark Windows binary *not qualified* if any critical GUI/OPC UA/packaging item is untested or fails. A source-only DOI prerelease may still be published with that limitation clearly visible.
+
+
+## Custom alarm annunciator acceptance (new additive enhancement)
+
+- [ ] Verify original full blueprint HMI and all existing 16 analytical
+  screens, themes, charts, controls, P&IDs, help and OPC UA remain intact.
+- [ ] Trigger P1 underfrequency and P2 reserve alarms using actual simulated
+  model state. Verify their different **original PCM tones** on a Windows
+  audio device, not Windows system notifications; verify P1 priority and
+  no sound when no standing unacknowledged alarm exists.
+- [ ] Confirm SILENCE halts ongoing sound without setting ACK; new rising
+  alarm rearms sound; ACK ALL removes sound while the condition continues
+  visually and stays in the event list.
+- [ ] Confirm P1 cannot be shelved via either bulk or row controls;
+  P2 shelving logs its action, expires after 600 simulated seconds, and
+  does not dismiss underlying fault physics.
+- [ ] Confirm B toggles sound, V changes the output gain, and both persist
+  through a normal clean shutdown and fresh launch.
+- [ ] Disconnect audio output and verify alarm display continues without
+  crashing or claiming audio was heard.
+- [ ] Inspect original GUI screenshots at 1024×768, 1536×960, 1920×1080
+  and 2560×1440. Verify no new collisions from extra alarm buttons,
+  unchanged analytics, responsive layout and all active hotspots.
+- [ ] Save signed manual test results; automatic waveform tests and
+  compilation are not substitutes for speaker/mouse/OPC UA acceptance.
