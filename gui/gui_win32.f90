@@ -6222,10 +6222,14 @@ contains
     ! on EVERY repaint from the current GridState. No static mock screenshot.
     subroutine alarm_drill_rect(x,y,w,h)
         integer,intent(out) :: x,y,w,h
-        x=layout_main_left+12
-        y=layout_main_top+164
-        w=max(400,layout_main_w-24)
-        h=max(350,min(575,layout_main_h-179))
+        ! A full operator-workspace overlay is intentional here: a true
+        ! compressor map, readable iso-speed labels and a separate live trend
+        ! need more than the 300px half-width available within the compact
+        ! 1024px right column. Original controls remain unchanged underneath.
+        w=max(610,min(970,layout_canvas_w-36))
+        x=max(12,(layout_canvas_w-w)/2)
+        y=layout_main_top+153
+        h=max(400,min(605,layout_canvas_h-y-16))
     end subroutine alarm_drill_rect
 
     subroutine handle_alarm_drill_mouse(px,py)
@@ -6308,12 +6312,12 @@ contains
         call draw_text(hdc,x+w/2,y+101,"STATE: "//trim(state_label),indicator_col)
         call draw_text(hdc,x+18,y+122, &
             obs%limit_note(1:min(len_trim(obs%limit_note),max(1,(w-38)/8))),COL_MUTED)
-        visual_y=y+158
-        visual_h=max(115,min(195,h-341))
+        visual_y=y+178
+        visual_h=max(115,min(205,h-371))
         visual_w=max(180,(w-52)/2)
         trend_x=x+30+visual_w
-        call draw_text(hdc,x+18,visual_y-20,"EQUIPMENT / PROCESS CONTEXT",COL_CYAN)
-        call draw_text(hdc,trend_x,visual_y-20,"RECORDED LIVE TREND / 250 ms",COL_CYAN)
+        call draw_text(hdc,x+18,visual_y-24,"EQUIPMENT / PROCESS CONTEXT",COL_CYAN)
+        call draw_text(hdc,trend_x,visual_y-24,"RECORDED LIVE TREND / 250 ms",COL_CYAN)
         call draw_alarm_process_context(hdc,x+18,visual_y,visual_w,visual_h,obs)
         call draw_alarm_drill_trend(hdc,trend_x,visual_y, &
             max(150,w-(trend_x-x)-18),visual_h,obs,alarm_drill_selected)
