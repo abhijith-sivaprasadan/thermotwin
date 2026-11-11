@@ -14,11 +14,11 @@ module engine_state
     public :: FLEET_N, FLEET_GT1, FLEET_GT2, FLEET_CC1, FLEET_UNIT_NAME
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: bottoming_power_MW, thermal_generation_MW
-    public :: limited_storage_power, append_history, history_index
+    public :: limited_storage_power, limited_storage_power_for_step, append_history, history_index
     public :: GT_ONLINE, GT_TRIPPED, GT_RUNDOWN, GT_LOCKOUT, GT_READY
     public :: GT_PURGING, GT_IGNITING, GT_ACCELERATING, GT_SYNCHRONIZING
     public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
-    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL, GT_TRIP_LOG_N
+    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL, GT_CAUSE_START_ABORT, GT_TRIP_LOG_N
     public :: EQ_N, EQ_SURGE, EQ_OVERSPEED, EQ_EXHAUST, EQ_COMBUST, EQ_OIL, EQ_BEARING, EQ_GENERATOR
     public :: EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
 
