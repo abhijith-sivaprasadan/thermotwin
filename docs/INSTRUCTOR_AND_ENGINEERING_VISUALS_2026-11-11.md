@@ -14,7 +14,7 @@ The only manipulated conditions are explicit low-dimensional model boundary valu
 On the Windows offline HMI:
 
 1. Open F15. Click **INSTRUCTOR [I]** at upper right (or press **I**) to switch to the instructor console. F15 Scenario Comparison remains intact.
-2. Click **SAVE SNAPSHOT** at a known stable point. This stores the complete `GridState` in memory, including GT trip state, timestamps, model histories, battery energy, grid state, alarm/protection state, and accumulated emissions.
+2. Click **SAVE SNAPSHOT** at a known stable point. This stores the complete `GridState` in memory, including GT trip state, timestamps, model histories, battery energy, grid state, alarm/protection state, and accumulated emissions. The HMI also checkpoints the current scripted scenario's event queue and playback flag, so running scenario exercises can resume at the saved cursor.
 3. Use **FREEZE** to stop advancement of the model clock, scenario events, equipment-monitor samples and trend buffers. The HMI remains responsive. Use **RESUME** or the Space key on F15 Instructor to continue.
 4. Inject at most one qualified training condition at a time:
    - **OIL 0.7 bar** — low-oil-pressure training input (illustrative alarm threshold 1.2 bar; ~1 s confirmation).
@@ -24,7 +24,7 @@ On the Windows offline HMI:
 5. Use **CLEAR INPUT** to remove a training sensor value. Absent values must appear as **NO DATA**, not healthy or zero. Clearing does **not** automatically unlatch any trip.
 6. Apply the supported boundary disturbances (**LOAD +10 MW**, **LOAD -10 MW**, **WIND -8 MW**, **AMB +5 C**) while the model clock is running. Solver state changes on the following engine tick. Values are clamped to the simulator's bounds.
 7. Use the existing **F7** operating workflow to acknowledge, reset, and restart, respecting its state machine and interlocks. The instructor log records accepted/denied requests; there is no instructor override for reset permissives.
-8. **RESTORE** an existing snapshot. This intentionally stops scripted playback, restores GridState, resets the current training rubric, resynchronizes the visible alarm buffer, and leaves the engine **FROZEN** until explicit resume.
+8. **RESTORE** an existing snapshot. This restores GridState and the scripted scenario's saved event cursor/playback state, resets the current training rubric, resynchronizes the visible alarm buffer, and leaves the engine **FROZEN** until explicit resume. If a scenario was playing at capture it resumes from that cursor, without replaying already applied directives.
 
 Training input freshness is not bypassed: while an injection is active and the simulation runs, the instructor session periodically re-stamps the explicit input using the already-existing `set_equipment_training_input` API; the underlying monitor still rejects absent or stale inputs. Model-derived map quantities (e.g. compressor surge margin or exhaust) cannot be replaced by invented sensor measurements through this interface.
 
