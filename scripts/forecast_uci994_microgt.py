@@ -256,6 +256,101 @@ def export_predictions(out:Path,results:dict,report:dict):
     report["predictions_csv_sha256"]=digest(output)
 
 
+
+def write_interactive_viewer(out: Path, outputs: dict, report: dict) -> None:
+    """Self-contained local real-signal viewer. No external libraries or fabricated data."""
+    payload={}
+    for exp in TEST:
+        seq=outputs[exp]
+        payload[str(exp)]=[
+            [round(float(seq["time"][i]),4),round(float(seq["voltage"][i]),4),
+             round(float(seq["measured"][i]),4),round(float(seq["predicted"][i]),4),
+             round(float(seq["static"][i]),4),int(seq["outside"][i])]
+            for i in range(len(seq["time"]))
+        ]
+    body=json.dumps(payload,separators=(",",":"),allow_nan=False).replace("<","\\u003c")
+    doc="""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Measured 3-kW micro gas turbine | ThermoTwin-F</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:dark}body{margin:auto;max-width:1140px;padding:28px;
+background:#0c1b26;color:#edf4f6;font:15px system-ui,Arial}
+p{line-height:1.6;color:#afc1d0}.metrics{display:flex;gap:12px;flex-wrap:wrap}
+.metrics section{padding:16px;flex:1;border:1px solid #49616e;min-width:160px}
+h1{font-size:26px}strong{display:block;font-size:24px}
+label{display:block;margin-top:14px}select,input{width:100%;padding:7px}
+canvas{width:100%;height:350px;background:#091622;border:1px solid #3b5565}
+a{color:#70cbdc}.caption{font-size:13px}.source{color:#7ed7ec}
+</style></head><body>
+<h1>ThermoTwin-F · Measured microturbine dynamic response</h1>
+<p>REAL UCI #994 observed power (W) versus open-loop predicted power (W).
+3-kW-class experimental gas turbine, not an industrial 30 MW cycle model.
+Train runs 1/9/20/21/23/24; independent test runs 4/22.</p>
+<div class="metrics">
+<section>Open-loop RMSE (W)<strong id="dynamic"></strong></section>
+<section>Static voltage baseline RMSE (W)<strong id="static"></strong></section>
+<section>Fitted dynamic lag (s)<strong id="tau"></strong></section></div>
+<p class="source">Cyan = original measured power &nbsp; · &nbsp;
+Amber = dynamic prediction &nbsp; · &nbsp; Grey = static prediction</p>
+<label for="exp">Held-out experiment</label>
+<select id="exp"><option value="4">Experiment 4</option><option value="22">Experiment 22</option></select>
+<canvas id="chart" width="1060" height="350" role="img"
+aria-label="Measured power against model predictions at actual source relative time"></canvas>
+<label for="cursor">Measured experiment time (seconds)</label>
+<input type="range" id="cursor" min="0" max="100" step="1" value="0">
+<p id="readout" aria-live="polite"></p>
+<p class="caption">Only the very first measured power is used to initialize
+each test forecast and is excluded from scores. Later measured power values
+are NEVER used to advance the prediction. Input voltage over the horizon is a
+known supplied control trajectory; this is not unknown-weather forecasting.
+No future failure diagnosis, certified safety limit or thermodynamic
+performance prediction is supported.</p>
+<p><a href="https://doi.org/10.24432/C58S4T">Real source: UCI micro gas turbine
+electrical energy prediction dataset (CC BY 4.0)</a></p>
+<script>
+"use strict";
+const series=__SOURCE_POINTS__;
+const metrics=__REPORT_METRICS__;
+document.getElementById("dynamic").textContent=metrics[0].toFixed(2);
+document.getElementById("static").textContent=metrics[1].toFixed(2);
+document.getElementById("tau").textContent=metrics[2].toFixed(1);
+const sel=document.getElementById("exp"),range=document.getElementById("cursor");
+const canvas=document.getElementById("chart"),ctx=canvas.getContext("2d");
+function render(){
+ const data=series[sel.value],i=Number(range.value),first=Math.max(0,i-230);
+ const last=Math.min(data.length,i+231),points=data.slice(first,last);
+ const bottom=318,top=22,left=35,right=canvas.width-20;
+ const vals=points.flatMap(d=>[d[2],d[3],d[4]]);
+ const lo=Math.min(...vals),hi=Math.max(...vals),span=Math.max(.001,hi-lo);
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ ctx.strokeStyle="#425667";ctx.lineWidth=1;
+ for(let k=0;k<5;k++){let y=top+(bottom-top)*k/4;
+   ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
+ for(const [index,color] of [[2,"#67d5e7"],[3,"#ffc67d"],[4,"#858f97"]]){
+   ctx.strokeStyle=color;ctx.lineWidth=1.8;ctx.beginPath();
+   points.forEach((p,k)=>{const x=left+(right-left)*k/Math.max(1,points.length-1);
+     const y=bottom-(p[index]-lo)/span*(bottom-top);
+     if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});
+   ctx.stroke();
+ }
+ const row=data[i],at=left+(right-left)*(i-first)/Math.max(1,points.length-1);
+ ctx.strokeStyle="white";ctx.lineWidth=1;ctx.beginPath();
+ ctx.moveTo(at,top);ctx.lineTo(at,bottom);ctx.stroke();
+ document.getElementById("readout").textContent="t="+row[0].toFixed(1)+
+  " s | command "+row[1].toFixed(3)+" V | measured "+row[2].toFixed(1)+
+  " W | predicted "+row[3].toFixed(1)+" W | residual "+
+  (row[2]-row[3]).toFixed(1)+" W | "+(row[5]?"OUTSIDE TRAINING COMMAND RANGE":"in command range")+
+  (i===0?" | initial measured state, NOT scored":"");
+}
+function reset(){range.max=String(series[sel.value].length-1);range.value="0";render();}
+sel.addEventListener("change",reset);range.addEventListener("input",render);reset();
+</script></body></html>"""
+    metrics=json.dumps([
+        report["test_rmse_watt"],report["static_baseline_rmse_watt"],
+        report["time_constant_s"]],allow_nan=False)
+    doc=doc.replace("__SOURCE_POINTS__",body).replace("__REPORT_METRICS__",metrics)
+    (out/"real_microturbine_power_forecast.html").write_text(doc,encoding="utf-8")
+
 def run(argv=None)->dict:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir",type=Path,required=True)
@@ -266,6 +361,8 @@ def run(argv=None)->dict:
     test={i:experiments[i] for i in TEST}
     report,outputs=evaluate(train,test)
     export_predictions(args.out,outputs,report)
+    write_interactive_viewer(args.out,outputs,report)
+    report['interactive_viewer_sha256']=digest(args.out/'real_microturbine_power_forecast.html')
     report.update({"source_doi":DOI,"source_zip_sha256":manifest["original_zip_sha256"],
                    "source_manifest_sha256":digest(args.data_dir/"manifest.json"),
                    "source_license":"CC BY 4.0","code_revision":os.environ.get("GITHUB_SHA","local")})
