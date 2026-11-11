@@ -1,0 +1,58 @@
+name: Preserve-original-GUI native screenshot QA
+
+on:
+  push:
+    paths:
+      - "gui/gui_win32.f90"
+      - "gui/hmi_native_draw.cpp"
+      - "gui/hmi_alarm_audio.cpp"
+      - "gui/alarm_pcm.*"
+      - "scripts/gui_visual_qa.ps1"
+      - ".github/workflows/gui-original-visual-qa.yml"
+  pull_request:
+    paths:
+      - "gui/gui_win32.f90"
+      - "gui/hmi_native_draw.cpp"
+      - "gui/hmi_alarm_audio.cpp"
+      - "gui/alarm_pcm.*"
+      - "scripts/gui_visual_qa.ps1"
+      - ".github/workflows/gui-original-visual-qa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-original-screens:
+    name: Original 16-screen native GUI smoke (no layout replacement)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-gcc
+      - name: Put UCRT64 compiler on PATH
+        shell: pwsh
+        run: |
+          'C:\msys64\ucrt64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Compile original offline GUI with custom alarm backend
+        run: make -j4 gui-offline
+      - name: Capture original live GUI pixels on Windows
+        shell: pwsh
+        run: ./scripts/gui_visual_qa.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preserved-original-native-GUI-screenshots
+          path: |
+            build/gui-visual-qa/*.png
+            build/gui-visual-qa/*.jpg
+            gui_debug.log
+          if-no-files-found: warn

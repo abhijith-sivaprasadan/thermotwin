@@ -1,0 +1,35 @@
+name: Original GUI alarm sound waveform QA
+
+on:
+  push:
+    paths:
+      - "gui/alarm_pcm.*"
+      - "gui/hmi_alarm_audio.cpp"
+      - "scripts/test_alarm_pcm.cpp"
+      - ".github/workflows/gui-alarm-audio-qa.yml"
+  pull_request:
+    paths:
+      - "gui/alarm_pcm.*"
+      - "gui/hmi_alarm_audio.cpp"
+      - "scripts/test_alarm_pcm.cpp"
+      - ".github/workflows/gui-alarm-audio-qa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-signal-and-original-wav-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile and validate two original alarm tones
+        run: |
+          mkdir -p build/alarm-previews
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -Igui gui/alarm_pcm.cpp scripts/test_alarm_pcm.cpp -o build/test_alarm_pcm
+          ./build/test_alarm_pcm build/alarm-previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: original-P1-P2-annunciator-audio-previews
+          path: build/alarm-previews/*.wav
+          if-no-files-found: error

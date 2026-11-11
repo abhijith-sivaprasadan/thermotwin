@@ -58,6 +58,7 @@ GUI_OFFLINE_EXE := thermotwin-gui-offline.exe
 GUI_ICON := gui/app_icon.ico
 GUI_RES := $(BUILD)/gui_icon.res
 GUI_NATIVE_OBJ := $(BUILD)/hmi_native_draw.o
+GUI_AUDIO_OBJ := $(BUILD)/hmi_alarm_audio.o $(BUILD)/alarm_pcm.o
 OPCUA_OBJ := $(BUILD)/open62541.o $(BUILD)/opcua_server.o
 
 OPCUA_VER := v1.5.4
@@ -193,6 +194,12 @@ gui-offline: $(GUI_OFFLINE_EXE)
 $(BUILD)/hmi_native_draw.o: gui/hmi_native_draw.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
 
+$(BUILD)/hmi_alarm_audio.o: gui/hmi_alarm_audio.cpp gui/alarm_pcm.h | $(BUILD)
+	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
+
+$(BUILD)/alarm_pcm.o: gui/alarm_pcm.cpp gui/alarm_pcm.h | $(BUILD)
+	$(CXX) $(CXXFLAGS_REL) -c $< -o $@
+
 # open62541 amalgam — compiled once with -O1 (full optimisation is slow)
 $(BUILD)/open62541.o: gui/open62541.c | $(BUILD)
 	gcc -O1 -std=c99 -DUA_ARCHITECTURE_WIN32 -c $< -o $@
@@ -207,16 +214,16 @@ $(BUILD)/opcua_server.o: gui/opcua_server.c gui/open62541.h | $(BUILD)
 $(BUILD)/opcua_bridge.o: $(SRC)/engine/opcua_bridge.f90 | $(BUILD)
 	$(FC) $(FFLAGS) -c $< -o $@
 
-$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+$(GUI_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -lwinmm -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
-$(GUI_OFFLINE_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(BUILD)/opcua_stub.o
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(BUILD)/opcua_stub.o $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+$(GUI_OFFLINE_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(BUILD)/opcua_stub.o
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_REL) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(BUILD)/opcua_stub.o $(GUI_RES) -o $@ -mwindows -lstdc++ -lgdiplus -lwinmm -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 gui-debug: $(GUI_DEBUG_EXE)
 
-$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(OPCUA_OBJ)
-	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
+$(GUI_DEBUG_EXE): gui/gui_win32.f90 $(OBJS) $(OPCUA_F_OBJ) $(GUI_RES) $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(OPCUA_OBJ)
+	$(FC) $(FFLAGS_COMMON) $(FFLAGS_DBG) $(OBJS) $(OPCUA_F_OBJ) $< $(GUI_NATIVE_OBJ) $(GUI_AUDIO_OBJ) $(OPCUA_OBJ) $(GUI_RES) -o $@ -lstdc++ -lgdiplus -lwinmm -luser32 -lgdi32 -lcomctl32 -lkernel32 -lws2_32 -liphlpapi
 
 $(GUI_RES): gui/app_icon.rc $(GUI_ICON) | $(BUILD)
 	windres $< -O coff -o $@
@@ -230,6 +237,4 @@ clean:
 download-opcua:
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.c -o gui/open62541.c
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.h -o gui/open62541.h
-	sed -i 's|^#define UA_ARCHITECTURE_POSIX|/* #undef UA_ARCHITECTURE_POSIX */|' gui/open62541.h
-	sed -i 's|^\/\* #undef UA_ARCHITECTURE_WIN32 \*\/|#define UA_ARCHITECTURE_WIN32|' gui/open62541.h
-	sed -i 's|^#define UA_ENABLE_ENCRYPTION_MBEDTLS|/* #undef UA_ENABLE_ENCRYPTION_MBEDTLS */|' gui/open62541.h
+	python scripts/patch_open62541_win32.py gui/open62541.h

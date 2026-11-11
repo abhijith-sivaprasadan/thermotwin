@@ -38,6 +38,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: WM_COMMAND = 273_c_int
     integer(c_int), parameter :: WM_TIMER = 275_c_int
     integer(c_int), parameter :: WM_HSCROLL = 276_c_int
+    integer(c_int), parameter :: WM_MOUSEWHEEL = 522_c_int
+    integer(c_int), parameter :: VK_PRIOR = 33_c_int
+    integer(c_int), parameter :: VK_NEXT  = 34_c_int
     integer(c_int), parameter :: WM_MOUSEMOVE = 512_c_int
     integer(c_int), parameter :: WM_LBUTTONDOWN = 513_c_int
     integer(c_int), parameter :: WM_LBUTTONUP = 514_c_int
@@ -85,6 +88,8 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
+    integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
+    integer(c_int), parameter :: VK_V   = 86_c_int   ! cycle annunciation volume
     integer(c_int), parameter :: VK_A   = 65_c_int   ! toggle DNN adapting
     integer(c_int), parameter :: VK_T   = 84_c_int   ! Ctrl+T theme toggle
     integer(c_int), parameter :: VK_C   = 67_c_int
@@ -218,6 +223,9 @@ module thermotwin_win32_gui
     integer, parameter :: ICON_OU  = 6
     integer, parameter :: ALARM_COUNT = 8
     integer, parameter :: ALARM_LOG_N = 36
+    integer, parameter :: ALARM_P2_SHELVE_SECONDS = 600
+    real(dp), parameter :: ALARM_P1_REPEAT_S = 8.0_dp
+    real(dp), parameter :: ALARM_P2_REPEAT_S = 20.0_dp
 
     integer(c_int), parameter :: CANVAS_W = 1280_c_int
     integer(c_int), parameter :: CANVAS_H = 940_c_int
@@ -692,6 +700,32 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function hmi_native_init
 
+        ! Original sound profiles are synthesised as PCM and queued asynchronously
+        ! through WinMM. No generic Windows MessageBeep sounds are used.
+        function hmi_alarm_audio_play(priority, volume_pct) bind(C, name="hmi_alarm_audio_play") result(rc)
+            import :: c_int
+            integer(c_int), value :: priority, volume_pct
+            integer(c_int) :: rc
+        end function hmi_alarm_audio_play
+
+        function hmi_alarm_has_audio_device() bind(C, name="hmi_alarm_has_audio_device") result(rc)
+            import :: c_int
+            integer(c_int) :: rc
+        end function hmi_alarm_has_audio_device
+
+        subroutine hmi_alarm_audio_tick() bind(C, name="hmi_alarm_audio_tick")
+        end subroutine hmi_alarm_audio_tick
+
+        subroutine hmi_alarm_audio_stop() bind(C, name="hmi_alarm_audio_stop")
+        end subroutine hmi_alarm_audio_stop
+
+        function hmi_save_bitmap_png(hbitmap, lpPath) bind(C, name="hmi_save_bitmap_png") result(ok)
+            import :: c_int, c_ptr
+            type(c_ptr), value :: hbitmap
+            type(c_ptr), value :: lpPath
+            integer(c_int) :: ok
+        end function hmi_save_bitmap_png
+
         function hmi_save_window_png(hwnd, lpPath) bind(C, name="hmi_save_window_png") result(ok)
             import :: c_int, c_ptr
             type(c_ptr), value :: hwnd
@@ -775,6 +809,17 @@ module thermotwin_win32_gui
             integer(c_int), value :: n_pts, color, width
         end subroutine hmi_draw_polyline
 
+        subroutine hmi_push_clip(hdc,left,top,right,bottom) bind(C,name="hmi_push_clip")
+            import :: c_ptr,c_int
+            type(c_ptr), value :: hdc
+            integer(c_int), value :: left,top,right,bottom
+        end subroutine hmi_push_clip
+
+        subroutine hmi_pop_clip(hdc) bind(C,name="hmi_pop_clip")
+            import :: c_ptr
+            type(c_ptr), value :: hdc
+        end subroutine hmi_pop_clip
+
         subroutine hmi_begin_frame(hdc) bind(C, name="hmi_begin_frame")
             import :: c_ptr
             type(c_ptr), value :: hdc
@@ -817,6 +862,8 @@ module thermotwin_win32_gui
     integer :: layout_slider_y(6) = [132, 218, 304, 390, 476, 562]
     integer :: layout_button_y = 682
     integer :: layout_footer_y = 820
+    integer :: control_scroll_y = 0
+    integer :: control_scroll_max = 0
     integer :: layout_nav_left = 366
     integer :: layout_nav_top = 20
     integer :: layout_nav_w = 58
@@ -841,11 +888,21 @@ module thermotwin_win32_gui
     logical :: alarm_seen(ALARM_COUNT) = .false.
     logical :: alarm_ack(ALARM_COUNT) = .false.
     logical :: alarm_shelved(ALARM_COUNT) = .false.
+    real(dp) :: alarm_shelve_until_s(ALARM_COUNT) = 0.0_dp
+    logical :: alarm_audio_enabled = .true.
+    logical :: alarm_audio_silenced = .false.
+    logical :: alarm_audio_new_event = .false.
+    integer :: alarm_volume_pct = 65
+    integer :: alarm_audio_result = 1
+    real(dp) :: alarm_last_tone_s = -1.0e9_dp
     integer :: alarm_log_count = 0
     real(dp) :: alarm_log_time(ALARM_LOG_N) = 0.0_dp
     character(len=20) :: alarm_log_name(ALARM_LOG_N) = ""
     character(len=8) :: alarm_log_state(ALARM_LOG_N) = ""
     logical :: native_renderer_ready = .false.
+    ! CI-only native screenshot capture, completely inactive in normal operation.
+    logical :: visual_qa_mode = .false.
+    integer :: visual_qa_ticks = 0
     type(c_ptr) :: back_memdc = c_null_ptr
     type(c_ptr) :: back_bitmap = c_null_ptr
     type(c_ptr) :: back_old_bitmap = c_null_ptr
@@ -1017,7 +1074,9 @@ contains
         integer(c_intptr_t) :: lres
         type(PaintStruct) :: ps
         type(c_ptr) :: hdc
-        integer(c_int) :: ok
+        integer(c_int) :: ok, wheel_delta
+        character(len=8) :: qa_env
+        integer :: qa_status
 
         select case (msg)
         case (WM_CREATE)
@@ -1028,6 +1087,15 @@ contains
             call engine_init(grid)
             call load_hmi_config()
             call apply_theme()                 ! [6.0-P1] activate the selected palette at launch
+            qa_env = ""
+            call get_environment_variable("THERMOTWIN_GUI_VISUAL_QA",qa_env,status=qa_status)
+            visual_qa_mode = qa_status==0 .and. trim(qa_env)=="1"
+            visual_qa_ticks = 0
+            if (visual_qa_mode) then
+                boot_ticks = 0
+                call set_hmi_screen(SCREEN_OVERVIEW)
+                call log_debug("visual QA original GUI screenshots enabled")
+            end if
             call refresh_model(grid)
             call append_history(grid)
             history_sample_ms_accum = 0
@@ -1062,6 +1130,7 @@ contains
             end if
             call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
             call update_alarm_workflow()
+            call update_alarm_audio()
             call flush_opcua_tags()
             call opcua_iterate()
             history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
@@ -1073,6 +1142,39 @@ contains
             if (boot_ticks > 0) boot_ticks = boot_ticks - 1
             if (notice_ticks > 0) notice_ticks = notice_ticks - 1
             call update_demo_tour()
+            if (visual_qa_mode) then
+                visual_qa_ticks = visual_qa_ticks + 1
+                select case(visual_qa_ticks)
+                case(12)
+                    call visual_qa_capture("build\gui-visual-qa\01-original-overview.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\01-original-overview-1536.png")
+                case(13)
+                    call set_hmi_screen(SCREEN_GT)
+                case(24)
+                    call visual_qa_capture("build\gui-visual-qa\02-original-turbine.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\02-original-turbine-1536.png")
+                case(25)
+                    call set_hmi_screen(SCREEN_ALARMS)
+                case(36)
+                    call visual_qa_capture("build\gui-visual-qa\03-original-alarms.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\03-original-alarms-1536.png")
+                case(37)
+                    grid%demand_MW=DEMAND_MAX_MW
+                    grid%renewable_MW=0.0_dp
+                case(84)
+                    call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
+                case(85)
+                    control_scroll_y=huge(1) ! test the last controls remain reachable
+                case(87)
+                    call visual_qa_capture("build\gui-visual-qa\05-controls-bottom.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\05-controls-bottom-1536.png")
+                case(90)
+                    ok=DestroyWindow(hwnd)
+                    lres=0_c_intptr_t
+                    return
+                end select
+            end if
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
             return
@@ -1081,6 +1183,23 @@ contains
             call handle_mouse_down(hwnd, mouse_x(lParam), mouse_y(lParam))
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
+            return
+
+        case (WM_MOUSEWHEEL)
+            if (mouse_hover_valid .and. mouse_hover_x>=layout_control_left .and. &
+                mouse_hover_x<=layout_control_left+layout_control_w) then
+                wheel_delta=int(ibits(wParam,16,16),c_int)
+                if(wheel_delta>=32768_c_int) wheel_delta=wheel_delta-65536_c_int
+                if (wheel_delta/=0_c_int) then
+                    control_scroll_y=max(0,min(control_scroll_max,control_scroll_y- &
+                        merge(92,-92,wheel_delta>0_c_int)))
+                    call compute_layout_from_window(hwnd)
+                    call invalidate_dashboard(hwnd)
+                    lres=0_c_intptr_t
+                    return
+                end if
+            end if
+            lres=DefWindowProcA(hwnd,msg,wParam,lParam)
             return
 
         case (WM_MOUSEMOVE)
@@ -1147,6 +1266,7 @@ contains
             call save_hmi_config()
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
             call opcua_stop()
+            call hmi_alarm_audio_stop()
             call destroy_back_buffer()
             call destroy_fonts()
             if (native_renderer_ready) call hmi_native_shutdown()
@@ -1202,7 +1322,7 @@ contains
         layout_slider_x = layout_control_left + 26
         layout_slider_w = layout_control_w - 58
 
-        first_slider_y = layout_control_top + 116
+        first_slider_y = layout_control_top + 140  ! space for scroll affordance
         available_control = max(480, layout_control_bottom - layout_control_top - 310)
         slider_gap = min(max(ui_slider_gap_min(), available_control / 6), ui_slider_gap_max())
         layout_slider_y(1) = first_slider_y
@@ -1212,8 +1332,15 @@ contains
         layout_slider_y(5) = first_slider_y + 4 * slider_gap
         layout_slider_y(6) = first_slider_y + 5 * slider_gap
 
-        layout_button_y = min(layout_control_bottom - ui_control_stack_h(), layout_slider_y(6) + 62)
-        layout_footer_y = layout_control_bottom - 50
+        ! Preserve the original sliders AND the dispatch/scenario/export stack.
+        ! Scroll the body instead of pushing all buttons into the lower sliders.
+        layout_button_y=layout_slider_y(6)+66
+        layout_footer_y=layout_control_bottom-50
+        control_scroll_max=max(0, layout_button_y+6*ui_button_step()+ &
+            158+ui_button_h()-(layout_footer_y-22))
+        control_scroll_y=min(max(0,control_scroll_y),control_scroll_max)
+        layout_slider_y=layout_slider_y-control_scroll_y
+        layout_button_y=layout_button_y-control_scroll_y
 
         layout_nav_left = layout_control_left + layout_control_w + layout_gap
         layout_nav_top = layout_control_top
@@ -1342,6 +1469,17 @@ contains
             return
         end if
 
+        ! Click-to-scroll track in the existing control panel; no hidden
+        ! setpoints or duplicate action buttons.
+        if (point_in_rect(x,y,layout_control_left+layout_control_w-20,layout_control_top+76, &
+            layout_control_left+layout_control_w-2,layout_footer_y-24)) then
+            control_scroll_y=max(0,min(control_scroll_max, &
+                (y-layout_control_top-76)*control_scroll_max / &
+                max(1,layout_footer_y-layout_control_top-100)))
+            call compute_layout_from_window(hwnd)
+            active_control=ID_NONE
+            return
+        end if
         nav_target = hit_test_nav(x, y)
         if (nav_target == NAV_RAIL_TOGGLE) then
             nav_rail_collapsed = .not. nav_rail_collapsed
@@ -1593,6 +1731,14 @@ contains
         end if
 
         select case (kval)
+        case (VK_PRIOR)
+            control_scroll_y=max(0,control_scroll_y-180)
+            call compute_layout_from_window(hwnd)
+            return
+        case (VK_NEXT)
+            control_scroll_y=min(control_scroll_max,control_scroll_y+180)
+            call compute_layout_from_window(hwnd)
+            return
         case (VK_F1)
             if (hmi_screen == SCREEN_OVERVIEW) then
                 overview_detail = .not. overview_detail   ! [5.0-B] toggle flagship <-> detail
@@ -1658,6 +1804,12 @@ contains
             grid%rl_mode = .not. grid%rl_mode
         case (VK_A)
             grid%dnn_adapting = .not. grid%dnn_adapting
+        case (VK_B)
+            call toggle_alarm_audio()
+        case (VK_V)
+            alarm_volume_pct = mod(alarm_volume_pct+25,101)
+            if (alarm_volume_pct<25) alarm_volume_pct=25
+            call set_notice("Alarm cue output level "//trim(int_text(alarm_volume_pct))//"%")
         case (VK_T)
             hmi_theme = modulo(hmi_theme + 1, THEME_COUNT)   ! [6.0] Blueprint -> Classic dark -> Classic light
             call apply_theme()
@@ -2024,6 +2176,10 @@ contains
                 color_blind_safe = ival /= 0
             case ("nav_rail_collapsed")
                 nav_rail_collapsed = ival /= 0
+            case ("alarm_audio_enabled")
+                alarm_audio_enabled = ival /= 0
+            case ("alarm_volume_pct")
+                alarm_volume_pct = min(100,max(0,ival))
             end select
         end do
         close(unit)
@@ -2050,6 +2206,8 @@ contains
         write(unit, '("ui_scale_pct ",I0)') ui_scale_pct
         write(unit, '("color_blind_safe ",I0)') merge(1, 0, color_blind_safe)
         write(unit, '("nav_rail_collapsed ",I0)') merge(1, 0, nav_rail_collapsed)
+        write(unit, '("alarm_audio_enabled ",I0)') merge(1, 0, alarm_audio_enabled)
+        write(unit, '("alarm_volume_pct ",I0)') alarm_volume_pct
         write(unit, "(A)") "units SI"
         write(unit, "(A)") "api_eia_key"
         write(unit, "(A)") "api_entsoe_token"
@@ -2061,6 +2219,11 @@ contains
         alarm_seen = .false.
         alarm_ack = .false.
         alarm_shelved = .false.
+        alarm_shelve_until_s = 0.0_dp
+        alarm_audio_silenced = .false.
+        alarm_audio_new_event = .false.
+        alarm_last_tone_s = -1.0e9_dp
+        call hmi_alarm_audio_stop()
         alarm_log_count = 0
         alarm_log_name = ""
         alarm_log_state = ""
@@ -2078,17 +2241,91 @@ contains
                 alarm_seen(i) = .true.
                 alarm_ack(i) = .false.
                 alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
+                alarm_audio_silenced = .false.
+                alarm_audio_new_event = .true.
                 call log_alarm_event(i, "UNACK")
             else if (.not. states(i) .and. alarm_prev(i)) then
                 alarm_seen(i) = .true.
                 alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
                 call log_alarm_event(i, "RTN")
             else if (states(i)) then
                 alarm_seen(i) = .true.
             end if
         end do
+        ! Auto-unshelve after ten minutes of model elapsed time. A standing
+        ! unacknowledged alarm then returns to the annunciation queue.
+        do i = 1, ALARM_COUNT
+            if (.not.alarm_shelved(i)) cycle
+            if (grid%elapsed_s >= alarm_shelve_until_s(i)) then
+                alarm_shelved(i) = .false.
+                alarm_shelve_until_s(i) = 0.0_dp
+                alarm_audio_new_event = .true.
+                call log_alarm_event(i, "EXPIRE")
+            end if
+        end do
         alarm_prev = states
     end subroutine update_alarm_workflow
+
+    subroutine update_alarm_audio()
+        logical :: states(ALARM_COUNT)
+        integer :: i, priority
+        integer(c_int) :: result
+        real(dp) :: repeat_s
+        call hmi_alarm_audio_tick()
+        if (visual_qa_mode) return
+        if (.not.alarm_audio_enabled .or. alarm_audio_silenced) return
+        call current_alarm_states(states)
+        priority = 0
+        do i=1,ALARM_COUNT
+            if (.not.states(i) .or. alarm_ack(i) .or. alarm_shelved(i)) cycle
+            if (trim(alarm_priority_text(i)) == "P1") then
+                priority = 1
+                exit
+            end if
+            priority = 2
+        end do
+        if (priority==0) then
+            alarm_audio_new_event = .false.
+            alarm_last_tone_s = -1.0e9_dp
+            call hmi_alarm_audio_stop()
+            return
+        end if
+        repeat_s=merge(ALARM_P1_REPEAT_S,ALARM_P2_REPEAT_S,priority==1)
+        if (.not.alarm_audio_new_event .and. grid%elapsed_s-alarm_last_tone_s<repeat_s) return
+        result=hmi_alarm_audio_play(int(priority,c_int),int(alarm_volume_pct,c_int))
+        if (result == 1_c_int) then
+            alarm_last_tone_s = grid%elapsed_s
+            alarm_audio_new_event = .false.
+            alarm_audio_result = 1
+        else if (result < 0_c_int) then
+            ! Output device missing: keep visual priority/ack state; avoid
+            ! logging an audio error every timer tick.
+            alarm_audio_result = int(result)
+            alarm_last_tone_s = grid%elapsed_s
+            alarm_audio_new_event = .false.
+        end if
+    end subroutine update_alarm_audio
+
+    subroutine silence_alarm_audio()
+        alarm_audio_silenced = .true.
+        alarm_audio_new_event = .false.
+        call hmi_alarm_audio_stop()
+        call set_notice("Audio silenced. Standing alarms are NOT acknowledged.")
+        call log_debug("operator: audio silenced; alarm acknowledgement unchanged")
+    end subroutine silence_alarm_audio
+
+    subroutine toggle_alarm_audio()
+        alarm_audio_enabled = .not.alarm_audio_enabled
+        alarm_audio_silenced = .false.
+        if (.not.alarm_audio_enabled) then
+            call hmi_alarm_audio_stop()
+        else
+            alarm_audio_new_event = .true.
+        end if
+        call set_bool_notice("Original alarm audio enabled.","Alarm audio muted; visuals active.",alarm_audio_enabled)
+    end subroutine toggle_alarm_audio
 
     subroutine ack_all_alarms()
         logical :: states(ALARM_COUNT)
@@ -2114,8 +2351,10 @@ contains
 
         call current_alarm_states(states)
         do i = 1, ALARM_COUNT
-            if (states(i) .and. alarm_seen(i)) then
+            if (states(i) .and. alarm_seen(i) .and. &
+                trim(alarm_priority_text(i)) == "P2" .and. .not.alarm_shelved(i)) then
                 alarm_shelved(i) = .true.
+                alarm_shelve_until_s(i) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
                 call log_alarm_event(i, "SHLV")
             end if
         end do
@@ -2128,6 +2367,8 @@ contains
             if (alarm_shelved(i)) call log_alarm_event(i, "UNSHLV")
         end do
         alarm_shelved = .false.
+        alarm_shelve_until_s = 0.0_dp
+        alarm_audio_new_event = .true.
     end subroutine unshelve_all_alarms
 
     subroutine log_alarm_event(alarm_id, state_text)
@@ -2188,6 +2429,16 @@ contains
             handled = .true.
             return
         end if
+        if (point_in_rect(x, y, bx + 400, btn_y, bx + 503, btn_y + 34)) then
+            call silence_alarm_audio()
+            handled = .true.
+            return
+        end if
+        if (point_in_rect(x, y, bx + 513, btn_y, bx + 628, btn_y + 34)) then
+            call toggle_alarm_audio()
+            handled = .true.
+            return
+        end if
 
         call current_alarm_states(states)
         row_y = btn_y + 122
@@ -2197,8 +2448,15 @@ contains
                 if (alarm_seen(i) .and. states(i) .and. .not. alarm_ack(i)) then
                     alarm_ack(i) = .true.
                     call log_alarm_event(i, "ACK")
-                else if (alarm_seen(i) .and. states(i)) then
-                    alarm_shelved(i) = .not. alarm_shelved(i)
+                else if (alarm_seen(i) .and. states(i) .and. &
+                         trim(alarm_priority_text(i)) == "P2") then
+                    alarm_shelved(i) = .not.alarm_shelved(i)
+                    if (alarm_shelved(i)) then
+                        alarm_shelve_until_s(i) = grid%elapsed_s + real(ALARM_P2_SHELVE_SECONDS,dp)
+                    else
+                        alarm_shelve_until_s(i) = 0.0_dp
+                        alarm_audio_new_event = .true.
+                    end if
                     call log_alarm_event(i, merge("SHLV  ", "UNSHLV", alarm_shelved(i)))
                 else if (alarm_seen(i)) then
                     alarm_seen(i) = .false.
@@ -2471,7 +2729,40 @@ contains
         end do
         idx = modulo(idx - 1 + delta, FOCUS_COUNT) + 1
         focus_control_id = FOCUS_IDS(idx)
+        call reveal_focused_control()
     end subroutine cycle_focus
+
+    subroutine reveal_focused_control()
+        integer :: target,step,by
+        target=-1
+        step=ui_button_step()
+        by=layout_button_y
+        select case(focus_control_id)
+        case(ID_DEMAND); target=layout_slider_y(1)
+        case(ID_RENEWABLE); target=layout_slider_y(2)
+        case(ID_STORAGE); target=layout_slider_y(3)
+        case(ID_GAS); target=layout_slider_y(4)
+        case(ID_AMBIENT); target=layout_slider_y(5)
+        case(ID_TIT); target=layout_slider_y(6)
+        case(ID_AUTO,ID_BALANCE); target=by
+        case(ID_CC_MODE,ID_FCR_HOLD); target=by+step
+        case(ID_ROI_MODE,ID_LOAD_STEP); target=by+2*step
+        case(ID_CLOUD_RAMP,ID_TURBINE_TRIP); target=by+3*step
+        case(ID_MARKET_PROFILE,ID_MARKET_REPLAY); target=by+4*step
+        case(ID_RESET); target=by+5*step
+        case(ID_SCN_NEXT); target=by+6*step+58
+        case(ID_SCN_PREV,ID_SCN_RUN_STOP); target=by+6*step+108
+        case(ID_EXPORT_CSV,ID_EXPORT_PDF); target=by+6*step+158
+        end select
+        if(target<0) return
+        if(target<layout_control_top+116) then
+            control_scroll_y=max(0,control_scroll_y-(layout_control_top+116-target))
+        else if(target+ui_button_h()>layout_footer_y-33) then
+            control_scroll_y=min(control_scroll_max, &
+                control_scroll_y+target+ui_button_h()-(layout_footer_y-33))
+        end if
+        call compute_layout(layout_canvas_w,layout_canvas_h)
+    end subroutine reveal_focused_control
 
     subroutine activate_focused_control()
         active_control = focus_control_id
@@ -2556,6 +2847,51 @@ contains
         demo_last_switch_tick = anim_tick
     end subroutine update_demo_tour
 
+    subroutine visual_qa_capture(path)
+        character(len=*), intent(in) :: path
+        character(kind=c_char), allocatable, target :: cpath(:)
+        integer(c_int) :: saved
+        if (.not.visual_qa_mode .or. .not.c_associated(h_main)) return
+        call make_c_string(path,cpath)
+        saved=hmi_save_window_png(h_main,c_loc(cpath))
+        if (saved==0_c_int) then
+            call log_debug("visual QA screenshot failed "//path)
+        else
+            call log_debug("visual QA screenshot saved "//path)
+        end if
+    end subroutine visual_qa_capture
+
+    subroutine visual_qa_capture_virtual(path)
+        ! The same native Fortran/GDI+ drawing primitives render to an
+        ! actual in-memory 1536x960 Win32 bitmap. No mock screen or scale-up.
+        character(len=*), intent(in) :: path
+        type(c_ptr) :: mem,bitmap,oldobj,ignored
+        character(kind=c_char), allocatable, target :: cpath(:)
+        integer(c_int) :: saved,deleted
+        if (.not.visual_qa_mode .or. .not.c_associated(back_memdc)) return
+        mem=CreateCompatibleDC(back_memdc)
+        bitmap=CreateCompatibleBitmap(back_memdc,1536_c_int,960_c_int)
+        if (.not.c_associated(mem) .or. .not.c_associated(bitmap)) then
+            if(c_associated(bitmap)) deleted=DeleteObject(bitmap)
+            if(c_associated(mem)) deleted=DeleteDC(mem)
+            return
+        end if
+        oldobj=SelectObject(mem,bitmap)
+        if (native_renderer_ready) call hmi_begin_frame(mem)
+        call draw_dashboard(mem,1536,960)
+        if (native_renderer_ready) call hmi_end_frame()
+        call make_c_string(path,cpath)
+        saved=hmi_save_bitmap_png(bitmap,c_loc(cpath))
+        ignored=SelectObject(mem,oldobj)
+        deleted=DeleteObject(bitmap)
+        deleted=DeleteDC(mem)
+        if (saved == 0_c_int) then
+            call log_debug("virtual native screenshot failed "//path)
+        else
+            call log_debug("virtual native screenshot saved "//path)
+        end if
+    end subroutine visual_qa_capture_virtual
+
     subroutine export_screen_png()
         character(kind=c_char), allocatable, target :: c_path(:)
         character(len=160) :: path
@@ -2583,6 +2919,10 @@ contains
         integer :: bx1, bx2, bx3, by, bw, bh, gap, step
 
         control_id = ID_NONE
+        if (point_in_rect(x,y,layout_control_left,layout_control_top, &
+            layout_control_left+layout_control_w,layout_control_bottom)) then
+            if (y<layout_control_top+70 .or. y>layout_footer_y-20) return
+        end if
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(1) - 38, &
                 layout_slider_x + layout_slider_w + 14, layout_slider_y(1) + 38)) control_id = ID_DEMAND
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(2) - 38, &
@@ -2884,9 +3224,14 @@ contains
         call hmi_fill_alpha_rect(hdc, int(x0 + w - 340, c_int), int(y0, c_int), &
             int(x0 + w, c_int), int(y0 + 44, c_int), COL_CYAN, 12_c_int)
         call draw_line(hdc, x0, y0 + 44, x0 + w, y0 + 44, COL_BORDER, 1)
-        write(title, '("ThermoTwin-F  |  Plant Control Console  |  ",I2," Hz  ",A)') &
-            nint(grid%nominal_frequency_Hz), trim(grid%market_power_zone)
-        call draw_title_text(hdc, inner_x + 10, y0 + 10, trim(title), COL_INK)
+        ! Keep the original blueprint header but prevent long mode/status
+        ! strings from painting over its title on smaller canvases.
+        if (w<850) then
+            title="ThermoTwin-F"
+        else
+            title="ThermoTwin-F  |  Plant Control Console"
+        end if
+        call draw_title_text(hdc,inner_x+10,y0+10,trim(title),COL_INK)
         if (grid%auto_balance) then
             auto_text = "AUTO"
         else
@@ -2909,10 +3254,15 @@ contains
         else
             plant_text = "GT ONLY"
         end if
-        write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
-            grid%elapsed_s, trim(plant_text), trim(auto_text), trim(dispatch_text), trim(reserve_text)
-        call draw_text(hdc, x0 + w - 490, y0 + 14, trim(subtitle), &
-            merge(COL_LIME, COL_AMBER, grid%auto_balance))
+        if(w>=850) then
+            write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
+                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(dispatch_text),trim(reserve_text)
+            call draw_text(hdc,x0+w-445,y0+14,trim(subtitle), &
+                merge(COL_LIME,COL_AMBER,grid%auto_balance))
+        else
+            write(subtitle,'("t=",F5.1,"s | ",A)') grid%elapsed_s,trim(auto_text)
+            call draw_text(hdc,x0+w-198,y0+14,trim(subtitle),COL_MUTED)
+        end if
         ! [?] shortcuts button — top-right of header
         block
             integer :: bx, bw2, by2, bh2
@@ -3220,6 +3570,9 @@ contains
         call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
         call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
+        call draw_text(hdc, title_x, top + 68, "WHEEL / PGDN  :  MORE CONTROLS", COL_DIM)
+        if (native_renderer_ready) call hmi_push_clip(hdc,int(left+4,c_int), &
+            int(top+70,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
 
         write(value, '(F5.1," MW")') grid%demand_MW
         call draw_custom_slider(hdc, ID_DEMAND, layout_slider_x, layout_slider_y(1), layout_slider_w, &
@@ -3433,6 +3786,20 @@ contains
             end if
         end if
 
+        if (native_renderer_ready) call hmi_pop_clip(hdc)
+        if (control_scroll_max>0) then
+            block
+                integer :: scroll_top,scroll_bot,track_h,thumb_y
+                scroll_top=top+78
+                scroll_bot=layout_footer_y-28
+                track_h=max(1,scroll_bot-scroll_top-34)
+                thumb_y=scroll_top+int(real(track_h)* &
+                    real(control_scroll_y)/real(max(1,control_scroll_max)))
+                call fill_box(hdc,right-15,scroll_top,right-10,scroll_bot,COL_BORDER_SOFT)
+                call fill_soft_box(hdc,right-19,thumb_y,right-6,thumb_y+34,COL_CYAN)
+                call stroke_soft_box(hdc,right-19,thumb_y,right-6,thumb_y+34,COL_BORDER,1)
+            end block
+        end if
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
         write(line, '("Scan ",I0," ms | trends 250 ms | ",A)') int(TIMER_MS), trim(grid%market_profile_name)
         call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)
@@ -5142,15 +5509,27 @@ contains
         call alarm_labels(labels)
         call alarm_colors(colors)
         active_count = count(states)
-        write(subtitle, '("ISA-18.2 workflow | active ",I0," | unack ",I0," | shelved ",I0)') &
+        write(subtitle, '("Model alarms | active ",I0," | unack ",I0," | shelved ",I0)') &
             active_count, count(alarm_seen .and. .not. alarm_ack), count(alarm_shelved)
+        if (.not.alarm_audio_enabled) then
+            subtitle=trim(subtitle)//" | AUDIO OFF"
+        else if (hmi_alarm_has_audio_device()==0_c_int) then
+            subtitle=trim(subtitle)//" | AUDIO DEVICE UNAVAILABLE"
+        else if (alarm_audio_silenced) then
+            subtitle=trim(subtitle)//" | AUDIO SILENCED"
+        else
+            subtitle=trim(subtitle)//" | ORIGINAL AUDIO ARMED"
+        end if
         call draw_screen_caption(hdc, ix, top_y, iw, SCREEN_FULL_LABEL(SCREEN_ALARMS), trim(subtitle))
 
         btn_y = top_y + 76
         call draw_industrial_button(hdc, ix, btn_y, ix + 110, btn_y + 34, "ACK ALL", COL_GREEN, .true.)
-        call draw_industrial_button(hdc, ix + 122, btn_y, ix + 250, btn_y + 34, "SHELVE ACTIVE", COL_AMBER, .false.)
+        call draw_industrial_button(hdc, ix + 122, btn_y, ix + 250, btn_y + 34, "SHELVE P2", COL_AMBER, .false.)
         call draw_industrial_button(hdc, ix + 262, btn_y, ix + 390, btn_y + 34, "UNSHELVE", COL_CYAN, .false.)
-        call draw_text(hdc, ix + 410, btn_y + 8, "Alarm actions and chronological event state", COL_MUTED)
+        call draw_industrial_button(hdc, ix + 400, btn_y, ix + 503, btn_y + 34, &
+            "SILENCE", COL_PANEL_ALT, alarm_audio_silenced)
+        call draw_industrial_button(hdc, ix + 513, btn_y, ix + 628, btn_y + 34, &
+            merge("AUDIO ON ", "AUDIO OFF",alarm_audio_enabled),COL_CYAN,alarm_audio_enabled)
 
         table_w = max(650, int(0.62_dp * real(iw, dp)))
         log_x = ix + table_w + 18
@@ -5184,7 +5563,7 @@ contains
             kp_gap = GAP_CARD
             kp_w   = (table_w - 16 - 3 * kp_gap) / 4
             kp_y   = btn_y + 82 + list_h + 32
-            call draw_section_title_width(hdc, ix, btn_y + 82 + list_h + 8, "Alarm performance  (ISA-18.2)", table_w)
+            call draw_section_title_width(hdc, ix, btn_y + 82 + list_h + 8, "Alarm performance  (simulated)", table_w)
             write(vtxt, '(I0)') active_count
             call draw_kpi_card(hdc, ix,                   kp_y, kp_w, 76, "STANDING", trim(vtxt), merge(COL_RED, COL_GREEN, active_count > 0))
             write(vtxt, '(I0)') count(alarm_seen .and. .not. alarm_ack)
@@ -5198,7 +5577,7 @@ contains
             call draw_kpi_card(hdc, kc,                   kp_y, kp_w, 76, "BY PRIORITY", trim(adjustl(vtxt)), merge(COL_RED, COL_MUTED, nP1 > 0))
         end block
 
-        ! [5.0-A4] Right column: live ISA-18.2 state summary above the chronological log
+        ! [5.0-A4] Right column: simulated alarm-state summary above the chronological log
         ! (the log alone was a tall, empty panel during calm operation).
         call draw_section_title_width(hdc, log_x, btn_y + 54, "Alarm state summary", log_w)
         block
