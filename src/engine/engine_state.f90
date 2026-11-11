@@ -97,7 +97,7 @@ module engine_state
     integer, parameter :: GT_CAUSE_NONE=0, GT_CAUSE_MANUAL=1
     integer, parameter :: GT_CAUSE_OVERSPEED=2, GT_CAUSE_COMBUST=3, GT_CAUSE_OIL=4
     integer, parameter :: GT_CAUSE_START_ABORT=5  ! loss of restart permissive during a simulated start
-    integer, parameter :: GT_TRIP_LOG_N=24
+    integer, parameter :: GT_TRIP_LOG_N=64
     integer,  parameter, public :: HISTORY_N = 240
     integer,  parameter, public :: DA_H     = 24   ! day-ahead planning horizon (hours)
     integer,  parameter, public :: GT_OPT_N = 20   ! P2 optimizer scan points (30%→100%)
@@ -292,6 +292,7 @@ module engine_state
         real(dp) :: eq_value(EQ_N) = 0.0_dp
         real(dp) :: eq_breach_s(EQ_N) = 0.0_dp
         real(dp) :: eq_clear_s(EQ_N) = 0.0_dp
+        real(dp) :: eq_alarm_since_s(EQ_N) = -1.0_dp ! timestamp of first confirmed rising edge
         ! Instructor/test sensor inputs. No values are invented by the engine.
         logical :: eq_training_present(EQ_N) = .false.
         real(dp) :: eq_training_value(EQ_N) = 0.0_dp
@@ -312,12 +313,17 @@ module engine_state
         logical :: gt_trip_ack = .false.
         logical :: gt_training_bypass = .false.
         logical :: gt_breaker_closed = .true.
+        logical :: gt_generator_excitation_on = .true. ! simulated breaker-adjacent subsystem
+        logical :: gt_start_motor_on = .false. ! synthetic starting auxiliary, no measured current
         logical :: gt_fuel_valve_open = .true.
         logical :: gt_flame_on = .true.
         logical :: gt_blowoff_open = .false.
         logical :: gt_lube_support_on = .true.
         logical :: gt_turning_gear_on = .false.
         logical :: gt_purge_timer_done = .false.
+        logical :: gt_followon_alarm_seen(EQ_N) = .false. ! never overwrite first-out
+        real(dp) :: gt_lockout_time_s = -1.0_dp
+        real(dp) :: gt_restart_request_time_s = -1.0_dp
         integer :: gt_trip_seq = 0
         integer :: gt_trip_log_count = 0
         real(dp) :: gt_trip_log_s(GT_TRIP_LOG_N) = 0.0_dp
