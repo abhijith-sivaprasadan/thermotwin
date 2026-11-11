@@ -6471,10 +6471,12 @@ contains
         case(DRILL_GRID)
             center_y=y+h/2
             write(val,'(F5.1," MW")') grid%gas_power_MW
-            call draw_pid_generator(hdc,x+w/4,center_y,26, &
+            ! Large enough for BOTH the tag and numeric MW value inside
+            ! the circle; the earlier 26px radius clipped the numeric readout.
+            call draw_pid_generator(hdc,x+w/4,center_y,42, &
                 "G-401",trim(adjustl(val)),COL_CYAN)
             col=merge(COL_GREEN,COL_RED,grid%gt_breaker_closed)
-            call draw_pid_arrow_line(hdc,x+w/4+28,center_y,x+3*w/4,center_y,col,2)
+            call draw_pid_arrow_line(hdc,x+w/4+44,center_y,x+3*w/4,center_y,col,2)
             call draw_line(hdc,x+3*w/4,center_y-42,x+3*w/4,center_y+42,COL_CYAN,3)
             write(val,'("f=",F6.3," Hz / dP=",F5.1," MW")') &
                 grid%frequency_Hz,grid%imbalance_MW
