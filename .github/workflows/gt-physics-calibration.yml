@@ -1,0 +1,45 @@
+name: Turbine-specific physical calibration contracts and public-data readiness
+on:
+  pull_request:
+    paths:
+      - 'scripts/calibrate_gt_physics.py'
+      - 'scripts/test_calibrate_gt_physics.py'
+      - '.github/workflows/gt-physics-calibration.yml'
+      - 'docs/GT_PHYSICAL_CALIBRATION_PROTOCOL.md'
+  push:
+    paths:
+      - 'scripts/calibrate_gt_physics.py'
+      - 'scripts/test_calibrate_gt_physics.py'
+      - '.github/workflows/gt-physics-calibration.yml'
+      - 'docs/GT_PHYSICAL_CALIBRATION_PROTOCOL.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-calibration-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install original Fortran model and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran make
+          python -m pip install numpy==2.2.6
+      - name: Compile the real original reduced-order Fortran cycle solver
+        run: make -j4 all
+      - name: Check source-gated physical parameter fitting and frozen-test behavior
+        run: python -m unittest scripts.test_calibrate_gt_physics -v
+      - name: Publish strictly BLOCKED public-source Brayton validation readiness
+        run: |
+          python -m scripts.calibrate_gt_physics --audit-public --output build/gt-physics/public_data_readiness.json
+          python -c "import json; from pathlib import Path; r=json.loads(Path('build/gt-physics/public_data_readiness.json').read_text()); assert r['status']=='BLOCKED_NO_ELIGIBLE_MATCHED_PLANT_MEASUREMENTS' and not r['real_engine_accuracy_established']; assert set(r['public_dataset_gate'])=={'UCI_551','SMART_GTPP','UCI_994_MICRO_GT'}; assert all(not s['usable_for_industrial_brayton_calibration'] for s in r['public_dataset_gate'].values())"
+      - name: Preserve only the honest public measured-data readiness assessment
+        uses: actions/upload-artifact@v4
+        with:
+          name: physical-gt-calibration-public-source-readiness-blocked
+          path: build/gt-physics/public_data_readiness.json
+          if-no-files-found: error
