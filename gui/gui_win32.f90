@@ -6413,32 +6413,44 @@ contains
             center_y=y+h/2
             if(alarm_drill_selected==8) then
                 call draw_pid_arrow_line(hdc,x+16,center_y,x+w/3-38,center_y,COL_RED,2)
+                write(val,'(F5.1,"K")') grid%hrsg_pinch_K
                 call draw_pid_equipment(hdc,x+w/3,center_y,78,62, &
-                    "H-501","HRSG",col)
+                    "H-501",trim(adjustl(val)),col)
                 call draw_pid_arrow_line(hdc,x+w/3+40,center_y,x+2*w/3-40,center_y,COL_CYAN,2)
+                write(val,'(F5.1,"MW")') grid%steam_power_MW
                 call draw_pid_turbine(hdc,x+2*w/3,center_y,80,62, &
-                    "ST-601","STEAM",COL_BLUE)
+                    "ST-601",trim(adjustl(val)),COL_BLUE)
                 call draw_text(hdc,x+12,y+h-25,"GT exhaust -> HRSG -> steam (MODEL)",COL_MUTED)
             else
                 call draw_pid_compressor(hdc,x+w/4,center_y,70,62, &
                     "C-101","AIR",COL_CYAN)
                 call draw_pid_arrow_line(hdc,x+w/4+36,center_y, &
                     x+3*w/4-40,center_y,COL_AMBER,2)
+                write(val,'(F5.1," kPa")') obs%value
                 call draw_pid_combustor(hdc,x+3*w/4,center_y,78,62, &
-                    "CB-201","TRAIN",col)
+                    "CB-201",trim(adjustl(val)),col)
                 call draw_text(hdc,x+12,y+h-25,"Combustor instrument: TRAINING only",COL_MUTED)
             end if
         case(DRILL_GRID)
             center_y=y+h/2
-            call draw_pid_generator(hdc,x+w/4,center_y,26,"G-401","GT",COL_CYAN)
-            call draw_pid_arrow_line(hdc,x+w/4+28,center_y,x+3*w/4,center_y,COL_GREEN,2)
+            write(val,'(F5.1," MW")') grid%gas_power_MW
+            call draw_pid_generator(hdc,x+w/4,center_y,26, &
+                "G-401",trim(adjustl(val)),COL_CYAN)
+            col=merge(COL_GREEN,COL_RED,grid%gt_breaker_closed)
+            call draw_pid_arrow_line(hdc,x+w/4+28,center_y,x+3*w/4,center_y,col,2)
             call draw_line(hdc,x+3*w/4,center_y-42,x+3*w/4,center_y+42,COL_CYAN,3)
-            call draw_text(hdc,x+12,y+h-26,"GRID f / SUPPLY - SERVED DEMAND",COL_MUTED)
+            write(val,'("f=",F6.3," Hz / dP=",F5.1," MW")') &
+                grid%frequency_Hz,grid%imbalance_MW
+            call draw_text(hdc,x+12,y+h-26,trim(adjustl(val)),COL_MUTED)
         case(DRILL_BESS)
             center_y=y+h/2
-            call draw_pid_battery(hdc,x+w/4,center_y,80,62,"BESS","SOC",col)
+            write(val,'(F5.1,"%")') grid%battery_soc_pct
+            call draw_pid_battery(hdc,x+w/4,center_y,80,62, &
+                "BESS",trim(adjustl(val)),col)
             call draw_pid_arrow_line(hdc,x+w/4+42,center_y,x+3*w/4-45,center_y,COL_CYAN,2)
-            call draw_pid_inverter(hdc,x+3*w/4,center_y,90,62,"INV-501","MW",COL_BLUE)
+            write(val,'(SP,F5.1,"MW")') grid%storage_MW
+            call draw_pid_inverter(hdc,x+3*w/4,center_y,90,62, &
+                "INV-501",trim(adjustl(val)),COL_BLUE)
             call draw_text(hdc,x+12,y+h-25,"Actual BESS MW / energy-limited",COL_MUTED)
         case default
             center_y=y+h/2
