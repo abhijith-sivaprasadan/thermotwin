@@ -28,7 +28,7 @@ module equipment_protection
         [0.50_dp, 0.25_dp, 2.0_dp, 1.0_dp, 1.0_dp, 2.0_dp, 0.50_dp]
     real(dp), parameter :: EQ_RELEASE_S(EQ_N) = &
         [1.0_dp, 1.0_dp, 2.0_dp, 2.0_dp, 2.0_dp, 3.0_dp, 1.0_dp]
-    real(dp), parameter, public :: EQ_INPUT_STALE_S = 5.0_dp
+    real(dp), parameter :: EQ_INPUT_STALE_S = 5.0_dp
 
 contains
 
