@@ -926,6 +926,8 @@ module thermotwin_win32_gui
     ! CI-only native screenshot capture, completely inactive in normal operation.
     logical :: visual_qa_mode = .false.
     integer :: visual_qa_ticks = 0
+    real(dp) :: visual_qa_frozen_time_s=-1.0_dp
+    real(dp) :: visual_qa_frozen_load_MW=-1.0_dp
     type(c_ptr) :: back_memdc = c_null_ptr
     type(c_ptr) :: back_bitmap = c_null_ptr
     type(c_ptr) :: back_old_bitmap = c_null_ptr
@@ -1324,8 +1326,21 @@ contains
                             ok=DestroyWindow(hwnd)
                             return
                         end if
+                        visual_qa_frozen_time_s=grid%elapsed_s
+                        visual_qa_frozen_load_MW=grid%demand_MW
                     end block
                 case(95)
+                    if(grid%elapsed_s/=visual_qa_frozen_time_s) then
+                        call log_debug("QA FAIL: frozen simulation advanced engine clock")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                    call handle_command(ID_LOAD_STEP)
+                    if(grid%demand_MW/=visual_qa_frozen_load_MW) then
+                        call log_debug("QA FAIL: frozen operator changed plant demand")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
                     call visual_qa_capture("build\gui-visual-qa\13-instructor-frozen.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\13-instructor-frozen-1536.png")
                 case(96)
