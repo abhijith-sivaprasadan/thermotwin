@@ -5812,7 +5812,7 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Plant phase",trim(phase),state_col);sy=sy+27
         call draw_value_pair(hdc,x+pad,sy,"First-out cause",trim(cause),COL_RED);sy=sy+27
         if(grid%gt_first_out/=GT_CAUSE_NONE) then
-            write(line,'("Simulation t = ",F8.2," s")') grid%gt_first_out_s
+            write(line,'(F7.2," s (sim)")') grid%gt_first_out_s
         else
             line="No recorded trip"
         end if
@@ -5824,7 +5824,7 @@ contains
         line="SHUT / FUEL ISOLATED"
         if(grid%gt_fuel_valve_open) line="OPEN (SIM)"
         call draw_value_pair(hdc,x+pad,sy,"Fuel isolation",trim(line),COL_MUTED);sy=sy+27
-        write(line,'("~",F6.2,"% of rated / ESTIMATE ONLY")') grid%gt_rotor_est_pct
+        write(line,'(F6.2,"% (estimated)")') grid%gt_rotor_est_pct
         call draw_value_pair(hdc,x+pad,sy,"Rotor coastdown",trim(line),COL_CYAN);sy=sy+27
         line="LUBE SUPPORT / ON (ASSUMED)"
         if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT / OFF"
@@ -5840,21 +5840,46 @@ contains
         line=gt_trip_reason_for_mask(mask)
         if(grid%gt_phase==GT_ONLINE) line="Normal simulation / no trip latch"
         call draw_text(hdc,x+pad,sy+8,trim(line),merge(COL_AMBER,COL_GREEN,mask/=0))
+        sy=sy+47
+        if(sy < y+height-112) then
+            call draw_section_title_width(hdc,x+pad,sy,"SIMULATED OPERATOR PATH",left_w-2*pad)
+            sy=sy+30
+            if(grid%gt_phase==GT_ONLINE) then
+                line="Normal: operator GT TRIP initiates isolation"
+            else if(grid%gt_phase==GT_RUNDOWN .or. grid%gt_phase==GT_TRIPPED) then
+                line="Wait for coastdown; fuel and generator isolated"
+            else if(grid%gt_phase==GT_LOCKOUT .and. .not.grid%gt_trip_ack) then
+                line="1) ACK FIRST  2) review permissives"
+            else if(grid%gt_phase==GT_LOCKOUT) then
+                line="Resolve conditions, then RESET TRIP"
+            else if(grid%gt_phase==GT_READY) then
+                line="Trip reset; use SIM RESTART for modeled purge"
+            else
+                line="Startup is TIMED SIMULATION - not verified OEM startup"
+            end if
+            call draw_text(hdc,x+pad,sy,trim(line),COL_CYAN)
+            call draw_text(hdc,x+pad,sy+28, &
+                "A real unit requires sensor, purge and breaker proof.",COL_MUTED)
+        end if
 
         call draw_section_title_width(hdc,right_x,y,"SEQUENCE OF EVENTS  /  MODEL TIME",right_w)
         call draw_panel_box(hdc,right_x,y+28,right_w,max(165,height-36))
         if(grid%gt_trip_log_count==0) then
             call draw_text(hdc,right_x+pad,y+44,"No trips in this simulation.",COL_DIM)
         else
+            ! Two-line records: short timestamp and clipped description.
+            ! Never paint a 54-character event over the neighboring panel.
             start_idx=max(1,grid%gt_trip_log_count- &
-               max(1,(max(165,height-36)-58)/26)+1)
+               max(1,(max(165,height-36)-70)/48)+1)
             sy=y+44
             do i=start_idx,grid%gt_trip_log_count
-                if(sy>y+height-26) exit
-                write(line,'(F7.1,"s  ",A)') grid%gt_trip_log_s(i), &
-                     trim(grid%gt_trip_log_text(i))
-                call draw_text(hdc,right_x+pad,sy,trim(adjustl(line)),COL_MUTED)
-                sy=sy+26
+                if(sy>y+height-48) exit
+                write(line,'("t=",F7.2," s  /  event ",I0)') grid%gt_trip_log_s(i),i
+                call draw_text(hdc,right_x+pad,sy,trim(adjustl(line)),COL_CYAN)
+                line=grid%gt_trip_log_text(i)
+                call draw_text(hdc,right_x+pad,sy+18, &
+                    line(1:min(len_trim(line),max(1,(right_w-2*pad)/8))),COL_MUTED)
+                sy=sy+48
             end do
         end if
     end subroutine draw_trip_sequence_panel

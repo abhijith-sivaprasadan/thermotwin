@@ -44,3 +44,6 @@
 Real GT flange-state data, rotor speed and shutdown torque tests, electrical relay settings, purge flow measurements, vibration/oil/bearing sensors, HRSG thermal inertia, grid dynamic calibration, and trained human operator testing are all needed for an industrial-confidence claim. The current repository does not supply these items.
 
 **Claims permitted**: reproducible numerical engineering research, bounded illustrative controls, original education-oriented HMI with explicitly marked proxies. **Claims not permitted**: demonstrated predictive performance on a real industrial GT, OEM-equivalent control, certified restart protection or standards compliance.
+## Additional regression-discovered misconception
+
+The old `turbine_trip.scn` and `gfm_bess_inertia.scn` assumed a full frequency return to 50 Hz after an event that *actually left the gas turbine producing at least 20%*. With the real modeled breaker/fuel trip, the reduced grid can remain short by 8–12 MW, settle below 49.5 Hz and invoke UFLS. Those old assertions were physically misleading and have been replaced with first-out, zero electric/fuel power, and sustained imbalance/frequency protection checks. The existence of a positive GFM synthesis term alone does **not** establish that GFM improves the nadir: that requires a matched counterfactual on/off experiment that is still missing.
