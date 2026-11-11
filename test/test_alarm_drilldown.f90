@@ -54,6 +54,7 @@ program test_alarm_drilldown
     call drill_observe(st,8,o)
     call ck("HRSG data unavailable when CC is not operating",.not.o%valid)
     st%combined_cycle=.true.
+    st%fleet_mode=.false. ! single-GT HRSG is the supported drill source
     call drill_observe(st,8,o)
     call ck("HRSG uses actual model pinch feasibility threshold",o%valid .and. o%limit==15.0_dp)
 
