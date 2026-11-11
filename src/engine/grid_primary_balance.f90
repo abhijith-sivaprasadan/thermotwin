@@ -16,7 +16,7 @@ contains
         real(dp),intent(in) :: dt_s
         real(dp) :: delta_f, target_pct, max_step
 
-        if(st%gt_phase/=GT_ONLINE .or. st%fleet_mode .or. &
+        if(st%gt_phase/=GT_ONLINE .or. st%fleet_mode .or. .not.st%governor_enabled .or. &
            st%gas_capacity_MW<=1.0e-9_dp) then
             ! A fleet governor is NOT modeled; no synthetic MW is injected.
             st%governor_offset_pct=0.0_dp
