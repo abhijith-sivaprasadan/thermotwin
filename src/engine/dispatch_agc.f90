@@ -285,6 +285,7 @@ contains
         st%BESS_primary_MW = 0.0_dp
         st%gfm_request_MW = 0.0_dp
         st%gfm_synth_MW = 0.0_dp
+        st%governor_enabled = .true.
         st%governor_offset_pct = 0.0_dp
         st%effective_gas_dispatch_pct = 82.0_dp
         st%served_demand_MW = 35.0_dp
