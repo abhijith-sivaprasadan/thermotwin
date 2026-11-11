@@ -10064,32 +10064,30 @@ contains
         integer(c_int), intent(in) :: color
         integer :: knob_x
         real(dp) :: f
+        integer(c_int) :: slider_color
+        logical :: trip_locked
         character(len=20) :: lo_text, hi_text
 
-        block
-            logical :: trip_locked
-            integer(c_int) :: slider_color
-            trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
-            slider_color=merge(COL_DIM,color,trip_locked)
+        trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
+        slider_color=merge(COL_DIM,color,trip_locked)
             call draw_text(hdc, x, y - 34, label, merge(COL_DIM,COL_INK,trip_locked))
             if(trip_locked) then
                 call draw_text(hdc,x+width-86,y-34,'TRIP LOCK',COL_AMBER)
             else
                 call draw_text(hdc,x+width-78,y-34,value_text,color)
             end if
-        end block
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
         ! Flat pill track
         call fill_soft_box(hdc, x, y + 2, x + width, y + 8, COL_PANEL_DEEP)
-        call fill_soft_box(hdc, x, y + 2, knob_x, y + 8, color)
+        call fill_soft_box(hdc, x, y + 2, knob_x, y + 8, slider_color)
         call stroke_soft_box(hdc, x, y + 2, x + width, y + 8, COL_BORDER_SOFT, 1)
         if (focus_control_id == control_id) then
             call stroke_soft_box(hdc, x - 10, y - 36, x + width + 10, y + 42, COL_CYAN, 1)
         end if
         ! Clean lozenge knob — no 3D serrations
         call fill_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, COL_PANEL_ALT)
-        call stroke_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, color, &
+        call stroke_soft_box(hdc, knob_x - 8, y - 7, knob_x + 8, y + 17, slider_color, &
             merge(2, 1, active_control == control_id))
         write(lo_text, '(I0)') nint(lo)
         write(hi_text, '(I0)') nint(hi)
