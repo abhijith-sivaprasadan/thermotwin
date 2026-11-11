@@ -157,6 +157,9 @@ program test_gt_trip_sequence
     ! Restart interlocks must remain asserted for the entire simulated
     ! start, including a final check before the breaker may close.
     call gt_trip_reset_state(guard)
+    guard%eq_alarm=.false.
+    guard%eq_source=EQ_SRC_UNAVAILABLE
+    guard%eq_training_present=.false.
     guard%gt_phase=GT_READY
     guard%gt_training_bypass=.true.
     guard%gt_pretrip_fuel_kg_s=1.0_dp
@@ -173,6 +176,9 @@ program test_gt_trip_sequence
         guard%gt_pretrip_fuel_kg_s==1.0_dp .and. guard%fuel_flow_kg_s==0.0_dp)
 
     call gt_trip_reset_state(guard)
+    guard%eq_alarm=.false.
+    guard%eq_source=EQ_SRC_UNAVAILABLE
+    guard%eq_training_present=.false.
     guard%gt_phase=GT_READY
     guard%gt_training_bypass=.true.
     call gt_trip_start(guard,accepted)
@@ -183,6 +189,9 @@ program test_gt_trip_sequence
         guard%gt_phase==GT_TRIPPED .and. guard%gt_first_out==GT_CAUSE_OIL)
 
     call gt_trip_reset_state(guard)
+    guard%eq_alarm=.false.
+    guard%eq_source=EQ_SRC_UNAVAILABLE
+    guard%eq_training_present=.false.
     guard%gt_phase=GT_READY
     guard%elapsed_s=10.0_dp
     guard%eq_source(EQ_OVERSPEED)=EQ_SRC_TRAINING
@@ -194,8 +203,14 @@ program test_gt_trip_sequence
     guard%eq_training_stamp_s=0.0_dp
     call check("cached TRAIN sources are insufficient when samples are stale", &
         btest(gt_trip_restart_mask(guard),3))
+    guard%eq_training_stamp_s=guard%elapsed_s
+    call check("fresh source-labeled samples clear input-quality block", &
+        .not.btest(gt_trip_restart_mask(guard),3))
 
     call gt_trip_reset_state(guard)
+    guard%eq_alarm=.false.
+    guard%eq_source=EQ_SRC_UNAVAILABLE
+    guard%eq_training_present=.false.
     guard%gt_phase=GT_SYNCHRONIZING
     guard%gt_training_bypass=.true.
     guard%gt_phase_s=GT_SYNC_DEMO_S-0.1_dp
