@@ -888,7 +888,9 @@ module thermotwin_win32_gui
     integer :: fl_ring(4) = 0              ! [5.0-D1] flagship hit rects (l,t,r,b): health ring
     integer :: fl_card(4,3) = 0            !          3 KPI cards (margin / CO2 / reserve)
     integer :: fl_tile(4,6) = 0            !          6 subsystem tiles (P2X/CCS/GFM/TIE/MPC/OU)
-    integer :: alarm_page = 1 ! 1 existing grid/plant; 2 equipment conditions
+    integer :: alarm_page = 1 ! 1 grid/plant; 2 equipment; 3 trip sequence
+    integer :: gui_first_out_seen = GT_CAUSE_NONE
+    real(dp) :: gui_first_out_time_seen = -1.0_dp
     logical :: eq_quality_prev(EQ_N) = .false.
     logical :: alarm_prev(ALARM_COUNT) = .false.
     logical :: alarm_seen(ALARM_COUNT) = .false.
@@ -1176,6 +1178,11 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\06-equipment.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\06-equipment-1536.png")
                 case(65)
+                    alarm_page=3
+                case(76)
+                    call visual_qa_capture("build\gui-visual-qa\07-trip-sequence.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\07-trip-sequence-1536.png")
+                case(77)
                     alarm_page=1
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
@@ -1416,9 +1423,17 @@ contains
         case (ID_BALANCE)
             call balance_now(grid)
         case (ID_CC_MODE)
-            call cycle_plant_mode()
+            if(grid%gt_phase==GT_ONLINE) then
+                call cycle_plant_mode()
+            else
+                call set_notice("Fleet/combined-cycle mode change blocked by GT lockout.")
+            end if
         case (ID_RESET)
-            call reset_controls(grid)
+            if(grid%gt_phase==GT_ONLINE) then
+                call reset_controls(grid)
+            else
+                call set_notice("Reset controls blocked. Open F7 > TRIP SEQUENCE.")
+            end if
         case (ID_ROI_MODE)
             grid%roi_dispatch = .not. grid%roi_dispatch
         case (ID_FCR_HOLD)
@@ -1436,7 +1451,7 @@ contains
         end select
 
         call refresh_model(grid)
-        if (control_id == ID_RESET) call reset_alarm_workflow()
+        if (control_id == ID_RESET .and. grid%gt_phase==GT_ONLINE) call reset_alarm_workflow()
     end subroutine handle_command
 
     subroutine handle_mouse_down(hwnd, x, y)
@@ -1564,11 +1579,19 @@ contains
             call balance_now(grid)
             active_control = ID_NONE
         case (ID_CC_MODE)
-            call cycle_plant_mode()
+            if(grid%gt_phase==GT_ONLINE) then
+                call cycle_plant_mode()
+            else
+                call set_notice("Fleet/combined-cycle mode change blocked by GT lockout.")
+            end if
             active_control = ID_NONE
         case (ID_RESET)
-            call reset_controls(grid)
-            call reset_alarm_workflow()
+            if(grid%gt_phase==GT_ONLINE) then
+                call reset_controls(grid)
+                call reset_alarm_workflow()
+            else
+                call set_notice("Reset controls blocked. Open F7 > TRIP SEQUENCE.")
+            end if
             active_control = ID_NONE
         case (ID_ROI_MODE)
             grid%roi_dispatch = .not. grid%roi_dispatch
@@ -1612,10 +1635,12 @@ contains
                 block
                     logical :: scn_ok
                     call scenario_load(trim(adjustl(SCN_PATH(scn_selected))), scn_active, scn_ok)
-                    if (scn_ok) then
+                    if (scn_ok .and. grid%gt_phase/=GT_ONLINE) then
+                        call set_notice("New scenario blocked during GT trip; use Trip Sequence.")
+                    else if (scn_ok) then
                         call engine_init(grid)
                         call reset_alarm_workflow()
-                        scn_playing = .true.
+                        scn_playing=.true.
                     end if
                 end block
             end if
@@ -2230,6 +2255,8 @@ contains
     subroutine reset_alarm_workflow()
         alarm_prev = .false.
         eq_quality_prev = (grid%eq_source /= EQ_SRC_UNAVAILABLE)
+        gui_first_out_seen=GT_CAUSE_NONE
+        gui_first_out_time_seen=-1.0_dp
         alarm_page = 1
         alarm_seen = .false.
         alarm_ack = .false.
@@ -2250,6 +2277,14 @@ contains
         logical :: states(ALARM_COUNT)
         integer :: i
 
+        if(grid%gt_first_out/=GT_CAUSE_NONE .and. &
+            (grid%gt_first_out/=gui_first_out_seen .or. &
+             grid%gt_first_out_s/=gui_first_out_time_seen)) then
+            gui_first_out_seen=grid%gt_first_out
+            gui_first_out_time_seen=grid%gt_first_out_s
+            call set_notice("GT TRIP / FIRST OUT: "//trim(gt_trip_cause_text(grid%gt_first_out))// &
+                 " - F7 > TRIP SEQUENCE")
+        end if
         call current_alarm_states(states)
         do i = 1, ALARM_COUNT
             ! Data-quality edge cases are NOT a normal return to service.
@@ -2490,6 +2525,53 @@ contains
             handled=.true.
             return
         end if
+        if (point_in_rect(x,y,ix+311,btn_y+49,ix+461,btn_y+79)) then
+            alarm_page=3
+            handled=.true.
+            return
+        end if
+        if(alarm_page==3) then
+            if(point_in_rect(x,y,ix+10,btn_y+137,ix+124,btn_y+170)) then
+                call gt_trip_acknowledge(grid)
+                call set_notice("First-out acknowledged; trip latch remains.")
+                handled=.true.
+                return
+            else if(point_in_rect(x,y,ix+136,btn_y+137,ix+261,btn_y+170)) then
+                block
+                    logical :: accepted
+                    call gt_trip_reset_latch(grid,accepted)
+                    if(accepted) then
+                        call set_notice("GT trip reset; unit OFFLINE, restart separate.")
+                    else
+                        call set_notice("Reset denied: "//trim(grid%gt_trip_last_denial))
+                    end if
+                end block
+                handled=.true.
+                return
+            else if(point_in_rect(x,y,ix+273,btn_y+137,ix+386,btn_y+170)) then
+                block
+                    logical :: accepted
+                    call gt_trip_start(grid,accepted)
+                    if(accepted) then
+                        call set_notice("Simulation purge timer started; no flow verified.")
+                    else
+                        call set_notice("Restart denied: "//trim(grid%gt_trip_last_denial))
+                    end if
+                end block
+                handled=.true.
+                return
+            else if(point_in_rect(x,y,ix+398,btn_y+137,ix+546,btn_y+170)) then
+                call gt_trip_toggle_training_bypass(grid)
+                if(grid%gt_training_bypass) then
+                    call set_notice("SIMULATION BYPASS ACTIVE - not plant-safe authorization.")
+                else
+                    call set_notice("Simulation bypass disabled.")
+                end if
+                handled=.true.
+                return
+            end if
+            return
+        end if
         call current_alarm_states(states)
         row_y = btn_y + 122
         row_h = 48
@@ -2568,6 +2650,10 @@ contains
             grid%storage_request_MW = STORAGE_MIN_MW + f * (STORAGE_MAX_MW - STORAGE_MIN_MW)
             grid%auto_balance = .false.
         case (ID_GAS)
+            if(grid%gt_phase/=GT_ONLINE) then
+                call set_notice("Gas command blocked by GT trip/interlock.")
+                return
+            end if
             grid%gas_dispatch_pct = GAS_MIN_PCT + f * (GAS_MAX_PCT - GAS_MIN_PCT)
             grid%auto_balance = .false.
         case (ID_AMBIENT)
@@ -2835,10 +2921,12 @@ contains
                 block
                     logical :: scn_ok
                     call scenario_load(trim(adjustl(SCN_PATH(scn_selected))), scn_active, scn_ok)
-                    if (scn_ok) then
+                    if (scn_ok .and. grid%gt_phase/=GT_ONLINE) then
+                        call set_notice("New scenario blocked during GT trip; use Trip Sequence.")
+                    else if (scn_ok) then
                         call engine_init(grid)
                         call reset_alarm_workflow()
-                        scn_playing = .true.
+                        scn_playing=.true.
                     end if
                 end block
             end if
@@ -2875,6 +2963,11 @@ contains
             grid%storage_request_MW = clamp_real(grid%storage_request_MW + d, STORAGE_MIN_MW, STORAGE_MAX_MW)
             grid%auto_balance = .false.
         case (ID_GAS)
+            if(grid%gt_phase/=GT_ONLINE) then
+                changed=.false.
+                call set_notice("Gas command blocked by GT trip/interlock.")
+                return
+            end if
             d = 1.0_dp * real(direction, dp)
             grid%gas_dispatch_pct = clamp_real(grid%gas_dispatch_pct + d, GAS_MIN_PCT, GAS_MAX_PCT)
             grid%auto_balance = .false.
@@ -5592,6 +5685,12 @@ contains
             "GRID / PLANT",COL_CYAN,alarm_page==1)
         call draw_industrial_button(hdc,ix+153,btn_y+49,ix+300,btn_y+79, &
             "EQUIPMENT",COL_CYAN,alarm_page==2)
+        call draw_industrial_button(hdc,ix+311,btn_y+49,ix+461,btn_y+79, &
+            "TRIP SEQUENCE",COL_RED,alarm_page==3)
+        if(alarm_page==3) then
+            call draw_trip_sequence_panel(hdc,ix,btn_y+91,iw, y+height-(btn_y+91))
+            return
+        end if
         if (alarm_page==2) then
             write(line,'("MODEL ",I0," / TRAIN ",I0," / NO DATA ",I0)') &
                 count(grid%eq_source==EQ_SRC_MODEL),count(grid%eq_source==EQ_SRC_TRAINING), &
@@ -5679,6 +5778,85 @@ contains
             if (alarm_log_count == 0) call draw_text(hdc, log_x + 12, row_y, "No alarm events this run.", COL_DIM)
         end block
     end subroutine draw_alarms_screen
+
+    subroutine draw_trip_sequence_panel(hdc,x,y,width,height)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,width,height
+        integer :: left_w,right_x,right_w,sy,i,start_idx,mask,pad
+        character(len=128) :: line
+        character(len=24) :: cause,phase
+        integer(c_int) :: state_col
+        left_w=max(555,int(0.56_dp*real(width,dp)))
+        left_w=min(left_w,width-244)
+        right_x=x+left_w+14
+        right_w=max(210,width-left_w-14)
+        pad=12
+        phase=gt_trip_phase_text(grid%gt_phase)
+        cause=gt_trip_cause_text(grid%gt_first_out)
+        mask=gt_trip_permit_mask(grid)
+        if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
+        state_col=COL_LIME
+        if(grid%gt_phase/=GT_ONLINE) state_col=COL_RED
+        if(grid%gt_phase==GT_READY .or. grid%gt_phase>=GT_PURGING) state_col=COL_AMBER
+
+        call draw_section_title_width(hdc,x,y,"GAS TURBINE  /  FIRST-OUT PROTECTION",left_w)
+        call draw_panel_box(hdc,x,y+28,left_w,max(165,height-36))
+        call draw_text(hdc,x+pad,y+40,"SIMULATED SEQUENCE  -  NOT OEM SAFETY LOGIC",COL_AMBER)
+        call draw_industrial_button(hdc,x+10,y+46,x+124,y+79,"ACK FIRST",COL_GREEN,grid%gt_trip_ack)
+        call draw_industrial_button(hdc,x+136,y+46,x+261,y+79,"RESET TRIP",COL_CYAN,.false.)
+        call draw_industrial_button(hdc,x+273,y+46,x+386,y+79,"SIM RESTART",COL_LIME,.false.)
+        call draw_industrial_button(hdc,x+398,y+46,x+546,y+79, &
+            "TRAIN BYPASS",COL_RED,grid%gt_training_bypass)
+        sy=y+94
+        call draw_value_pair(hdc,x+pad,sy,"Plant phase",trim(phase),state_col);sy=sy+27
+        call draw_value_pair(hdc,x+pad,sy,"First-out cause",trim(cause),COL_RED);sy=sy+27
+        if(grid%gt_first_out/=GT_CAUSE_NONE) then
+            write(line,'("Simulation t = ",F8.2," s")') grid%gt_first_out_s
+        else
+            line="No recorded trip"
+        end if
+        call draw_value_pair(hdc,x+pad,sy,"First-out time",trim(line),COL_MUTED);sy=sy+27
+        line="OPEN / ISOLATED"
+        if(grid%gt_breaker_closed) line="CLOSED / ENERGIZED (SIM)"
+        call draw_value_pair(hdc,x+pad,sy,"Generator breaker",trim(line), &
+            merge(COL_GREEN,COL_AMBER,grid%gt_breaker_closed));sy=sy+27
+        line="SHUT / FUEL ISOLATED"
+        if(grid%gt_fuel_valve_open) line="OPEN (SIM)"
+        call draw_value_pair(hdc,x+pad,sy,"Fuel isolation",trim(line),COL_MUTED);sy=sy+27
+        write(line,'("~",F6.2,"% of rated / ESTIMATE ONLY")') grid%gt_rotor_est_pct
+        call draw_value_pair(hdc,x+pad,sy,"Rotor coastdown",trim(line),COL_CYAN);sy=sy+27
+        line="LUBE SUPPORT / ON (ASSUMED)"
+        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT / OFF"
+        call draw_value_pair(hdc,x+pad,sy,"Auxiliary system",trim(line),COL_MUTED);sy=sy+27
+        if(grid%gt_training_bypass) then
+            line="BYPASS ENABLED - EDUCATIONAL ONLY"
+            state_col=COL_RED
+        else
+            line="NO TRAINING BYPASS"
+            state_col=COL_MUTED
+        end if
+        call draw_value_pair(hdc,x+pad,sy,"Sensor permissives",trim(line),state_col);sy=sy+27
+        line=gt_trip_reason_for_mask(mask)
+        if(grid%gt_phase==GT_ONLINE) line="Normal simulation / no trip latch"
+        call draw_text(hdc,x+pad,sy+8,trim(line),merge(COL_AMBER,COL_GREEN,mask/=0))
+
+        call draw_section_title_width(hdc,right_x,y,"SEQUENCE OF EVENTS  /  MODEL TIME",right_w)
+        call draw_panel_box(hdc,right_x,y+28,right_w,max(165,height-36))
+        if(grid%gt_trip_log_count==0) then
+            call draw_text(hdc,right_x+pad,y+44,"No trips in this simulation.",COL_DIM)
+        else
+            start_idx=max(1,grid%gt_trip_log_count- &
+               max(1,(max(165,height-36)-58)/26)+1)
+            sy=y+44
+            do i=start_idx,grid%gt_trip_log_count
+                if(sy>y+height-26) exit
+                write(line,'(F7.1,"s  ",A)') grid%gt_trip_log_s(i), &
+                     trim(grid%gt_trip_log_text(i))
+                call draw_text(hdc,right_x+pad,sy,trim(adjustl(line)),COL_MUTED)
+                sy=sy+26
+            end do
+        end if
+    end subroutine draw_trip_sequence_panel
 
     subroutine draw_alarm_row(hdc, x, y, width, height, alarm_id, label, active, color)
         type(c_ptr), value :: hdc
