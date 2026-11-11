@@ -991,6 +991,9 @@ module thermotwin_win32_gui
     type(InstructorSession) :: instructor
     logical :: instructor_view=.false.   ! F15 instructor tab; existing comparison preserved
     type(Scenario) :: scn_active
+    ! GUI-side checkpoint of scripted event cursors alongside the full GridState.
+    type(Scenario) :: instructor_saved_scenario
+    logical :: instructor_saved_scn_playing=.false.
     type(ScenarioComparison) :: scn_cmp
     character(len=96) :: scn_compare_status = "No comparison run"
 
@@ -13096,13 +13099,15 @@ contains
                 call set_notice('INSTRUCTOR RESUME: engine advancing.')
             end if
         case(2)
-            scn_playing=.false.
+            instructor_saved_scenario=scn_active
+            instructor_saved_scn_playing=scn_playing
             call instructor_capture(instructor,grid)
-            call set_notice('Complete model snapshot captured.')
+            call set_notice('Model + scripted-event snapshot captured.')
         case(3)
             call instructor_restore(instructor,grid,accepted)
             if(accepted) then
-                scn_playing=.false.
+                scn_active=instructor_saved_scenario
+                scn_playing=instructor_saved_scn_playing
                 call reset_alarm_workflow()
                 alarm_drill_hist=DrillHistory()
                 call drill_record(alarm_drill_hist,grid)
