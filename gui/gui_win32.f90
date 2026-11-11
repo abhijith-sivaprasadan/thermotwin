@@ -24,6 +24,7 @@ module thermotwin_win32_gui
         DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
         drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
         drill_alarm_row_hit, drill_source_label
+    use measured_turbine_replay, only: MeasuredReplay, replay_load, replay_seek
     use exergy, only: ExergyResult, compute_exergy
     use exergy_uq,         only: ExergyUQ, run_exergy_uq
     use exergy_sobol,      only: SobolResult, run_exergy_sobol, SOBOL_NIN
@@ -100,6 +101,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_RIGHT = 39_c_int
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
     integer(c_int), parameter :: VK_I   = 73_c_int   ! F15 instructor-console toggle
+    integer(c_int), parameter :: VK_U   = 85_c_int   ! Ctrl+U: UCI 551 historical measured replay
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
     integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
@@ -990,6 +992,8 @@ module thermotwin_win32_gui
     logical :: scn_playing = .false.
     type(InstructorSession) :: instructor
     logical :: instructor_view=.false.   ! F15 instructor tab; existing comparison preserved
+    logical :: measured_view=.false.     ! F15 read-only UCI source replay
+    type(MeasuredReplay) :: measured_data
     type(Scenario) :: scn_active
     ! GUI-side checkpoint of scripted event cursors alongside the full GridState.
     type(Scenario) :: instructor_saved_scenario
@@ -1790,7 +1794,7 @@ contains
             active_control = ID_NONE
             return
         end if
-        ! F15 is split into independent scenario comparison and instructor tabs.
+        ! F15 includes read-only measured replay, instructor and A/B scenario tabs.
         if (hmi_screen==SCREEN_SCENARIO) then
             if (handle_instructor_mouse(x,y)) then
                 active_control=ID_NONE
@@ -1916,7 +1920,15 @@ contains
         case (ID_SHORTCUTS)
             shortcuts_popup_active = .not. shortcuts_popup_active
             active_control = ID_NONE
-        case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_GAS, ID_AMBIENT, ID_TIT)
+        case (ID_GAS)
+            if(grid%gt_phase/=GT_ONLINE) then
+                call set_notice('TURBINE DISPATCH LOCKED - open F7 > TRIP SEQUENCE for recovery.')
+                active_control=ID_NONE
+            else
+                previous=SetCapture(hwnd)
+                call update_active_slider(x)
+            end if
+        case (ID_DEMAND, ID_RENEWABLE, ID_STORAGE, ID_AMBIENT, ID_TIT)
             previous = SetCapture(hwnd)
             call update_active_slider(x)
         end select
@@ -1977,9 +1989,16 @@ contains
             select case (kval)
             case (VK_I)
                 call set_hmi_screen(SCREEN_SCENARIO)
+                measured_view=.false.
                 instructor_view=.true.
                 shortcuts_popup_active=.false.
                 call set_notice('Instructor console: use FREEZE, SAVE, injections and F7 drill.')
+                return
+            case (VK_U)
+                call set_hmi_screen(SCREEN_SCENARIO)
+                measured_view=.true.
+                instructor_view=.false.
+                call set_notice('UCI 551: LOCAL REPLAY, read-only; use LOAD CSV before browsing.')
                 return
             case (VK_K)
                 command_palette_active = .true.
@@ -2011,6 +2030,11 @@ contains
             end select
         end if
 
+        if (hmi_screen==SCREEN_SCENARIO.and.measured_view.and. &
+            (kval==VK_LEFT.or.kval==VK_RIGHT)) then
+            call replay_seek(measured_data,merge(-1,1,kval==VK_LEFT))
+            return
+        end if
         if (hmi_screen==SCREEN_SCENARIO.and.instructor_view.and.kval==VK_SPACE) then
             call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
             return
@@ -2110,7 +2134,10 @@ contains
         case (VK_6)
             grid%ou_active = .not. grid%ou_active
         case (VK_I)
-            if(hmi_screen==SCREEN_SCENARIO) instructor_view=.not.instructor_view
+            if(hmi_screen==SCREEN_SCENARIO) then
+                instructor_view=.not.instructor_view
+                measured_view=.false.
+            end if
         case (VK_E)
             call export_shift_csv(grid)
         case (VK_R)
@@ -3875,7 +3902,9 @@ contains
             case (SCREEN_ADVISORY)
                 call draw_advisory_screen(hdc, x0, content_y, w, content_h)
             case (SCREEN_SCENARIO)
-                if(instructor_view) then
+                if(measured_view) then
+                    call draw_measured_replay_screen(hdc,x0,content_y,w,content_h)
+                else if(instructor_view) then
                     call draw_instructor_screen(hdc,x0,content_y,w,content_h)
                 else
                     call draw_scenario_screen(hdc, x0, content_y, w, content_h)
@@ -10037,8 +10066,18 @@ contains
         real(dp) :: f
         character(len=20) :: lo_text, hi_text
 
-        call draw_text(hdc, x, y - 34, label, COL_INK)
-        call draw_text(hdc, x + width - 78, y - 34, value_text, color)
+        block
+            logical :: trip_locked
+            integer(c_int) :: slider_color
+            trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
+            slider_color=merge(COL_DIM,color,trip_locked)
+            call draw_text(hdc, x, y - 34, label, merge(COL_DIM,COL_INK,trip_locked))
+            if(trip_locked) then
+                call draw_text(hdc,x+width-86,y-34,'TRIP LOCK',COL_AMBER)
+            else
+                call draw_text(hdc,x+width-78,y-34,value_text,color)
+            end if
+        end block
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
         ! Flat pill track
@@ -13092,9 +13131,21 @@ contains
         ix=layout_main_left+18
         iw=layout_main_w-36
         top=hmi_content_top(layout_main_top)+8
+        if(point_in_rect(px,py,ix+iw-340,top+12,ix+iw-182,top+42)) then
+            measured_view=.not.measured_view
+            instructor_view=.false.
+            handled=.true.
+            return
+        end if
         if(point_in_rect(px,py,ix+iw-174,top+12,ix+iw,top+42)) then
             instructor_view=.not.instructor_view
+            measured_view=.false.
             handled=.true.
+            return
+        end if
+        if(measured_view) then
+            handled=.true.
+            call handle_measured_replay_mouse(px,py,ix,iw,top)
             return
         end if
         if(.not.instructor_view) return
@@ -13187,6 +13238,8 @@ contains
         call draw_screen_caption(hdc, ix, top_y, iw, &
             "F15  SCENARIO COMPARISON", &
             "A/B playback overlay with deterministic scenario traces")
+        call draw_industrial_button(hdc,ix+iw-340,top_y+12,ix+iw-182,top_y+42, &
+            'MEASURED [U]',COL_PANEL_ALT,.false.)
         call draw_industrial_button(hdc,ix+iw-174,top_y+12,ix+iw,top_y+42, &
             'INSTRUCTOR [I]',COL_PANEL_ALT,.false.)
 
@@ -13359,6 +13412,8 @@ contains
             call draw_screen_caption(hdc,ix,top,iw,'F15  INSTRUCTOR CONSOLE', &
                 'OFFLINE TRAINING / simulated faults only - NOT plant control')
         end if
+        call draw_industrial_button(hdc,ix+iw-340,top+12,ix+iw-182,top+42, &
+            'MEASURED [U]',COL_PANEL_ALT,.false.)
         call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
             'SCENARIOS [I]',COL_PANEL_ALT,.false.)
 
