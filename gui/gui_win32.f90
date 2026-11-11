@@ -6169,6 +6169,312 @@ contains
         end if
     end subroutine draw_alarm_row
 
+
+    ! ── Contextual alarm engineering drill-down ─────────────────────────────
+    ! One live modal owned by the alarm id; numbers and sketches are evaluated
+    ! on EVERY repaint from the current GridState. No static mock screenshot.
+    subroutine alarm_drill_rect(x,y,w,h)
+        integer,intent(out) :: x,y,w,h
+        x=layout_main_left+12
+        y=layout_main_top+164
+        w=max(400,layout_main_w-24)
+        h=max(350,min(575,layout_main_h-179))
+    end subroutine alarm_drill_rect
+
+    subroutine handle_alarm_drill_mouse(px,py)
+        integer,intent(in) :: px,py
+        integer :: x,y,w,h,screen_id
+        type(DrillObservation) :: obs
+        if(alarm_drill_selected<1 .or. alarm_drill_selected>DRILL_N) then
+            alarm_drill_selected=0
+            return
+        end if
+        call alarm_drill_rect(x,y,w,h)
+        if(.not.point_in_rect(px,py,x,y,x+w,y+h) .or. &
+           point_in_rect(px,py,x+w-104,y+9,x+w-12,y+39)) then
+            alarm_drill_selected=0
+            return
+        end if
+        if(point_in_rect(px,py,x+18,y+h-46,x+258,y+h-13)) then
+            call drill_observe(grid,alarm_drill_selected,obs)
+            select case(obs%diagram)
+            case(DRILL_MAP,DRILL_TURBINE)
+                screen_id=SCREEN_GT
+            case(DRILL_PID)
+                screen_id=SCREEN_CC
+                if(alarm_drill_selected==DRILL_PLANT_N+EQ_COMBUST) screen_id=SCREEN_GT
+            case(DRILL_GRID,DRILL_BESS)
+                screen_id=SCREEN_GRID
+            case default
+                screen_id=SCREEN_DIAG
+            end select
+            call set_hmi_screen(screen_id)
+            alarm_drill_selected=0
+            call set_notice("Engineering screen opened; values remain live and model-qualified.")
+        end if
+    end subroutine handle_alarm_drill_mouse
+
+    subroutine draw_alarm_drill_popup(hdc,panel_x,panel_y,panel_w,panel_h)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: panel_x,panel_y,panel_w,panel_h
+        type(DrillObservation) :: obs
+        integer :: x,y,w,h,visual_y,visual_h,visual_w,trend_x,advice_y,i,lines_used,line_y
+        integer(c_int) :: indicator_col
+        character(len=120) :: current_label,limit_label,state_label,source_label,detail_label
+        if(alarm_drill_selected<1 .or. alarm_drill_selected>DRILL_N) return
+        call alarm_drill_rect(x,y,w,h)
+        call drill_observe(grid,alarm_drill_selected,obs)
+        indicator_col=COL_GREEN
+        if(obs%active) indicator_col=COL_RED
+        if(.not.obs%valid) indicator_col=COL_AMBER
+
+        ! Overlay covers the existing screen content but leaves header and
+        ! alarm strip visible, with underlying controls mouse-blocked.
+        call fill_box(hdc,x-4,y-4,x+w+4,y+h+4,COL_BG)
+        call fill_soft_box(hdc,x,y,x+w,y+h,COL_PANEL)
+        call stroke_soft_box(hdc,x,y,x+w,y+h,COL_CYAN,2)
+        call fill_box(hdc,x,y,x+w,y+46,COL_PANEL_DEEP)
+        call fill_box(hdc,x,y,x+5,y+h,indicator_col)
+        call draw_title_text(hdc,x+18,y+12,trim(obs%title),COL_INK)
+        call draw_industrial_button(hdc,x+w-104,y+9,x+w-12,y+39, &
+            "CLOSE  X",COL_CYAN,.false.)
+
+        source_label=drill_source_label(obs%source)
+        if(obs%valid) then
+            write(current_label,'(F9.3,1X,A)') obs%value,trim(obs%unit)
+        else
+            current_label="NO DATA - NOT ZERO / NOT NORMAL"
+        end if
+        write(limit_label,'(F9.3,1X,A)') obs%limit,trim(obs%unit)
+        if(obs%active) then
+            state_label="ACTIVE / REVIEW"
+        else
+            state_label="NOT ACTIVE"
+        end if
+        if(.not.obs%valid) state_label="NO DATA / UNKNOWN"
+        call draw_text(hdc,x+18,y+54,"LIVE MODEL / INPUT",COL_MUTED)
+        call draw_mono(hdc,x+18,y+74,trim(adjustl(current_label)),indicator_col)
+        call draw_text(hdc,x+w/2,y+54,"ALARM THRESHOLD",COL_MUTED)
+        call draw_mono(hdc,x+w/2,y+74,trim(adjustl(limit_label)),COL_CYAN)
+        call draw_text(hdc,x+18,y+101,"SOURCE: "//trim(source_label), &
+            merge(COL_CYAN,COL_AMBER,obs%valid))
+        call draw_text(hdc,x+w/2,y+101,"STATE: "//trim(state_label),indicator_col)
+        call draw_text(hdc,x+18,y+122, &
+            obs%limit_note(1:min(len_trim(obs%limit_note),max(1,(w-38)/8))),COL_MUTED)
+        visual_y=y+158
+        visual_h=max(115,min(195,h-341))
+        visual_w=max(180,(w-52)/2)
+        trend_x=x+30+visual_w
+        call draw_text(hdc,x+18,visual_y-20,"EQUIPMENT / PROCESS CONTEXT",COL_CYAN)
+        call draw_text(hdc,trend_x,visual_y-20,"RECORDED LIVE TREND / 250 ms",COL_CYAN)
+        call draw_alarm_process_context(hdc,x+18,visual_y,visual_w,visual_h,obs)
+        call draw_alarm_drill_trend(hdc,trend_x,visual_y, &
+            max(150,w-(trend_x-x)-18),visual_h,obs,alarm_drill_selected)
+        advice_y=visual_y+visual_h+17
+        call draw_section_title_width(hdc,x+18,advice_y, &
+            "OPERATOR RESPONSE / DIAGNOSTIC ADVISORY",w-36)
+        line_y=advice_y+30
+        do i=1,3
+            if(len_trim(obs%advice(i))==0) cycle
+            call draw_alarm_advice_wrapped(hdc,x+20,line_y,w-44, &
+                trim(obs%advice(i)),lines_used)
+            line_y=line_y+max(1,lines_used)*18+2
+            if(line_y>y+h-90) exit
+        end do
+        call draw_line(hdc,x+18,y+h-55,x+w-18,y+h-55,COL_BORDER_SOFT,1)
+        call draw_industrial_button(hdc,x+18,y+h-46,x+258,y+h-13, &
+            "OPEN ENGINEERING SCREEN",COL_CYAN,.false.)
+        if(obs%valid) then
+            detail_label="SIMULATED/INPUT - NOT OEM PROTECTION"
+        else
+            detail_label="NO VALID POINT - CHECK SOURCE FIRST"
+        end if
+        call draw_text(hdc,x+270,y+h-35, &
+            detail_label(1:min(len_trim(detail_label),max(1,(w-282)/8))),COL_AMBER)
+    end subroutine draw_alarm_drill_popup
+
+    subroutine draw_alarm_advice_wrapped(hdc,x,y,w,message,n_lines)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,w
+        character(len=*),intent(in) :: message
+        integer,intent(out) :: n_lines
+        integer :: n,first,last,j,maxchars,nn
+        n=len_trim(message)
+        first=1
+        n_lines=0
+        maxchars=max(18,(w-8)/8)
+        do while(first<=n .and. n_lines<2)
+            last=min(n,first+maxchars-1)
+            if(last<n) then
+                do j=last,first+1,-1
+                    if(message(j:j)==" ") then
+                        last=j-1
+                        exit
+                    end if
+                end do
+            end if
+            if(last<first) exit
+            nn=last-first+1
+            call draw_text(hdc,x,y+n_lines*18,message(first:first+nn-1),COL_INK)
+            first=last+1
+            do while(first<=n)
+                if(message(first:first)/=" ") exit
+                first=first+1
+            end do
+            n_lines=n_lines+1
+        end do
+    end subroutine draw_alarm_advice_wrapped
+
+    subroutine draw_alarm_process_context(hdc,x,y,w,h,obs)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,w,h
+        type(DrillObservation),intent(in) :: obs
+        integer :: center_y
+        character(len=48) :: val
+        integer(c_int) :: col
+        col=merge(COL_RED,COL_CYAN,obs%active)
+        call fill_soft_box(hdc,x,y,x+w,y+h,COL_PANEL_ALT)
+        if(.not.obs%valid) then
+            call stroke_soft_box(hdc,x,y,x+w,y+h,COL_AMBER,1)
+            call draw_text(hdc,x+12,y+20,"NO VALID EQUIPMENT SIGNAL",COL_AMBER)
+            call draw_text(hdc,x+12,y+44,"No invented model point or sensor trend.",COL_MUTED)
+            call draw_text(hdc,x+12,y+72,"Training samples require explicit input.",COL_MUTED)
+            return
+        end if
+        write(val,'(F7.2,1X,A)') obs%value,trim(obs%unit)
+        select case(obs%diagram)
+        case(DRILL_MAP)
+            ! Reuse the real GT compressor map, its surge boundary,
+            ! isospeed curves and CURRENT solver operating-point marker.
+            call draw_gt_map(hdc,x,y,w,h)
+        case(DRILL_TURBINE)
+            if(grid%gt_phase==GT_ONLINE) then
+                ! Live Brayton temperature/entropy state-point diagram.
+                call draw_brayton_ts(hdc,x,y,w,h)
+            else
+                center_y=y+h/2
+                call draw_pid_turbine(hdc,x+w/2,center_y,112,66, &
+                    "GT-301","OFFLINE",COL_AMBER)
+                call draw_text(hdc,x+12,y+h-28, &
+                    "Rundown is an estimate, not shaft speed.",COL_MUTED)
+            end if
+        case(DRILL_PID)
+            center_y=y+h/2
+            if(alarm_drill_selected==8) then
+                call draw_pid_arrow_line(hdc,x+16,center_y,x+w/3-38,center_y,COL_RED,2)
+                call draw_pid_equipment(hdc,x+w/3,center_y,78,62, &
+                    "H-501","HRSG",col)
+                call draw_pid_arrow_line(hdc,x+w/3+40,center_y,x+2*w/3-40,center_y,COL_CYAN,2)
+                call draw_pid_turbine(hdc,x+2*w/3,center_y,80,62, &
+                    "ST-601","STEAM",COL_BLUE)
+                call draw_text(hdc,x+12,y+h-25,"GT exhaust -> HRSG -> steam (MODEL)",COL_MUTED)
+            else
+                call draw_pid_compressor(hdc,x+w/4,center_y,70,62, &
+                    "C-101","AIR",COL_CYAN)
+                call draw_pid_arrow_line(hdc,x+w/4+36,center_y, &
+                    x+3*w/4-40,center_y,COL_AMBER,2)
+                call draw_pid_combustor(hdc,x+3*w/4,center_y,78,62, &
+                    "CB-201","TRAIN",col)
+                call draw_text(hdc,x+12,y+h-25,"Combustor instrument: TRAINING only",COL_MUTED)
+            end if
+        case(DRILL_GRID)
+            center_y=y+h/2
+            call draw_pid_generator(hdc,x+w/4,center_y,26,"G-401","GT",COL_CYAN)
+            call draw_pid_arrow_line(hdc,x+w/4+28,center_y,x+3*w/4,center_y,COL_GREEN,2)
+            call draw_line(hdc,x+3*w/4,center_y-42,x+3*w/4,center_y+42,COL_CYAN,3)
+            call draw_text(hdc,x+12,y+h-26,"GRID f / SUPPLY - SERVED DEMAND",COL_MUTED)
+        case(DRILL_BESS)
+            center_y=y+h/2
+            call draw_pid_battery(hdc,x+w/4,center_y,80,62,"BESS","SOC",col)
+            call draw_pid_arrow_line(hdc,x+w/4+42,center_y,x+3*w/4-45,center_y,COL_CYAN,2)
+            call draw_pid_inverter(hdc,x+3*w/4,center_y,90,62,"INV-501","MW",COL_BLUE)
+            call draw_text(hdc,x+12,y+h-25,"Actual BESS MW / energy-limited",COL_MUTED)
+        case default
+            center_y=y+h/2
+            call draw_pid_equipment(hdc,x+w/2,center_y,180,72, &
+                "TRAIN INPUT",trim(adjustl(val)),COL_AMBER)
+            call draw_text(hdc,x+12,y+h-25, &
+                "No instrumented oil/bearing plant model.",COL_MUTED)
+        end select
+    end subroutine draw_alarm_process_context
+
+    subroutine draw_alarm_drill_trend(hdc,x,y,w,h,obs,id)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,w,h,id
+        type(DrillObservation),intent(in) :: obs
+        integer :: i,j,n,good,xx,yy,old_x,old_y,gx,gy,gw,gh,idx
+        real(dp) :: lo,hi,v,norm,span,first_t,last_t
+        logical :: prev_good,usable
+        character(len=64) :: label
+        call fill_soft_box(hdc,x,y,x+w,y+h,COL_PANEL_ALT)
+        call stroke_soft_box(hdc,x,y,x+w,y+h,COL_BORDER_SOFT,1)
+        gx=x+14; gy=y+24
+        gw=max(30,w-28); gh=max(20,h-51)
+        call fill_box(hdc,gx,gy,gx+gw,gy+gh,COL_BG)
+        do i=1,3
+            call draw_line(hdc,gx,gy+i*gh/4,gx+gw,gy+i*gh/4,COL_BG_GRID,1)
+        end do
+        n=alarm_drill_hist%count
+        good=0
+        lo=obs%limit; hi=obs%limit
+        do i=1,n
+            idx=drill_history_index(alarm_drill_hist,i)
+            if(idx<=0) cycle
+            if(.not.alarm_drill_hist%valid(id,idx)) cycle
+            v=alarm_drill_hist%value(id,idx)
+            lo=min(lo,v);hi=max(hi,v)
+            good=good+1
+        end do
+        if(good==0) then
+            call draw_text(hdc,gx+8,gy+gh/2, &
+                "NO VALID SAMPLED TRACE / NO DATA",COL_AMBER)
+            return
+        end if
+        if(hi-lo<1.0e-6_dp) then
+            lo=lo-max(0.5_dp,abs(lo)*0.03_dp)
+            hi=hi+max(0.5_dp,abs(hi)*0.03_dp)
+        else
+            v=(hi-lo)*0.12_dp
+            lo=lo-v
+            hi=hi+v
+        end if
+        norm=clamp_real((obs%limit-lo)/max(hi-lo,1.0e-9_dp),0.0_dp,1.0_dp)
+        yy=gy+gh-nint(norm*real(gh,dp))
+        call draw_line(hdc,gx,yy,gx+gw,yy,COL_RED,1)
+        write(label,'("LIMIT ",F7.2," ",A)') obs%limit,trim(obs%unit)
+        call draw_text(hdc,gx+5,y+5,trim(adjustl(label)),COL_RED)
+        if(n>=2) then
+            idx=drill_history_index(alarm_drill_hist,1)
+            first_t=alarm_drill_hist%time_s(idx)
+            idx=drill_history_index(alarm_drill_hist,n)
+            last_t=alarm_drill_hist%time_s(idx)
+            span=max(0.25_dp,last_t-first_t)
+        else
+            first_t=grid%elapsed_s-0.25_dp
+            span=0.25_dp
+        end if
+        prev_good=.false.
+        do i=1,n
+            idx=drill_history_index(alarm_drill_hist,i)
+            usable=idx>0
+            if(usable) usable=alarm_drill_hist%valid(id,idx)
+            if(.not.usable) then
+                prev_good=.false.
+                cycle
+            end if
+            xx=gx+nint(real(gw,dp)*(alarm_drill_hist%time_s(idx)-first_t)/span)
+            v=alarm_drill_hist%value(id,idx)
+            yy=gy+gh-nint(real(gh,dp)*clamp_real((v-lo)/max(hi-lo,1.0e-9_dp),0.0_dp,1.0_dp))
+            if(prev_good) call draw_line(hdc,old_x,old_y,xx,yy,COL_LIME,2)
+            old_x=xx;old_y=yy
+            prev_good=.true.
+        end do
+        if(n==1) call hmi_fill_pie(hdc,int(old_x,c_int),int(old_y,c_int), &
+            4_c_int,0.0_c_float,360.0_c_float,COL_LIME)
+        write(label,'("REAL SAMPLES ",I0," / ",I0)') good,n
+        call draw_text(hdc,gx+4,y+h-21,trim(label),COL_CYAN)
+    end subroutine draw_alarm_drill_trend
+
     ! =========================================================================
     ! F8 Diagnostics screen — health tiles, performance gap, fault log
     ! =========================================================================
