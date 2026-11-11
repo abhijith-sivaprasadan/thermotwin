@@ -682,6 +682,13 @@ contains
         case ("battery_soc_pct");       value = st%battery_soc_pct
         case ("battery_energy_MWh");    value = st%battery_energy_MWh
         case ("gas_dispatch_pct");      value = st%gas_dispatch_pct
+        case ("gt_phase");             value = real(st%gt_phase,dp)
+        case ("gt_trip_latched");      value = merge(1.0_dp,0.0_dp,st%gt_trip_latched)
+        case ("gt_breaker_closed");    value = merge(1.0_dp,0.0_dp,st%gt_breaker_closed)
+        case ("gt_fuel_valve_open");   value = merge(1.0_dp,0.0_dp,st%gt_fuel_valve_open)
+        case ("gt_first_out");         value = real(st%gt_first_out,dp)
+        case ("gt_rotor_est_pct");     value = st%gt_rotor_est_pct
+        case ("fuel_flow_kg_s");       value = st%fuel_flow_kg_s
         case ("gas_power_MW");          value = st%gas_power_MW
         case ("gas_capacity_MW");       value = st%gas_capacity_MW
         case ("plant_power_MW");        value = st%plant_power_MW
