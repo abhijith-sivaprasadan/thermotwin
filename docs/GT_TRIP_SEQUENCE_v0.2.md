@@ -1,0 +1,35 @@
+# Gas turbine trip to guarded restart — operator exercise v0.2
+
+**Scope:** supplements `GT_TRIP_SEQUENCE_v0.1.md` and implements **Trigger → First-out → dependent equipment response → rundown → alarm ACK → reset permissives → explicit restart**. **Simulation only**; not a DCS, PLC, turbine-control, SIS, real alarm setting or commissioning/start procedure.
+
+## Operator-executed sequence
+
+| Stage | Automatic effect and event | Operator expectation |
+|---|---|---|
+| Trigger | MANUAL GT TRIP, or quality-labelled TRAINING overspeed, low lube pressure or combustion-dynamic alarm. Confirmation timestamps are recorded by the alarm monitor. Earliest qualifying training onset wins; simultaneous onset uses stated deterministic precedence (overspeed → lube → combustion). Model surge margin and generator-frequency proxy **never** independently create a hardware protective trip. | Identify source, check event time and qualified source, do not mistake an unavailable channel for a healthy channel |
+| First-out indication | Latched cause and model timestamp; chronological **TRIGGER ACCEPTED** and **FIRST OUT LATCHED** SOE events. Other contemporaneous or subsequent training alarms are logged separately and cannot overwrite the first-out. | Open **F7 → TRIP SEQUENCE**, inspect cause and event order |
+| Immediate dependent response | Simulated breaker OPEN, generator excitation OFF, starter inhibited, fuel command SHUT, flame OFF, compressor bleed OPEN, lube support assumed ON; GT MW and gas fuel input become zero in the same simulated tick. AGC, H2/CCS/MPC/RL commands cannot re-enable isolated GT. Combined-cycle residual steam rundown may remain. | Verify reported equipment statuses and independent BESS/renewable grid response. These are **commanded internal states**, not real contact or transmitter feedback |
+| Rundown and lockout | Rotor-speed estimate decays with illustrative time constant 11 s; exhaust cools on 45 s scale; steam residual declines. After estimated rotor speed <3%, turning-gear state assumed ON, bleed CLOSE, starter OFF, generator field OFF, and protection LOCKOUT latched. | Do not reset during coastdown. Check estimated speed, modeled temperature and assumed auxiliary state |
+| Acknowledge | **ACK FIRST** records one event and acknowledges the first-out; it **does not clear the trip latch, close the breaker, open fuel, or reset any standing alarm**. | ACK independent from the general alarm “ACK ALL” action |
+| Reset permissives | Must be in LOCKOUT, ACK recorded, no standing conditions, required training sensor channels fresh/present (or explicitly marked TRAIN BYPASS), rotor near rest with assumed turning gear engaged, exhaust below educational cooldown criterion, single GT mode only; **all commanded actuators in isolated state** (breaker, fuel, flame, excitation, starter, lube and bleed). | Failed reset displays and logs the first blocking reason; TRAIN BYPASS may waive **missing simulated sensors only**, not alarms or contradictory actuator states |
+| Guarded simulated restart | Separate **SIM RESTART** action from READY; validates permissives again. Stage progression: 12 s purge timer (no flow proof, starter ON, fuel OFF, bleed OPEN); 4 s assumed ignition (fuel/flame command ON); 20 s acceleration; 3 s synchronizing. At every advance, a changed alarm, withdrawn bypass or actuator mismatch causes a new latched trip and fuel/breaker isolation. | Watch state transitions, fuel, starter, excitation, bleed and breaker. Interlock loss during a start triggers **SIM START ABORT**, not an automatic retry |
+| Return online | Starting motor OFF and generator excitation ON during simulated synch; final check requires estimated speed >=99%, grid frequency within illustrative ±0.5 Hz, normal simulated actuator state, no standing alarms and valid training condition/bypass. Only then is generator breaker CLOSED and minimum-load GT dispatch restored. Training bypass is cleared after successful return. | Observe START COMPLETE event; acknowledge that no voltage/phase-angle or relay proving exists, even when the simulation returns ONLINE |
+
+### What is and is not simulated
+
+- **Included:** causal state transitions, software first-out, chronological event sequence with simulation timestamps, internal actuator command states, nominal-grid frequency guard, static command plausibility, example fail-closed sequence, independent load/fuel/electrical boundary, latching/ACK/reset split, fail-unknown sensor availability and stale training sample checks.
+- **Not included:** real ESD/SIS input voting, independent dual-channel breaker contacts, gas-valve proof-of-closure, fire-and-gas detectors, lube pump flow or standby power, rotor speed transducer, ignition flame scanner, proven combustor purge airflow, synchronous generator voltage/phase-angle measurement, synchronization relay, shaft dynamics, HRSG bypass hardware, OEM turbine restart conditions, human-in-the-loop validated operator decisions.
+- **TRAIN BYPASS is not a safety override**. It only allows explicit educational demonstrations without connected physical instrumentation and is always tagged to avoid misrepresenting readiness.
+- **No training scenario authorizes a real turbine start**. Hardware evidence and OEM/system-specific permissives are mandatory for actual plant operation.
+
+## Reproducible exercise
+
+- `cases/scenarios/gt_protection_full_sequence.scn`: manual trip → first-out and isolation → ACK → rundown and lockout → explicit TRAIN BYPASS → reset → purge → ignition → acceleration → synthetic synchronizing → ONLINE. The external electrical boundary is deliberately held at 50 Hz, with 20 MW available renewables and 20 MW demand, and is NOT a prediction of an actual disconnected generator's islanded plant.
+- `cases/scenarios/gt_protection_abort_interlock.scn`: same setup, bypass withdrawn during purge → immediate trip latch, breaker, fuel, excitation and starter isolated.
+- `test/test_gt_trip_sequence.f90`: timed first-out selection, follow-on logging, no-duplicate ACK, actuator interlocks, denied reset, no-breaker until sync, each auxiliary stage, starter-loss abort and wrong-grid-frequency sync abort.
+- `test/test_equipment_protection.f90`: alarm debounce, source provenance, missing/stale data and hysteresis.
+- `gui/gui_win32.f90`: F7 displays first-out history, dependent actuator command states, restart-denial reason and model-time SOE; values are **not field contacts**.
+
+Acceptance is successful **exact-commit** cross-platform CI, scenario and independent model/trace checks plus a separate **manual Windows HMI acceptance** of mouse controls, scaling, clipping, audible annunciation, and trend updates. GUI compilation alone does not complete human acceptance.
+
+The sequence is inspired by general operator-training concepts; it must not be described as an actual Siemens Energy gas-turbine control specification.
