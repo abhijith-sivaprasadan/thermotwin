@@ -31,6 +31,8 @@ program test_gt_trip_sequence
     call check("direct trip API immediately removes actual GT MW/fuel/heat input",&
        st%gas_power_MW==0.0_dp .and. st%fuel_flow_kg_s==0.0_dp .and. &
        st%heat_input_MW==0.0_dp)
+    call check("direct trip API stops fuel-derived emissions immediately",&
+       st%CO2_rate_kg_s==0.0_dp .and. st%fuel_cost_usd_h==0.0_dp)
     call check("direct trip API immediately removes GT kinetic inertia",&
        abs(st%grid_inertia_energy_MWs- &
        st%grid_external_inertia_H_s*st%grid_external_inertia_rated_MW)<1.0e-8_dp)
