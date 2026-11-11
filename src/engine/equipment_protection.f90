@@ -5,7 +5,7 @@ module equipment_protection
     use precision_kinds, only: dp
     use engine_state, only: GridState, EQ_N, EQ_SURGE, EQ_OVERSPEED, EQ_EXHAUST, &
         EQ_COMBUST, EQ_OIL, EQ_BEARING, EQ_GENERATOR, EQ_SRC_MODEL, &
-        EQ_SRC_TRAINING, EQ_SRC_UNAVAILABLE
+        EQ_SRC_TRAINING, EQ_SRC_UNAVAILABLE, GT_ONLINE
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
