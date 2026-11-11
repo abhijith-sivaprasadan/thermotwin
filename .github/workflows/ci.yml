@@ -214,6 +214,13 @@ jobs:
         run: python scripts/fetch_uci_gt551.py --output-dir build/uci551
       - name: Evaluate real condition-adjusted residuals with untouched 2014–2015 holdout
         run: python scripts/analyze_uci_gt551.py --data-dir build/uci551 --output build/uci551/condition_residual_report.json
+      - name: Check measured-turbine replay source alignment and time-leakage guards
+        run: python -m unittest scripts.test_replay_uci_gt551 -v
+      - name: Reconstruct original 2014-2015 TEY measurements against frozen past-only predictions
+        run: python -m scripts.replay_uci_gt551 --data-dir build/uci551 --out build/uci551/replay
+      - name: Audit source-verified measured replay artifact and its prediction limits
+        run: |
+          python -c "import json,hashlib; from pathlib import Path; p=Path('build/uci551/replay'); r=json.loads((p/'replay_report.json').read_text()); assert r['train_rows']==22191 and r['test_rows']==14542 and r['train_years']==[2011,2012,2013] and r['test_years']==[2014,2015]; assert r['real_source_data_only'] and not r['is_next_step_forecast'] and not r['is_independent_physics_model_validation']; assert hashlib.sha256((p/'measured_vs_predicted_2014_2015.csv').read_bytes()).hexdigest()==r['prediction_csv_sha256']; assert hashlib.sha256((p/'measured_turbine_replay.html').read_bytes()).hexdigest()==r['interactive_viewer_sha256']"
       - name: Audit source provenance and untouched evaluation
         run: |
           python -c "from pathlib import Path; import json,hashlib; p=Path('build/uci551'); m=json.loads((p/'manifest.json').read_text()); r=json.loads((p/'condition_residual_report.json').read_text()); assert m['total_rows']==36733 and m['number_of_turbines']==1; assert m['original_zip_sha256']==hashlib.sha256((p/'uci551_original.zip').read_bytes()).hexdigest(); assert r['measured_observations']==36733 and r['untouched_evaluation_years']==[2014,2015]; assert r['holdout']['rows']==14542; assert r['not_a_pass_off_or_known_fault_dataset'] and not r['measured_gt_power_MW_claimed']"
