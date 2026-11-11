@@ -12,7 +12,18 @@ program test_market_data
     block
         type(GridState) :: st
         call engine_init(st)
+        st%freq_prev_Hz=49.75_dp
+        st%freq_rocof_Hz_s=-1.0_dp
+        st%ROCOF_Hz_s=-0.5_dp
         call apply_market_profile(st, MARKET_TEXAS_ERCOT)
+        call expect_near("market: frequency history reset on nominal change", &
+            st%freq_prev_Hz, 60.0_dp, 1.0e-12_dp, failures)
+        call expect_near("market: false ROCOF rejected on 50/60 change", &
+            st%freq_rocof_Hz_s, 0.0_dp, 1.0e-12_dp, failures)
+        call expect_near("market: cached numerical ROCOF reset on 50/60 change", &
+            st%ROCOF_Hz_s, 0.0_dp, 1.0e-12_dp, failures)
+        call expect_true("market: old forecast is invalid across frequency-standard switch", &
+            .not.st%nadir_forecast_valid, failures)
         call expect_near("market: ERCOT nominal frequency", st%nominal_frequency_Hz, 60.0_dp, 1.0e-12_dp, failures)
         call expect_near("market: ERCOT live frequency reset", st%frequency_Hz, 60.0_dp, 1.0e-12_dp, failures)
         call expect_true("market: ERCOT fuel cheaper than TTF default", st%fuel_price_usd_gj < FUEL_PRICE_USD_GJ, failures)

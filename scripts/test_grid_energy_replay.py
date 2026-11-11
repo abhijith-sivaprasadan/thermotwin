@@ -15,7 +15,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INERTIA_MW_PER_HZ_S = 25.0  # existing illustrative M_eff in simulator
+# The inertia coefficient is measured in MW*s/Hz, not kinetic energy MW*s.
+# The coefficient is independently re-derived from stored energy every tick.
 ETA = 0.92
 BATTERY_CAP_MWH = 30.0
 INVERTER_MW = 20.0
@@ -40,6 +41,10 @@ def verify(rows: list[dict[str, str]]) -> int:
         "imbalance_MW", "plant_power_MW", "renewable_actual_MW",
         "storage_MW", "battery_energy_MWh", "BESS_primary_MW",
         "gfm_synth_MW", "effective_gas_dispatch_pct", "governor_delta_MW",
+        "static_served_demand_MW", "grid_damping_load_MW",
+        "grid_damping_MW_per_Hz", "grid_stored_inertia_MWs",
+        "grid_swing_MW_s_per_Hz", "grid_model_valid",
+        "fixed_step_min_Hz", "fixed_step_valid", "nadir_horizon_s", "nadir_trip_MW",
     }
     missing = required.difference(rows[0])
     if missing:
@@ -50,15 +55,52 @@ def verify(rows: list[dict[str, str]]) -> int:
         if not all(math.isfinite(x) for x in v.values()):
             raise AssertionError(f"Nonfinite recorder value at row {index}")
         t = v["time_s"]
-        near("served gross-load identity", v["demand_MW"] - v["ufls_shed_MW"],
+        near("static UFLS demand", v["demand_MW"] - v["ufls_shed_MW"],
+             v["static_served_demand_MW"], EPS_MW, t)
+        near("frequency-sensitive load booked as actual demand",
+             v["static_served_demand_MW"] + v["grid_damping_load_MW"],
              v["served_demand_MW"], EPS_MW, t)
+        near("derived inertia in MW*s/Hz",
+             2.0*v["grid_stored_inertia_MWs"]/v["nominal_frequency_Hz"],
+             v["grid_swing_MW_s_per_Hz"], EPS_MW, t)
+        if v["grid_model_valid"] != 1.0:
+            raise AssertionError(f"Invalid grid physics at t={t:.2f}s")
+        # Independently derive the exact first-order fixed-loss solution from
+        # reported coefficients. This is NOT a closed-loop or OEM nadir check.
+        m = v["grid_swing_MW_s_per_Hz"]
+        d = v["grid_damping_MW_per_Hz"]
+        horizon = v["nadir_horizon_s"]
+        fnom = v["nominal_frequency_Hz"]
+        fnow = v["frequency_Hz"]
+        fixed_power = (
+            v["imbalance_MW"] + v["grid_damping_load_MW"] - v["nadir_trip_MW"]
+        )
+        if m <= 0 or d < 0 or horizon <= 0:
+            raise AssertionError(f"Invalid dimensioned forecast parameters at t={t:.2f}s")
+        if d == 0.0:
+            projected = fnow + (fixed_power / m) * horizon
+        else:
+            decay = math.exp(-d * horizon / m)
+            projected = (
+                fnom + (fnow - fnom) * decay + (fixed_power / d) * (1.0 - decay)
+            )
+        predicted_min = min(fnow, projected)
+        near("independent analytical fixed-loss horizon min", v["fixed_step_min_Hz"],
+             predicted_min, EPS_HZ, t)
+        should_be_valid = float(
+            abs(fnow - fnom) <= 3.0 and abs(projected - fnom) <= 3.0
+            and abs(predicted_min - fnom) <= 3.0
+        )
+        near("forecast validity must expose out-of-domain prediction",
+             v["fixed_step_valid"], should_be_valid, 1e-9, t)
         # This scenario is single-GT simple cycle with no P2X or CCS.
         near("one physical supply sum",
              v["plant_power_MW"] + v["renewable_actual_MW"] + v["storage_MW"],
              v["supply_MW"], EPS_MW, t)
         near("served-load MW imbalance", v["supply_MW"] - v["served_demand_MW"],
              v["imbalance_MW"], EPS_MW, t)
-        near("independent swing RHS", v["imbalance_MW"] / INERTIA_MW_PER_HZ_S,
+        near("independent dimensional swing RHS",
+             v["imbalance_MW"] / v["grid_swing_MW_s_per_Hz"],
              v["ROCOF_Hz_s"], EPS_HZ, t)
         if abs(v["storage_MW"]) > INVERTER_MW + EPS_MW:
             raise AssertionError(f"Inverter MW exceeded at t={t:.2f}s")
@@ -70,6 +112,15 @@ def verify(rows: list[dict[str, str]]) -> int:
             continue
 
         previous = {field: float(rows[index - 1][field]) for field in required}
+        # Frequency-sensitive load is evaluated before frequency advances;
+        # the row therefore uses the previous row's f, not the reported
+        # post-integration frequency of this row.
+        expected_damping = v["grid_damping_MW_per_Hz"] * (
+            previous["frequency_Hz"] - v["nominal_frequency_Hz"]
+        )
+        near("frequency-dependent load from previous-frequency state",
+             v["grid_damping_load_MW"], max(-v["static_served_demand_MW"],
+                 expected_damping), EPS_MW, t)
         dt = t - previous["time_s"]
         if dt <= 0.0:
             raise AssertionError(f"Time not strictly increasing at t={t}")
@@ -118,7 +169,10 @@ def main() -> int:
         # Independent checker must reject an internally inconsistent flight
         # recorder, not merely run successfully on generated model outputs.
         for field, offset in [("battery_energy_MWh", 0.1), ("supply_MW", 1.0),
-                              ("ROCOF_Hz_s", 1.0)]:
+                              ("ROCOF_Hz_s", 1.0),
+                              ("grid_swing_MW_s_per_Hz", 2.0),
+                              ("grid_damping_load_MW", 1.0),
+                              ("fixed_step_min_Hz", 1.0)]:
             altered = [dict(row) for row in rows]
             altered[3][field] = str(float(altered[3][field]) + offset)
             try:

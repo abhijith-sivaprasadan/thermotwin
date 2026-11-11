@@ -49,7 +49,19 @@ module engine_state
 
     ! --- Grid frequency physics, ENTSO-E 50 Hz ---------------------------
     real(dp), parameter, public :: FREQ_NOMINAL_HZ   = 50.0_dp
-    real(dp), parameter, public :: INERTIA_MWs       = 25.0_dp   ! swing-equation M_eff
+    ! Inertia energy E=H*S [MW*s = MJ]; M=2E/f0 [MW*s/Hz].
+    ! External rotating area is an explicit unmodelled-injection assumption,
+    ! kept online after GT loss. 105 MW @ H=5 s plus 30 MW GT @ H=10/3 s
+    ! preserves the original numerical 25 MW*s/Hz coefficient at 50 Hz.
+    real(dp), parameter, public :: GRID_EXTERNAL_INERTIA_H_S = 5.0_dp
+    real(dp), parameter, public :: GRID_EXTERNAL_INERTIA_RATED_MW = 105.0_dp
+    real(dp), parameter, public :: GRID_GT_INERTIA_H_S = 10.0_dp/3.0_dp
+    real(dp), parameter, public :: GRID_GT_INERTIA_RATED_MW = 30.0_dp
+    real(dp), parameter, public :: GRID_DEFAULT_DAMPING_MW_PER_HZ = 0.50_dp
+    real(dp), parameter, public :: GRID_NADIR_HORIZON_S = 5.0_dp
+    real(dp), parameter, public :: INERTIA_MWs = &
+        GRID_EXTERNAL_INERTIA_H_S*GRID_EXTERNAL_INERTIA_RATED_MW + &
+        GRID_GT_INERTIA_H_S*GRID_GT_INERTIA_RATED_MW ! legacy name: stored energy, not swing denominator
     real(dp), parameter, public :: GOVERNOR_DROOP_R  = 0.05_dp   ! 5 % droop
     real(dp), parameter, public :: BESS_PRIMARY_GAIN = 5.0_dp    ! MW/Hz primary response
     real(dp), parameter, public :: BESS_PRIMARY_DB   = 0.02_dp   ! Hz dead-band
@@ -159,8 +171,19 @@ module engine_state
         real(dp) :: nominal_frequency_Hz = FREQ_NOMINAL_HZ
         real(dp) :: governor_delta_MW = 0.0_dp
         real(dp) :: BESS_primary_MW = 0.0_dp  ! actually delivered, included in storage_MW
-        real(dp) :: served_demand_MW = 35.0_dp   ! gross demand after UFLS
+        real(dp) :: served_demand_MW = 35.0_dp  ! actual consumption incl. D*delta_f
+        real(dp) :: static_served_demand_MW = 35.0_dp ! gross after UFLS only
         real(dp) :: ufls_shed_MW = 0.0_dp
+        real(dp) :: grid_damping_load_MW = 0.0_dp ! signed load adjustment
+        real(dp) :: grid_damping_MW_per_Hz = GRID_DEFAULT_DAMPING_MW_PER_HZ
+        real(dp) :: grid_external_inertia_H_s = GRID_EXTERNAL_INERTIA_H_S
+        real(dp) :: grid_external_inertia_rated_MW = GRID_EXTERNAL_INERTIA_RATED_MW
+        real(dp) :: grid_gt_inertia_H_s = GRID_GT_INERTIA_H_S
+        real(dp) :: grid_gt_inertia_rated_MW = GRID_GT_INERTIA_RATED_MW
+        real(dp) :: grid_inertia_energy_MWs = INERTIA_MWs
+        real(dp) :: grid_swing_coeff_MW_s_per_Hz = 2.0_dp*INERTIA_MWs/FREQ_NOMINAL_HZ
+        logical :: grid_model_valid = .true.
+        logical :: grid_frequency_clamped = .false.
         real(dp) :: UFLS_shed_fraction = 0.0_dp
         real(dp) :: ufls_thresh_1_Hz = UFLS_THRESH_1
         real(dp) :: ufls_thresh_2_Hz = UFLS_THRESH_2
@@ -455,7 +478,7 @@ module engine_state
         real(dp) :: gfm_synth_MW      = 0.0_dp      ! actual delivered incremental GFM MW
         real(dp) :: gfm_request_MW    = 0.0_dp      ! requested (not guaranteed) GFM MW
         real(dp) :: gfm_H_equiv       = 0.0_dp      ! equivalent H contribution [MWs/MVA]
-        real(dp) :: freq_rocof_Hz_s   = 0.0_dp      ! ROCOF filled by nadir predictor [Hz/s]
+        real(dp) :: freq_rocof_Hz_s   = 0.0_dp      ! last measured simulation tick [Hz/s]
 
         ! ── MPC-AGC (5-step, 1-min/step receding-horizon frequency regulator) ──
         logical  :: mpc_active        = .false.      ! operator enable/disable
@@ -500,9 +523,11 @@ module engine_state
         integer  :: ou_iseed           = 123456789  ! LCG state
 
         ! ── Frequency nadir predictor ─────────────────────────────────────────────
-        real(dp) :: freq_nadir_Hz      = 50.0_dp    ! predicted N-1 nadir [Hz]
+        real(dp) :: freq_nadir_Hz      = 50.0_dp    ! fixed-disturbance horizon minimum, not closed-loop nadir
         real(dp) :: freq_prev_Hz       = 50.0_dp    ! previous-tick frequency (ROCOF)
-        real(dp) :: nadir_trip_MW      = 50.0_dp    ! assumed N-1 trip size [MW]
+        real(dp) :: nadir_trip_MW      = 10.0_dp    ! additional hypothetical fixed MW generation loss
+        real(dp) :: nadir_horizon_s    = GRID_NADIR_HORIZON_S
+        logical :: nadir_forecast_valid = .false.
 
         ! ── DNN MC-dropout uncertainty ────────────────────────────────────────────
         real(dp) :: dnn_hr_sigma       = 0.0_dp     ! HR std from 20 MC passes [kJ/kWh]

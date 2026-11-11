@@ -142,6 +142,14 @@ contains
 
         st%nominal_frequency_Hz = nominal_hz
         st%frequency_Hz = nominal_hz
+        ! Switching nominal standards is a scenario reset, not a physical
+        ! 10 Hz/s ROCOF event. Avoid synthetic GFM inertia injections.
+        st%freq_prev_Hz = nominal_hz
+        st%freq_rocof_Hz_s = 0.0_dp
+        st%ROCOF_Hz_s = 0.0_dp
+        st%freq_nadir_Hz = nominal_hz
+        st%nadir_forecast_valid = .false.
+        st%grid_frequency_clamped = .false.
         st%UFLS_stage = 0
         st%UFLS_shed_fraction = 0.0_dp
         if (nominal_hz >= 59.0_dp) then

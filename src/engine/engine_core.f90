@@ -23,6 +23,8 @@ module engine_core
         market_profile_name, MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU, &
         MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     use grid_dynamics, only: tick_frequency_dynamics
+    use grid_frequency_physics, only: refresh_frequency_sensitive_demand, &
+        grid_fixed_loss_horizon_min, grid_stored_energy_MWs, grid_swing_MW_s_per_Hz
     use grid_primary_balance, only: tick_governor_setpoint, resolve_bess_injection
     use equipment_protection, only: reset_equipment_monitor, tick_equipment_monitor
     use gt_trip_sequence, only: gt_trip_reset_state, gt_trip_advance, &
@@ -96,6 +98,7 @@ module engine_core
     public :: MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU
     public :: MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     public :: FREQ_NOMINAL_HZ, INERTIA_MWs, GOVERNOR_DROOP_R
+    public :: GRID_EXTERNAL_INERTIA_H_S, GRID_GT_INERTIA_H_S, GRID_DEFAULT_DAMPING_MW_PER_HZ
     public :: BESS_PRIMARY_GAIN, BESS_PRIMARY_DB
     public :: UFLS_THRESH_1, UFLS_THRESH_2, UFLS_THRESH_3, UFLS_RESET, UFLS_SHED_PCT
     public :: LFSM_O_THRESH_HZ, LFSM_O_DROOP
@@ -188,6 +191,11 @@ contains
                 st%supply_MW=thermal_generation_MW(st)+ &
                     max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+st%storage_MW
                 st%imbalance_MW=st%supply_MW-st%served_demand_MW
+                ! First-out disconnect has changed connected rotor energy.
+                ! Correct the published inertia tag immediately even though
+                ! the frequency Euler step responds on the NEXT tick.
+                st%grid_inertia_energy_MWs=grid_stored_energy_MWs(st)
+                st%grid_swing_coeff_MW_s_per_Hz=grid_swing_MW_s_per_Hz(st)
                 call refresh_economics(st)
             end if
         end block
@@ -294,16 +302,11 @@ contains
         ! ROCOF: Hz/s from consecutive ticks (250 ms)
         st%freq_rocof_Hz_s = (st%frequency_Hz - st%freq_prev_Hz) / max(dt_s, 1.0e-6_dp)
         st%freq_prev_Hz    = st%frequency_Hz
-        ! Predicted nadir for N-1 trip: Δf_nadir ≈ −ΔP·f₀ / (2·H·P_load)
-        block
-            real(dp) :: h_total, p_load
-            h_total = INERTIA_MWs / max(st%gas_capacity_MW, 1.0_dp)
-            if (st%gfm_mode) h_total = h_total + st%gfm_virtual_H * 0.2_dp
-            p_load  = max(st%demand_MW, 10.0_dp)
-            st%freq_nadir_Hz = FREQ_NOMINAL_HZ &
-                - st%nadir_trip_MW * FREQ_NOMINAL_HZ / (2.0_dp * h_total * p_load)
-            st%freq_nadir_Hz = max(47.0_dp, st%freq_nadir_Hz)
-        end block
+        ! Not a closed-loop N-1 nadir. Analytic minimum over a SPECIFIED
+        ! horizon under frozen current injection, constant D and a further
+        ! hypothetical step loss. It may be outside the +/-3 Hz model domain.
+        call grid_fixed_loss_horizon_min(st,st%nadir_trip_MW,st%nadir_horizon_s, &
+            st%freq_nadir_Hz,st%nadir_forecast_valid)
 
         ! ── Hot-parts LCF counter ─────────────────────────────────────────────────
         block
@@ -573,8 +576,7 @@ contains
             st%plant_efficiency = 0.0_dp
             st%heat_rate_kJ_kWh = huge(1.0_dp)
         end if
-        st%served_demand_MW=st%demand_MW*(1.0_dp-st%UFLS_shed_fraction)
-        st%ufls_shed_MW=st%demand_MW-st%served_demand_MW
+        call refresh_frequency_sensitive_demand(st)
         st%supply_MW=thermal_generation_MW(st)+ &
             max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+st%storage_MW
         st%imbalance_MW=st%supply_MW-st%served_demand_MW
@@ -639,8 +641,16 @@ contains
         call tag_set("GRID.SUPPLY_MW",        st%supply_MW,           "MW",     t)
         call tag_set("GRID.IMBALANCE_MW",     st%imbalance_MW,        "MW",     t)
         call tag_set("GRID.UFLS_STAGE",       real(st%UFLS_stage, dp), "-",     t)
-        call tag_set("GRID.INERTIA_MWS",      merge(st%fleet_inertia_MWs, INERTIA_MWs, &
-            st%fleet_mode), "MWs", t)
+        call tag_set("GRID.INERTIA_MWS",      st%grid_inertia_energy_MWs, "MWs", t)
+        call tag_set("GRID.SWING_MW_S_PER_HZ",st%grid_swing_coeff_MW_s_per_Hz,"MW*s/Hz",t)
+        call tag_set("GRID.DAMPING_MW_PER_HZ",st%grid_damping_MW_per_Hz,"MW/Hz",t)
+        call tag_set("GRID.DAMPING_LOAD_MW",  st%grid_damping_load_MW,"MW",t)
+        call tag_set("GRID.STATIC_SERVED_MW",st%static_served_demand_MW,"MW",t)
+        call tag_set("GRID.MODEL_VALID",merge(1.0_dp,0.0_dp,st%grid_model_valid),"-",t)
+        call tag_set("GRID.FREQ_CLAMPED",merge(1.0_dp,0.0_dp,st%grid_frequency_clamped),"-",t)
+        call tag_set("GRID.FIXED_STEP_MIN_HZ",st%freq_nadir_Hz,"Hz",t)
+        call tag_set("GRID.FIXED_STEP_VALID",merge(1.0_dp,0.0_dp,st%nadir_forecast_valid),"-",t)
+        call tag_set("GRID.FIXED_STEP_HORIZON_S",st%nadir_horizon_s,"s",t)
         call tag_set("GT1.SIM_TRIP_PHASE",     real(st%gt_phase,dp), "-",t)
         call tag_set("GT1.SIM_FIRSTOUT_CODE",  real(st%gt_first_out,dp), "-",t)
         call tag_set("GT1.SIM_TRIP_LATCHED",   merge(1.0_dp,0.0_dp,st%gt_trip_latched),"-",t)
