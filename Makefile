@@ -37,7 +37,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         compressor combustor turbine shaft_generator cycle_solver degradation \
         transient_thermal sensor_model uncertainty_analysis diagnostics_solver \
         csv_io sensitivity_driver off_design site_performance hrsg steam_cycle \
-        tag_bus h2_blend combustion_physics engine_state physics_fidelity exergy exergy_uq exergy_sobol thermo_limits data_reconciliation scientific_report market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics \
+        tag_bus h2_blend combustion_physics engine_state physics_fidelity exergy exergy_uq exergy_sobol thermo_limits data_reconciliation scientific_report market_data fleet_dispatch grid_frequency_physics grid_dynamics dispatch_agc plant_economics \
         dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
         anomaly_detector rl_dispatch fault_classifier forecast_engine \
         p2x_electrolyser ccs_model gfm_bess grid_primary_balance tie_line mpc_agc \
@@ -117,7 +117,8 @@ $(BUILD)/exergy_sobol.o:         $(BUILD)/exergy.o $(BUILD)/engine_state.o $(BUI
 $(BUILD)/thermo_limits.o:        $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/data_reconciliation.o:  $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/scientific_report.o:    $(BUILD)/exergy.o $(BUILD)/exergy_uq.o $(BUILD)/exergy_sobol.o $(BUILD)/thermo_limits.o $(BUILD)/data_reconciliation.o $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
-$(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o
+$(BUILD)/grid_frequency_physics.o: $(BUILD)/engine_state.o
+$(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o $(BUILD)/grid_frequency_physics.o
 $(BUILD)/equipment_protection.o:   $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/gt_trip_sequence.o:      $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o $(BUILD)/gt_trip_sequence.o
@@ -141,7 +142,7 @@ $(BUILD)/gfm_bess.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds
 $(BUILD)/grid_primary_balance.o: $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/tie_line.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/mpc_agc.o:             $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
-$(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
+$(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o $(BUILD)/grid_frequency_physics.o \
                                   $(BUILD)/gt_trip_sequence.o \
                                   $(BUILD)/equipment_protection.o \
                                   $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \

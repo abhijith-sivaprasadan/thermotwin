@@ -8,6 +8,9 @@ module grid_dynamics
     use precision_kinds, only: dp
     use engine_state
     use off_design, only: SURGE_ALARM_PCT
+    use grid_frequency_physics, only: grid_stored_energy_MWs, grid_swing_MW_s_per_Hz, &
+        refresh_frequency_sensitive_demand
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
 
@@ -20,17 +23,26 @@ contains
     subroutine tick_frequency_dynamics(st, dt_s)
         type(GridState), intent(inout) :: st
         real(dp), intent(in) :: dt_s
-        real(dp) :: df_dt, m_eff_MWs
-        if (dt_s<=0.0_dp) return
-
-        ! The governor was already applied through the thermodynamic
-        ! off-design load solve, and the BESS primary response was already
-        ! combined into storage_MW. Never add either AGAIN as free power.
-        if (st%fleet_mode) then
-            m_eff_MWs = max(8.0_dp, st%fleet_inertia_MWs)
-        else
-            m_eff_MWs = INERTIA_MWs
+        real(dp) :: df_dt, m_swing, next_frequency_Hz
+        if (.not.ieee_is_finite(dt_s) .or. dt_s<=0.0_dp) then
+            st%grid_model_valid=.false.
+            st%ROCOF_Hz_s=0.0_dp
+            return
         end if
+        st%grid_inertia_energy_MWs=grid_stored_energy_MWs(st)
+        m_swing=grid_swing_MW_s_per_Hz(st)
+        st%grid_swing_coeff_MW_s_per_Hz=m_swing
+        st%grid_model_valid=m_swing>0.0_dp .and. &
+            ieee_is_finite(st%grid_damping_MW_per_Hz) .and. &
+            st%grid_damping_MW_per_Hz>=0.0_dp .and. &
+            ieee_is_finite(st%frequency_Hz) .and. &
+            ieee_is_finite(st%demand_MW)
+        if(.not.st%grid_model_valid) then
+            st%ROCOF_Hz_s=0.0_dp
+            return
+        end if
+        ! Governor and BESS actual MW are already resolved upstream.
+        ! NO second, unbooked primary-power injections here.
 
         ! UFLS (ENTSO-E): latching stages, reset above 49.5 Hz
         if (st%frequency_Hz >= st%ufls_reset_Hz) then
@@ -59,15 +71,16 @@ contains
         ! One physical accounting convention for frequency AND published tags:
         ! positive BESS power supplies the grid; LFSM-O reduces RES injection;
         ! UFLS reduces actually served demand, but not gross demand request.
-        st%served_demand_MW=st%demand_MW*(1.0_dp-st%UFLS_shed_fraction)
-        st%ufls_shed_MW=st%demand_MW-st%served_demand_MW
+        call refresh_frequency_sensitive_demand(st)
         st%supply_MW=thermal_generation_MW(st)+ &
             max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+ &
             st%storage_MW
         st%imbalance_MW=st%supply_MW-st%served_demand_MW
-        df_dt=st%imbalance_MW/m_eff_MWs
+        df_dt=st%imbalance_MW/m_swing ! [MW]/[MW*s/Hz] => [Hz/s]
         st%ROCOF_Hz_s=df_dt
-        st%frequency_Hz=clamp_real(st%frequency_Hz+df_dt*dt_s, &
+        next_frequency_Hz=st%frequency_Hz+df_dt*dt_s
+        st%grid_frequency_clamped=abs(next_frequency_Hz-st%nominal_frequency_Hz)>3.0_dp
+        st%frequency_Hz=clamp_real(next_frequency_Hz, &
             st%nominal_frequency_Hz-3.0_dp,st%nominal_frequency_Hz+3.0_dp)
 
         ! Update alarm flags
