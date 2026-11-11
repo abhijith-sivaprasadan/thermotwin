@@ -25,6 +25,10 @@ The whole project is built around a single shared data model — one `InputCase`
 KPI) flows out — so the advanced modules compose coherently instead of being
 independent scripts.
 
+## Current main-branch research acceptance (11 November 2026)
+
+The [independent evidence and acceptance audit](docs/ENGINEERING_ACCEPTANCE_2026-11-11.md) and [machine-readable capability inventory](docs/capability_evidence.json) distinguish implemented numerical models, external reanalysis, actual unrelated-turbine observations, mathematical pass-off methods, unsupported features, and **absent industrial validation**. The [untagged source-release candidate checklist](docs/RESEARCH_RELEASE_CANDIDATE_2026-11-11.md) explicitly does NOT publish a new version or DOI. CI generates a source-commit-pinned claim audit artifact; it does not perform measured-engine certification or GUI user acceptance.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.

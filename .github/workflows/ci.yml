@@ -100,6 +100,18 @@ jobs:
         run: python scripts/check_release_metadata.py
       - name: Audit internal research documentation links
         run: python scripts/check_repository_links.py
+      - name: Verify claim-to-code evidence manifest and negative-claim gates
+        run: |
+          python -m unittest scripts.test_capability_evidence scripts.test_check_gt_validation_readiness -v
+          python scripts/check_capability_evidence.py --output build/release-readiness/research_release_evidence.json
+      - name: Preserve release-candidate claim audit (not a published release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-release-candidate-audit
+          path: |
+            build/release-readiness/research_release_evidence.json
+            docs/capability_evidence.json
+          if-no-files-found: error
       - name: Verify build cleanup cannot remove sources or outside paths
         run: python -m unittest scripts.test_clean -v
       - name: Test Open-Meteo weather boundary units, QC and replay

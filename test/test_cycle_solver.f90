@@ -34,6 +34,18 @@ program test_cycle_solver
     call expect_true("turbine power > compressor power", &
                      r%power_turbine_MW > r%power_compressor_MW, failures)
 
+    ! Gas flow includes fuel, but the compressor only processes inlet air.
+    ! Mechanical net specific work must use a COMMON inlet-air mass basis.
+    call expect_near("specific shaft work uses incoming air mass basis", &
+                     r%w_net_specific_J_kg, &
+                     (r%power_turbine_MW-r%power_compressor_MW)*1.0e6_dp/r%mdot_air_kg_s, &
+                     1.0e-6_dp, failures)
+    call expect_near("gas-flow fuel mass continuity", &
+                     r%mdot_gas_kg_s, &
+                     r%mdot_air_kg_s + r%fuel_flow_kg_s, 1.0e-10_dp, failures)
+    call expect_true("specific work includes fuel contribution", &
+                     r%w_net_specific_J_kg > r%w_turbine_J_kg-r%w_compressor_J_kg, failures)
+
     ! Heat rate consistency: HR = 3600 / eta.
     call expect_near("heat-rate consistency", &
                      r%heat_rate_kJ_kWh, 3600.0_dp/r%thermal_efficiency, 1.0e-3_dp, failures)

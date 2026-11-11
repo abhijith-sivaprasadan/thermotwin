@@ -1,0 +1,418 @@
+{
+  "schema": "thermotwin.capability-evidence.v1",
+  "baseline": {
+    "commit": "a7a7b5d3c7da2d1637e407aa7e2fa68cf843434b",
+    "ci_run": "42910692466",
+    "ci_url": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/42910692466",
+    "date_utc": "2026-11-10"
+  },
+  "classification_note": "Implementation + tests are NOT quantified field accuracy. Data types and unsupported capabilities are intentionally separated.",
+  "archived_beta_release": "v2.0.0-beta.1 (source only, fixed historical tag; does not include later main work)",
+  "capabilities": [
+    {
+      "id": "simple_brayton_cycle",
+      "status": "implemented",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/cycle_solver.f90",
+        "src/compressor.f90",
+        "src/combustor.f90",
+        "src/turbine.f90",
+        "docs/verification_matrix.md"
+      ],
+      "checks": [
+        "test/test_cycle_solver.f90",
+        "test/test_combustor.f90"
+      ],
+      "ci_evidence": [
+        "Existing suite and scenario regressions (OpenMP)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12
+      ],
+      "independent_field_validation": false,
+      "limitation": "Educational reduced-order cycle; no matched measured engine, map calibration or quantified model form uncertainty."
+    },
+    {
+      "id": "off_design_and_degradation",
+      "status": "implemented",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/off_design.f90",
+        "src/degradation.f90",
+        "test/test_off_design.f90"
+      ],
+      "checks": [
+        "test/test_off_design.f90",
+        "test/test_degradation.f90"
+      ],
+      "ci_evidence": [
+        "Existing suite and scenario regressions (OpenMP)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12,
+        13
+      ],
+      "independent_field_validation": false,
+      "limitation": "Representative quadratic map penalties and surge assumptions; not OEM compressor/turbine maps."
+    },
+    {
+      "id": "fixed_reference_site_correction",
+      "status": "implemented",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/site_performance.f90",
+        "cases/site_iso_flange_reference.csv",
+        "docs/SITE_PERFORMANCE_v0.1.md"
+      ],
+      "checks": [
+        "test/test_site_performance.f90",
+        "scripts/test_site_pipeline.py"
+      ],
+      "ci_evidence": [
+        "Existing suite and scenario regressions (OpenMP)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        13
+      ],
+      "independent_field_validation": false,
+      "limitation": "Reference/site ratios are model outputs, not observed plant derating or ISO/ASME certified corrections."
+    },
+    {
+      "id": "external_weather_boundary",
+      "status": "implemented",
+      "evidence_tier": "source_inputs_only",
+      "paths": [
+        "scripts/open_meteo_boundary.py",
+        "docs/REAL_WEATHER_BOUNDARY.md"
+      ],
+      "checks": [
+        "scripts/test_open_meteo_boundary.py"
+      ],
+      "ci_evidence": [
+        "Real ERA5 weather boundary integration (reanalysis, not GT test data)"
+      ],
+      "source_artifacts": [
+        "real-era5-boundary-and-source"
+      ],
+      "open_issues": [
+        13,
+        19
+      ],
+      "independent_field_validation": false,
+      "limitation": "ERA5 and forecasts are atmospheric model products; no measured compressor/exhaust flange conditions."
+    },
+    {
+      "id": "historical_era5_site_study",
+      "status": "implemented",
+      "evidence_tier": "source_inputs_only",
+      "paths": [
+        "scripts/study_era5_site_windows.py",
+        "docs/ERA5_SEASONAL_SITE_STUDY.md"
+      ],
+      "checks": [
+        "scripts/test_study_era5_site_windows.py"
+      ],
+      "ci_evidence": [
+        "Original ERA5 four-season fixed-engine site sensitivity"
+      ],
+      "source_artifacts": [
+        "era5-four-seasons-source-backed-site-study"
+      ],
+      "open_issues": [
+        13,
+        16
+      ],
+      "independent_field_validation": false,
+      "limitation": "672 selected ERA5 hours and 2688 assumed-loss scenarios; neither uncertainty bounds nor annual fleet averages."
+    },
+    {
+      "id": "uci551_one_turbine_statistics",
+      "status": "implemented",
+      "evidence_tier": "empirical_statistics",
+      "paths": [
+        "scripts/analyze_uci_gt551.py",
+        "scripts/fetch_uci_gt551.py",
+        "docs/UCI551_REAL_OPERATIONS.md"
+      ],
+      "checks": [
+        "scripts/test_analyze_uci_gt551.py",
+        "scripts/test_fetch_uci_gt551.py"
+      ],
+      "ci_evidence": [
+        "Real UCI-551 turbine measurements and chronological holdout"
+      ],
+      "source_artifacts": [
+        "real-uci551-source-and-evaluation"
+      ],
+      "open_issues": [
+        15
+      ],
+      "independent_field_validation": false,
+      "limitation": "Measured TEY regression for one unrelated turbine; lacks true fault labels, precise UTC timestamps and OEM model benchmark."
+    },
+    {
+      "id": "smart_gtpp_observation_checks",
+      "status": "implemented",
+      "evidence_tier": "observational_consistency",
+      "paths": [
+        "scripts/independent_smart_gtpp_checks.py",
+        "scripts/fetch_smart_gtpp.py",
+        "docs/INDEPENDENT_MEASURED_TURBINE_EVIDENCE.md"
+      ],
+      "checks": [
+        "scripts/test_independent_smart_gtpp_checks.py"
+      ],
+      "ci_evidence": [
+        "Independent observed SMART-GTPP original-source examination"
+      ],
+      "source_artifacts": [
+        "smart-gtpp-original-measurements-provenance"
+      ],
+      "open_issues": [
+        12,
+        13,
+        16
+      ],
+      "independent_field_validation": false,
+      "limitation": "Unverified pressure unit hypotheses; 7893 measured observations and generic model cases do not measure absolute engine prediction accuracy."
+    },
+    {
+      "id": "independent_physical_validation_readiness",
+      "status": "implemented",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "scripts/check_gt_validation_readiness.py",
+        "docs/INDEPENDENT_MEASURED_TURBINE_EVIDENCE.md"
+      ],
+      "checks": [
+        "scripts/test_check_gt_validation_readiness.py"
+      ],
+      "ci_evidence": [
+        "Independent observed SMART-GTPP original-source examination"
+      ],
+      "source_artifacts": [
+        "smart-gtpp-original-measurements-provenance"
+      ],
+      "open_issues": [
+        12,
+        13
+      ],
+      "independent_field_validation": false,
+      "limitation": "Input-schema and row-quality inspection, not external certificate or physics model verification; final positive validation is blocked."
+    },
+    {
+      "id": "passoff_instrument_uq_method",
+      "status": "implemented",
+      "evidence_tier": "mathematical_method",
+      "paths": [
+        "scripts/passoff_correction.py",
+        "docs/PASSOFF_CORRECTION_METHOD.md"
+      ],
+      "checks": [
+        "scripts/test_passoff_correction.py"
+      ],
+      "ci_evidence": [
+        "Physics-based pass-off correction and instrument covariance tests"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        14
+      ],
+      "independent_field_validation": false,
+      "limitation": "First-order conditional instrument UQ only; excludes model-form uncertainty, actual synchronized tests and guarantee decision."
+    },
+    {
+      "id": "recruiter_engineering_dossier",
+      "status": "implemented",
+      "evidence_tier": "source_inputs_only",
+      "paths": [
+        "scripts/build_lincoln_dossier.py",
+        "docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md"
+      ],
+      "checks": [
+        "scripts/test_build_lincoln_dossier.py"
+      ],
+      "ci_evidence": [
+        "Recruiter evidence dossier from UCI + ERA5 source artifacts"
+      ],
+      "source_artifacts": [
+        "lincoln-source-backed-engineering-dossier"
+      ],
+      "open_issues": [
+        16
+      ],
+      "independent_field_validation": false,
+      "limitation": "Contains measured regression and generic weather-driven model figures but not engine-specific predictive validation."
+    },
+    {
+      "id": "steam_properties_and_rankine_reference",
+      "status": "experimental",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/fluid_properties.f90",
+        "src/engine/steam_cycle.f90",
+        "docs/INDEPENDENT_BENCHMARKS.md"
+      ],
+      "checks": [
+        "scripts/test_tespy_reference.py"
+      ],
+      "ci_evidence": [
+        "TESPy reference Rankine fixture (not model validation)"
+      ],
+      "source_artifacts": [
+        "independent-tespy-rankine"
+      ],
+      "open_issues": [
+        12
+      ],
+      "independent_field_validation": false,
+      "limitation": "Standalone TESPy comparison is not matched-boundary full-cycle validation or IF97 compliance."
+    },
+    {
+      "id": "synthetic_fault_diagnostics",
+      "status": "experimental",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/diagnostics_solver.f90",
+        "test/test_diagnostics.f90"
+      ],
+      "checks": [
+        "test/test_diagnostics.f90"
+      ],
+      "ci_evidence": [
+        "Existing suite and scenario regressions (OpenMP)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12,
+        15
+      ],
+      "independent_field_validation": false,
+      "limitation": "Noise-free synthetic recovery is not evaluated real fault classification, sensitivity or specificity."
+    },
+    {
+      "id": "grid_dispatch_surrogate_extensions",
+      "status": "experimental",
+      "evidence_tier": "internal_numerical",
+      "paths": [
+        "src/engine/engine_core.f90",
+        "src/engine/dnn_surrogate.f90",
+        "src/engine/dispatch_agc.f90"
+      ],
+      "checks": [
+        "test/test_dnn_surrogate.f90",
+        "test/test_dispatch_agc.f90"
+      ],
+      "ci_evidence": [
+        "Existing suite and scenario regressions (OpenMP)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12
+      ],
+      "independent_field_validation": false,
+      "limitation": "Simulation/scenario tests only; external operational and surrogate-training validation unresolved."
+    },
+    {
+      "id": "windows_gui_compile",
+      "status": "experimental",
+      "evidence_tier": "build_only",
+      "paths": [
+        "gui",
+        "docs/GUI_ACCEPTANCE.md"
+      ],
+      "checks": [],
+      "ci_evidence": [
+        "Windows GUI build (not interactive acceptance)"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12
+      ],
+      "independent_field_validation": false,
+      "limitation": "Compile-only verification; no human GUI/OPC UA acceptance or clean-machine executable distribution approval."
+    },
+    {
+      "id": "humidity_physics",
+      "status": "unsupported",
+      "evidence_tier": "none",
+      "paths": [
+        "src/ambient.f90",
+        "docs/SITE_PERFORMANCE_v0.1.md"
+      ],
+      "checks": [],
+      "ci_evidence": [],
+      "source_artifacts": [],
+      "open_issues": [
+        12,
+        13
+      ],
+      "independent_field_validation": false,
+      "limitation": "Relative humidity is carried as an input, not applied in dry-air thermodynamic property calculations."
+    },
+    {
+      "id": "fuel_composition_chemistry",
+      "status": "unsupported",
+      "evidence_tier": "none",
+      "paths": [
+        "src/types.f90",
+        "src/combustor.f90"
+      ],
+      "checks": [],
+      "ci_evidence": [],
+      "source_artifacts": [],
+      "open_issues": [
+        12,
+        13
+      ],
+      "independent_field_validation": false,
+      "limitation": "A scalar fuel LHV does not establish fuel-composition or detailed reacting-chemistry modelling."
+    },
+    {
+      "id": "industrial_oem_validation",
+      "status": "unsupported",
+      "evidence_tier": "none",
+      "paths": [
+        "scripts/check_gt_validation_readiness.py",
+        "docs/INDEPENDENT_MEASURED_TURBINE_EVIDENCE.md"
+      ],
+      "checks": [],
+      "ci_evidence": [],
+      "source_artifacts": [],
+      "open_issues": [
+        12,
+        13,
+        14,
+        16
+      ],
+      "independent_field_validation": false,
+      "limitation": "No matched and calibrated engine test, traceable fuel/metrology package, OEM maps or independent absolute power/heat-rate errors."
+    },
+    {
+      "id": "historical_published_beta",
+      "status": "published_source_only",
+      "evidence_tier": "archived_source",
+      "paths": [
+        "README.md",
+        "docs/RELEASE_GATE.md",
+        "CITATION.cff"
+      ],
+      "checks": [
+        "scripts/check_release_metadata.py"
+      ],
+      "ci_evidence": [
+        "Validate citation, ORCID and version consistency"
+      ],
+      "source_artifacts": [],
+      "open_issues": [
+        12
+      ],
+      "independent_field_validation": false,
+      "limitation": "Zenodo DOI covers immutable historical source beta, NOT subsequent main research or industrial approval."
+    }
+  ]
+}
