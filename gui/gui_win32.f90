@@ -5095,6 +5095,8 @@ contains
         end do
         if(.not.compact) call draw_text(hdc,gx+gw-88,gy+14,"surge limit",COL_RED)
 
+        ! Offline or starting GT has no valid running map operating point.
+        if(grid%gt_phase==GT_ONLINE) then
         ! Operating point dot
         px = gx + int((clamp_real(grid%flow_frac, 0.35_dp, 1.0_dp) - 0.35_dp) / 0.65_dp * real(gw, dp))
         py = gy + gh - int((clamp_real(grid%PR_op, 6.0_dp, 20.0_dp) - 6.0_dp) / 14.0_dp * real(gh, dp))
@@ -5117,6 +5119,19 @@ contains
         ! OP readout
         write(line, '("OP  flow ",F5.1,"%  PR ",F5.2)') 100.0_dp * grid%flow_frac, grid%PR_op
         call draw_text(hdc, gx + 12, gy + gh - 28, trim(adjustl(line)), COL_LIME)
+        else
+            call draw_text(hdc,gx+12,gy+gh-28,'GT OFFLINE - NO RUNNING MAP POINT',COL_AMBER)
+        end if
+        ! Interactive cursor stays separate from the live solver operating point.
+        if(mouse_hover_valid.and.mouse_hover_x>=gx.and.mouse_hover_x<=gx+gw.and. &
+            mouse_hover_y>=gy.and.mouse_hover_y<=gy+gh) then
+            call draw_line(hdc,mouse_hover_x,gy,mouse_hover_x,gy+gh,COL_MUTED,1)
+            call draw_line(hdc,gx,mouse_hover_y,gx+gw,mouse_hover_y,COL_MUTED,1)
+            f=0.35_dp+0.65_dp*real(mouse_hover_x-gx,dp)/real(max(1,gw),dp)
+            pr=20.0_dp-14.0_dp*real(mouse_hover_y-gy,dp)/real(max(1,gh),dp)
+            write(line,'("CURSOR flow ",F5.1,"%  PR ",F5.2)') f*100.0_dp,pr
+            call draw_text(hdc,gx+12,gy+10,trim(adjustl(line)),COL_MUTED)
+        end if
     end subroutine draw_gt_map
 
     ! Brayton cycle T-s diagram using live engine state points.
@@ -5221,6 +5236,27 @@ contains
         call draw_text(hdc, x + 4, gy + 2, adjustl(lbl), COL_DIM)
         call draw_text(hdc, x + 4, gy + gh / 2 - 6, "T", COL_MUTED)
         call draw_text(hdc, gx + gw/2 - 22, gy + gh + 2, "s (kJ/kgK)", COL_MUTED)
+        ! Tracer is a schematic cycle-path marker, not measured gas velocity.
+        if(grid%gt_phase==GT_ONLINE.and.grid%fuel_flow_kg_s>0.0_dp) then
+            block
+                integer :: stage,qx,qy
+                real(dp) :: alpha
+                stage=modulo(int(grid%elapsed_s*6.0_dp),30)
+                alpha=real(mod(stage,10),dp)/10.0_dp
+                if(stage<10) then
+                    qx=nint(real(px1,dp)*(1.0_dp-alpha)+real(px2,dp)*alpha)
+                    qy=nint(real(py1,dp)*(1.0_dp-alpha)+real(py2,dp)*alpha)
+                else if(stage<20) then
+                    qx=nint(real(px2,dp)*(1.0_dp-alpha)+real(px3,dp)*alpha)
+                    qy=nint(real(py2,dp)*(1.0_dp-alpha)+real(py3,dp)*alpha)
+                else
+                    qx=nint(real(px3,dp)*(1.0_dp-alpha)+real(px4,dp)*alpha)
+                    qy=nint(real(py3,dp)*(1.0_dp-alpha)+real(py4,dp)*alpha)
+                end if
+                call hmi_fill_pie(hdc,int(qx,c_int),int(qy,c_int),3_c_int, &
+                    0.0_c_float,360.0_c_float,COL_AMBER)
+            end block
+        end if
     end subroutine draw_brayton_ts
 
     subroutine draw_combined_cycle_screen(hdc, x, y, width, height)
@@ -12283,7 +12319,7 @@ contains
         integer(c_int) :: stream_col, bess_col, res_col
         character(len=24) :: lbl, lbl2, lbl3, lbl4, lbl5
         logical :: compact, show_callouts, show_branches
-        integer, save :: flow_phase = 0   ! animation counter, advances each repaint
+        integer :: flow_phase   ! deterministic simulation-time phase (not repaint count)
 
         if (width < 260 .or. height < 68) return
 
@@ -12327,35 +12363,59 @@ contains
 
         ! Advance animation phase against elapsed time so flow speed stays stable as
         ! the HMI scan cadence changes.
-        flow_phase = mod(flow_phase + max(1, nint(real(TIMER_MS, dp) * 8.0_dp / 1000.0_dp)), 256)
+        flow_phase = modulo(int(max(0.0_dp,grid%elapsed_s)*8.0_dp),256)
 
         call draw_panel_box_deep(hdc, x, y, width, height)
+        if(compact) then
+            call draw_text(hdc,x+6,y+5, &
+                'FUEL '//merge('OPEN  ','CLOSED',grid%gt_fuel_valve_open), &
+                merge(COL_GREEN,COL_AMBER,grid%gt_fuel_valve_open))
+            call draw_text(hdc,x+max(112,width/2),y+5, &
+                'BRK '//merge('CLOSED','OPEN  ',grid%gt_breaker_closed), &
+                merge(COL_GREEN,COL_RED,grid%gt_breaker_closed))
+        end if
         if (.not. compact) then
             call draw_text(hdc, x + 12, y + 8, "PFD-001  LIVE PLANT SINGLE-LINE", COL_MUTED)
             call draw_text(hdc, x + width - 172, y + 8, "ISA STYLE / REALTIME", COL_DIM)
         end if
 
         ! Main gas/electrical train: air -> compressor -> combustor -> turbine -> generator -> bus.
-        stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, grid%exhaust_K < 800.0_dp)
+        stream_col = merge(int(Z'00BBFFFF', c_int), COL_DIM, grid%gt_phase==GT_ONLINE)
         call draw_pid_arrow_line(hdc, x_air, main_y, x_comp - eq_w / 2, main_y, COL_BORDER_SOFT, 2)
-        call draw_pid_arrow_line(hdc, x_comp + eq_w / 2, main_y, x_comb - eq_w / 2, main_y, COL_CYAN, 2)
-        call draw_pid_arrow_line(hdc, x_comb + eq_w / 2, main_y, x_turb - eq_w / 2, main_y, COL_AMBER, 2)
+        call draw_pid_arrow_line(hdc, x_comp + eq_w / 2, main_y, x_comb - eq_w / 2, main_y, &
+            merge(COL_CYAN,COL_DIM,grid%gt_phase==GT_ONLINE), 2)
+        call draw_pid_arrow_line(hdc, x_comb + eq_w / 2, main_y, x_turb - eq_w / 2, main_y, &
+            merge(COL_AMBER,COL_DIM,grid%gt_phase==GT_ONLINE), 2)
         call draw_pid_arrow_line(hdc, x_turb + eq_w / 2, main_y, x_gen - gen_r, main_y, stream_col, 2)
-        call draw_pid_arrow_line(hdc, x_gen + gen_r, main_y, x_bus, main_y, COL_GREEN, 2)
+        call draw_pid_arrow_line(hdc, x_gen + gen_r, main_y, x_bus, main_y, &
+            merge(COL_GREEN,COL_DIM,grid%gt_breaker_closed), 2)
+        ! Breaker blade is drawn from the actual simulated breaker state.
+        block
+            integer :: bx
+            bx=(x_gen+gen_r+x_bus)/2
+            call fill_box(hdc,bx-9,main_y-5,bx+9,main_y+6,COL_PANEL_DEEP)
+            if(grid%gt_breaker_closed) then
+                call draw_line(hdc,bx-8,main_y,bx+8,main_y,COL_GREEN,3)
+            else
+                call draw_line(hdc,bx-8,main_y,bx,main_y,COL_AMBER,2)
+                call draw_line(hdc,bx+3,main_y-8,bx+9,main_y-2,COL_AMBER,2)
+            end if
+        end block
         call draw_pid_arrow_line(hdc, x_bus, main_y, x_load - eq_w / 2, main_y, COL_RED, 2)
 
         ! Animated flow markers stay subtle; the linework remains the main artifact.
-        stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, &
-                           grid%exhaust_K < 800.0_dp)
-        spacing = 18
-        seg_len = max(1, x_load - (x_comp + eq_w/2))
-        n_dots  = seg_len / spacing + 2
-        do i = 0, n_dots
-            dot_x = x_comp + eq_w/2 + mod(i * spacing + flow_phase, seg_len)
-            if (dot_x >= x_comp + eq_w/2 .and. dot_x < x_load - 4) then
-                call fill_box(hdc, dot_x - 1, main_y - 1, dot_x + 2, main_y + 2, stream_col)
-            end if
-        end do
+        if(grid%gt_phase==GT_ONLINE.and.grid%fuel_flow_kg_s>0.0_dp) then
+            stream_col = merge(int(Z'00BBFFFF', c_int), COL_AMBER, grid%exhaust_K < 800.0_dp)
+            spacing = 18
+            seg_len = max(1, x_gen - (x_comp + eq_w/2)) ! physical GT train only
+            n_dots  = seg_len / spacing + 2
+            do i = 0, n_dots
+                dot_x = x_comp + eq_w/2 + mod(i * spacing + flow_phase, seg_len)
+                if (dot_x >= x_comp + eq_w/2 .and. dot_x < x_gen - gen_r) then
+                    call fill_box(hdc, dot_x - 1, main_y - 1, dot_x + 2, main_y + 2, stream_col)
+                end if
+            end do
+        end if
 
         ! Equipment symbols and live tags.
         write(lbl, '("PR ",F4.1)') grid%PR_op
@@ -12367,7 +12427,8 @@ contains
         call draw_pid_turbine(hdc, x_turb, main_y, eq_w, eq_h, "GT-301", trim(adjustl(lbl)), &
             merge(COL_RED, COL_AMBER, grid%alarm_turbine_max))
         write(lbl, '(I4,"MW")') nint(grid%plant_power_MW)
-        call draw_pid_generator(hdc, x_gen, main_y, gen_r, "G-401", trim(adjustl(lbl)), COL_GREEN)
+        call draw_pid_generator(hdc, x_gen, main_y, gen_r, "G-401", trim(adjustl(lbl)), &
+            merge(COL_GREEN,COL_AMBER,grid%gt_breaker_closed))
         write(lbl, '(F5.2,"Hz")') grid%frequency_Hz
         bus_top = main_y - max(34, eq_h)
         bus_bot = main_y + max(42, eq_h + 10)
