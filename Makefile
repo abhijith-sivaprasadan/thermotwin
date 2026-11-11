@@ -237,6 +237,4 @@ clean:
 download-opcua:
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.c -o gui/open62541.c
 	curl -fL --retry 3 $(OPCUA_URL)/open62541.h -o gui/open62541.h
-	sed -i 's|^#define UA_ARCHITECTURE_POSIX|/* #undef UA_ARCHITECTURE_POSIX */|' gui/open62541.h
-	sed -i 's|^\/\* #undef UA_ARCHITECTURE_WIN32 \*\/|#define UA_ARCHITECTURE_WIN32|' gui/open62541.h
-	sed -i 's|^#define UA_ENABLE_ENCRYPTION_MBEDTLS|/* #undef UA_ENABLE_ENCRYPTION_MBEDTLS */|' gui/open62541.h
+	python scripts/patch_open62541_win32.py gui/open62541.h

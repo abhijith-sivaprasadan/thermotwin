@@ -147,6 +147,8 @@ jobs:
           'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Compile explicit offline GUI without network or OPC UA vendor sources
         run: make -j4 gui-offline
+      - name: Test native PowerShell-compatible Win32 header patch
+        run: python -m unittest scripts.test_patch_open62541_win32 -v
       - name: Download pinned optional OPC UA implementation
         run: make download-opcua
       - name: Compile GUI
