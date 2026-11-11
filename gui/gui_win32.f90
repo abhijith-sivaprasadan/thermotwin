@@ -1179,6 +1179,39 @@ contains
                 case(37)
                     grid%demand_MW=DEMAND_MAX_MW
                     grid%renewable_MW=0.0_dp
+                case(40)
+                    ! Exercise the actual annunciator hit path; do not
+                    ! manufacture an already-open modal for image QA.
+                    block
+                        integer :: tw,tx
+                        tw=(layout_main_w-36)/8
+                        tx=layout_main_left+4+6*(tw+4)+tw/2
+                        call handle_mouse_down(hwnd,tx,layout_main_top+127)
+                        if(alarm_drill_selected/=7) then
+                            call log_debug("QA FAIL: surge annunciator did not open drill")
+                            ok=DestroyWindow(hwnd)
+                            return
+                        end if
+                    end block
+                case(47)
+                    call visual_qa_capture("build\gui-visual-qa\09-alarm-surge-map.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\09-alarm-surge-map-1536.png")
+                case(48)
+                    alarm_drill_selected=0
+                    alarm_page=2
+                case(49)
+                    call handle_mouse_down(hwnd,layout_main_left+18+140, &
+                        layout_main_top+360+4*48+12)
+                    if(alarm_drill_selected/=DRILL_PLANT_N+EQ_OIL) then
+                        call log_debug("QA FAIL: equipment alarm row did not open oil context")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                case(51)
+                    call visual_qa_capture("build\gui-visual-qa\10-alarm-oil-no-data.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\10-alarm-oil-no-data-1536.png")
+                case(52)
+                    alarm_drill_selected=0
                 case(84)
                     call visual_qa_capture("build\gui-visual-qa\04-original-alarms-stress.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\04-original-alarms-stress-1536.png")
@@ -1201,6 +1234,17 @@ contains
                 case(79)
                     trip_events_view=.false.
                     alarm_page=1
+                    call handle_mouse_down(hwnd,layout_main_left+34,layout_main_top+127)
+                    if(alarm_drill_selected/=1) then
+                        call log_debug("QA FAIL: frequency annunciator not mapped to drill")
+                        ok=DestroyWindow(hwnd)
+                        return
+                    end if
+                case(80)
+                    call visual_qa_capture("build\gui-visual-qa\11-alarm-frequency.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\11-alarm-frequency-1536.png")
+                case(81)
+                    alarm_drill_selected=0
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
                 case(87)
