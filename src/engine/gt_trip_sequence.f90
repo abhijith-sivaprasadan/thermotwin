@@ -4,7 +4,8 @@
 module gt_trip_sequence
     use precision_kinds, only: dp
     use engine_state
-    use equipment_protection, only: EQ_INPUT_STALE_S
+    use equipment_protection, only: EQ_INPUT_STALE_S, equipment_name
+    use grid_frequency_physics, only: grid_stored_energy_MWs, grid_swing_MW_s_per_Hz
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
@@ -23,8 +24,11 @@ module gt_trip_sequence
     real(dp), parameter, public :: GT_SYNC_DEMO_S = 3.0_dp
     real(dp), parameter :: GT_STOP_RPM_PCT = 3.0_dp
     real(dp), parameter :: GT_RESET_HOT_MARGIN_K = 200.0_dp
-    ! Mask bits: 1 phase, 2 ACK, 4 standing condition, 8 unavailable
-    ! instrument, 16 rotor, 32 hot-case, 64 unsupported fleet mode.
+    ! Mask bits (2^n): 0 phase, 1 ACK, 2 standing condition, 3 NO DATA,
+    ! 4 rotor/turning gear, 5 hot-case, 6 fleet unsupported,
+    ! 7 dependent actuator/auxiliary mismatch, 8 simulated sync envelope.
+    ! Neither the training bypass nor these inferred command states prove
+    ! an actual relay, purge flow, shaft state, fuel isolation or breaker feedback.
 contains
     subroutine gt_log(st,detail)
         type(GridState), intent(inout) :: st
@@ -57,12 +61,17 @@ contains
         st%gt_trip_ack=.false.
         st%gt_training_bypass=.false.
         st%gt_breaker_closed=.true.
+        st%gt_generator_excitation_on=.true.
+        st%gt_start_motor_on=.false.
         st%gt_fuel_valve_open=.true.
         st%gt_flame_on=.true.
         st%gt_blowoff_open=.false.
         st%gt_lube_support_on=.true.
         st%gt_turning_gear_on=.false.
         st%gt_purge_timer_done=.false.
+        st%gt_followon_alarm_seen=.false.
+        st%gt_lockout_time_s=-1.0_dp
+        st%gt_restart_request_time_s=-1.0_dp
         st%gt_trip_seq=0
         st%gt_trip_log_count=0
         st%gt_trip_log_s=0.0_dp
@@ -84,6 +93,10 @@ contains
         end if
         if(st%gt_phase==GT_TRIPPED .or. st%gt_phase==GT_RUNDOWN .or. &
            st%gt_phase==GT_LOCKOUT) return
+        if(st%gt_phase==GT_READY) then
+            st%gt_trip_last_denial="GT already reset and offline; use SIM RESTART"
+            return
+        end if
         accepted=.true.
         st%gt_phase=GT_TRIPPED
         st%gt_phase_s=0.0_dp
@@ -92,12 +105,16 @@ contains
         st%gt_trip_latched=.true.
         st%gt_trip_ack=.false.
         st%gt_breaker_closed=.false.
+        st%gt_generator_excitation_on=.false.
+        st%gt_start_motor_on=.false.
         st%gt_fuel_valve_open=.false.
         st%gt_flame_on=.false.
         st%gt_blowoff_open=.true.
         st%gt_lube_support_on=.true.
         st%gt_turning_gear_on=.false.
         st%gt_purge_timer_done=.false.
+        st%gt_lockout_time_s=-1.0_dp
+        st%gt_followon_alarm_seen=st%eq_alarm .and. st%eq_source==EQ_SRC_TRAINING
         ! Keep estimated speed unchanged on an aborted simulated startup.
         if(was_online) st%gt_rotor_est_pct=max(15.0_dp,st%gt_rotor_est_pct)
         st%gt_exhaust_est_K=max(st%ambient_C+273.15_dp,st%exhaust_K)
@@ -115,26 +132,85 @@ contains
         st%rl_mode=.false.
         st%dnn_adapting=.false.
         st%gt_trip_last_denial=""
-        call gt_log(st,"FIRST OUT: "//trim(gt_trip_cause_text(cause)))
-        call gt_log(st,"BREAKER OPEN / FUEL VALVES SHUT / FLAME OUT (SIM)")
-        call gt_log(st,"LUBE SUPPORT HELD / BLOWOFF OPEN (ASSUMED)")
+        call gt_log(st,"TRIGGER ACCEPTED: "//trim(gt_trip_cause_text(cause)))
+        call gt_log(st,"FIRST OUT LATCHED: "//trim(gt_trip_cause_text(cause)))
+        call gt_log(st,"GEN BREAKER OPEN / EXCITATION OFF (SIM)")
+        call gt_log(st,"FUEL SHUT / FLAME OFF / STARTER INHIBIT (SIM)")
+        call gt_log(st,"BLEED OPEN / LUBE SUPPORT ON (ASSUMED)")
+        call gt_log(st,"AGC GT / CCS / MPC / RL ISOLATED (SIM)")
+        ! Apply the physical/electrical teaching-model isolation AT THE
+        ! request boundary; API callers must not observe old GT MW or fuel.
+        call gt_trip_apply_boundary(st)
+        st%grid_inertia_energy_MWs=grid_stored_energy_MWs(st)
+        st%grid_swing_coeff_MW_s_per_Hz=grid_swing_MW_s_per_Hz(st)
+        st%supply_MW=thermal_generation_MW(st)+ &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+ &
+            st%storage_MW
+        st%imbalance_MW=st%supply_MW-st%served_demand_MW
+        ! Capture other simultaneous qualified alarms, without replacing
+        ! the latched first-out. All receive the same model timestamp when
+        ! observed on the same engine tick.
+        block
+            integer :: i
+            do i=1,EQ_N
+                if(.not.st%gt_followon_alarm_seen(i)) cycle
+                if(i==EQ_OVERSPEED .and. cause==GT_CAUSE_OVERSPEED) cycle
+                if(i==EQ_OIL .and. cause==GT_CAUSE_OIL) cycle
+                if(i==EQ_COMBUST .and. cause==GT_CAUSE_COMBUST) cycle
+                call gt_log(st,"OTHER ACTIVE AT TRIP: "//trim(equipment_name(i)))
+            end do
+        end block
     end subroutine gt_trip_request
+
+    ! Timestamped equipment confirmation is preferable to array order.
+    ! Exactly simultaneous rising edges use a documented educational
+    ! precedence: overspeed, lube pressure, combustion oscillation.
+    integer function gt_first_training_cause(st) result(cause)
+        type(GridState),intent(in) :: st
+        integer,parameter :: ids(3)=[EQ_OVERSPEED,EQ_OIL,EQ_COMBUST]
+        integer,parameter :: causes(3)=[GT_CAUSE_OVERSPEED,GT_CAUSE_OIL,GT_CAUSE_COMBUST]
+        integer :: i,id
+        real(dp) :: onset, earliest
+        cause=GT_CAUSE_NONE
+        earliest=huge(earliest)
+        do i=1,size(ids)
+            id=ids(i)
+            if(st%eq_source(id)/=EQ_SRC_TRAINING .or. .not.st%eq_alarm(id)) cycle
+            onset=st%eq_alarm_since_s(id)
+            if(.not.ieee_is_finite(onset) .or. onset<0.0_dp) onset=st%elapsed_s
+            if(onset<earliest) then
+                earliest=onset
+                cause=causes(i)
+            end if
+        end do
+    end function gt_first_training_cause
 
     subroutine gt_trip_monitor(st)
         type(GridState),intent(inout) :: st
-        logical :: accepted
+        logical :: accepted, active
+        integer :: i,cause
+        if(st%fleet_mode) return
+        ! Onset for a new post-trip training alarm is logged separately.
+        ! First-out code and timestamp MUST NOT be replaced by later alarms.
         if(st%gt_phase/=GT_ONLINE .and. st%gt_phase/=GT_READY .and. &
+           (st%gt_trip_latched .or. st%gt_first_out/=GT_CAUSE_NONE)) then
+            do i=1,EQ_N
+                active=st%eq_source(i)==EQ_SRC_TRAINING .and. st%eq_alarm(i)
+                if(active .and. .not.st%gt_followon_alarm_seen(i)) then
+                    st%gt_followon_alarm_seen(i)=.true.
+                    call gt_log(st,"FOLLOW-ON TRAIN ALARM: "//trim(equipment_name(i)))
+                else if(.not.active) then
+                    st%gt_followon_alarm_seen(i)=.false.
+                end if
+            end do
+        end if
+        if(st%gt_phase/=GT_ONLINE .and. &
            st%gt_phase/=GT_PURGING .and. st%gt_phase/=GT_IGNITING .and. &
            st%gt_phase/=GT_ACCELERATING .and. st%gt_phase/=GT_SYNCHRONIZING) return
-        if(st%eq_source(EQ_OVERSPEED)==EQ_SRC_TRAINING .and. st%eq_alarm(EQ_OVERSPEED)) then
-            call gt_trip_request(st,GT_CAUSE_OVERSPEED,accepted)
-        else if(st%eq_source(EQ_OIL)==EQ_SRC_TRAINING .and. st%eq_alarm(EQ_OIL)) then
-            call gt_trip_request(st,GT_CAUSE_OIL,accepted)
-        else if(st%eq_source(EQ_COMBUST)==EQ_SRC_TRAINING .and. st%eq_alarm(EQ_COMBUST)) then
-            call gt_trip_request(st,GT_CAUSE_COMBUST,accepted)
-        end if
-        ! A modeled surge margin or grid-frequency proxy is a warning, not
-        ! an independently proven protective trip condition.
+        cause=gt_first_training_cause(st)
+        if(cause/=GT_CAUSE_NONE) call gt_trip_request(st,cause,accepted)
+        ! Modelled surge margin or grid-frequency proxies do not become
+        ! certified protective trip triggers without qualified measurements.
     end subroutine gt_trip_monitor
 
     subroutine gt_trip_advance(st,dt)
@@ -152,13 +228,8 @@ contains
             mask=ibclr(gt_trip_restart_mask(st),0)
             if(mask/=0) then
                 denial=gt_trip_reason_for_mask(mask)
-                abort_cause=GT_CAUSE_START_ABORT
-                if(st%eq_source(EQ_OVERSPEED)==EQ_SRC_TRAINING .and. &
-                   st%eq_alarm(EQ_OVERSPEED)) abort_cause=GT_CAUSE_OVERSPEED
-                if(st%eq_source(EQ_OIL)==EQ_SRC_TRAINING .and. &
-                   st%eq_alarm(EQ_OIL)) abort_cause=GT_CAUSE_OIL
-                if(st%eq_source(EQ_COMBUST)==EQ_SRC_TRAINING .and. &
-                   st%eq_alarm(EQ_COMBUST)) abort_cause=GT_CAUSE_COMBUST
+                abort_cause=gt_first_training_cause(st)
+                if(abort_cause==GT_CAUSE_NONE) abort_cause=GT_CAUSE_START_ABORT
                 call gt_trip_request(st,abort_cause,accepted)
                 if(accepted) then
                     st%gt_trip_last_denial=denial
@@ -174,7 +245,8 @@ contains
         case(GT_TRIPPED)
             st%gt_phase=GT_RUNDOWN
             st%gt_phase_s=0.0_dp
-            call gt_log(st,"RUNDOWN BEGIN / ROTOR SPEED ESTIMATE ONLY")
+            call gt_log(st,"RUNDOWN BEGIN / BREAKER REMAINS OPEN (SIM)")
+            call gt_log(st,"ROTOR AND HOT-PARTS DYNAMICS ESTIMATED ONLY")
         case(GT_RUNDOWN)
             st%gt_rotor_est_pct=st%gt_rotor_est_pct*exp(-dt/GT_COAST_TAU_S)
             st%gt_exhaust_est_K=ambient_K+max(0.0_dp,st%gt_exhaust_est_K-ambient_K) * &
@@ -186,7 +258,11 @@ contains
                 st%gt_blowoff_open=.false.
                 st%gt_phase=GT_LOCKOUT
                 st%gt_phase_s=0.0_dp
-                call gt_log(st,"ROTOR REST ESTIMATED / TURNING GEAR ASSUMED")
+                st%gt_lockout_time_s=st%elapsed_s
+                st%gt_start_motor_on=.false.
+                st%gt_generator_excitation_on=.false.
+                call gt_log(st,"ROTOR REST EST / TURNING GEAR ON (SIM)")
+                call gt_log(st,"PROTECTION LOCKOUT / ISOLATION HELD")
             end if
         case(GT_LOCKOUT,GT_READY)
             st%gt_exhaust_est_K=ambient_K+max(0.0_dp,st%gt_exhaust_est_K-ambient_K) * &
@@ -199,16 +275,18 @@ contains
                 st%gt_phase=GT_IGNITING
                 st%gt_phase_s=0.0_dp
                 st%gt_fuel_valve_open=.true.
-                st%gt_flame_on=.true. ! simulated flame proof
+                st%gt_flame_on=.true. ! assumed, not actual flame proof
+                st%gt_blowoff_open=.false.
                 st%gt_turning_gear_on=.false.
-                call gt_log(st,"SIM PURGE TIMER DONE / IGNITION ASSUMED")
+                call gt_log(st,"PURGE TIMER END / NO AIRFLOW VERIFIED")
+                call gt_log(st,"SIM FUEL ENABLE / IGNITION ASSUMED")
             end if
         case(GT_IGNITING)
             st%gt_rotor_est_pct=min(15.0_dp,15.0_dp*st%gt_phase_s/GT_IGNITION_DEMO_S)
             if(st%gt_phase_s>=GT_IGNITION_DEMO_S) then
                 st%gt_phase=GT_ACCELERATING
                 st%gt_phase_s=0.0_dp
-                call gt_log(st,"IGNITION TIMER / SIM ACCELERATION")
+                call gt_log(st,"IGNITION TIMER END / SIM ACCELERATION")
             end if
         case(GT_ACCELERATING)
             alpha=min(1.0_dp,st%gt_phase_s/GT_ACCEL_DEMO_S)
@@ -216,7 +294,10 @@ contains
             if(alpha>=1.0_dp) then
                 st%gt_phase=GT_SYNCHRONIZING
                 st%gt_phase_s=0.0_dp
-                call gt_log(st,"AT SIM RATED SPEED / SYNCH CHECK ASSUMED")
+                st%gt_start_motor_on=.false.
+                st%gt_generator_excitation_on=.true.
+                call gt_log(st,"SIM RATED SPEED / STARTER OFF")
+                call gt_log(st,"SIM GENERATOR EXCITATION ON / SYNC CHECK")
             end if
         case(GT_SYNCHRONIZING)
             if(st%gt_phase_s>=GT_SYNC_DEMO_S) then
@@ -225,9 +306,13 @@ contains
                 st%gt_phase_s=0.0_dp
                 st%gt_rotor_est_pct=100.0_dp
                 st%gas_dispatch_pct=GAS_MIN_PCT
+                st%effective_gas_dispatch_pct=GAS_MIN_PCT
                 st%prev_gas_dispatch_pct=GAS_MIN_PCT
                 st%gt_training_bypass=.false.
-                call gt_log(st,"SIMULATED GENERATOR SYNCH / ONLINE")
+                st%gt_start_motor_on=.false.
+                st%gt_blowoff_open=.false.
+                call gt_log(st,"SIM BREAKER CLOSED / GT ONLINE")
+                call gt_log(st,"START COMPLETE / BYPASS AUTO-CLEARED")
             end if
         end select
         if(st%gt_phase/=GT_ONLINE) then
@@ -255,6 +340,8 @@ contains
         st%reserve_MW=0.0_dp
         st%fuel_flow_kg_s=0.0_dp
         st%heat_input_MW=0.0_dp
+        st%CO2_rate_kg_s=0.0_dp
+        st%fuel_cost_usd_h=0.0_dp
         st%gt_thermal_efficiency=0.0_dp
         st%gt_heat_rate_kJ_kWh=0.0_dp
         st%igv_pct=0.0_dp
@@ -323,6 +410,34 @@ contains
         end do
     end function gt_trip_inputs_missing
 
+    ! Command/auxiliary states are simulated, not hardware feedback. A
+    ! mismatch is a strict fault in the educational sequence, not proof
+    ! that a real valve or breaker has moved.
+    logical function gt_trip_actuators_mismatch(st) result(mismatch)
+        type(GridState),intent(in) :: st
+        mismatch=st%gt_breaker_closed .or. .not.st%gt_lube_support_on
+        select case(st%gt_phase)
+        case(GT_LOCKOUT,GT_READY)
+            mismatch=mismatch .or. st%gt_fuel_valve_open .or. &
+                st%gt_flame_on .or. st%gt_generator_excitation_on .or. &
+                st%gt_start_motor_on .or. st%gt_blowoff_open
+        case(GT_PURGING)
+            mismatch=mismatch .or. st%gt_fuel_valve_open .or. st%gt_flame_on .or. &
+                st%gt_generator_excitation_on .or. .not.st%gt_start_motor_on .or. &
+                .not.st%gt_blowoff_open .or. st%gt_turning_gear_on
+        case(GT_IGNITING,GT_ACCELERATING)
+            mismatch=mismatch .or. .not.st%gt_fuel_valve_open .or. &
+                .not.st%gt_flame_on .or. st%gt_generator_excitation_on .or. &
+                .not.st%gt_start_motor_on .or. st%gt_blowoff_open .or. &
+                st%gt_turning_gear_on .or. .not.st%gt_purge_timer_done
+        case(GT_SYNCHRONIZING)
+            mismatch=mismatch .or. .not.st%gt_fuel_valve_open .or. &
+                .not.st%gt_flame_on .or. .not.st%gt_generator_excitation_on .or. &
+                st%gt_start_motor_on .or. st%gt_blowoff_open .or. &
+                st%gt_turning_gear_on .or. .not.st%gt_purge_timer_done
+        end select
+    end function gt_trip_actuators_mismatch
+
     integer function gt_trip_permit_mask(st) result(mask)
         type(GridState),intent(in) :: st
         mask=0
@@ -333,6 +448,7 @@ contains
         if(st%gt_rotor_est_pct>GT_STOP_RPM_PCT .or. .not.st%gt_turning_gear_on) mask=ibset(mask,4)
         if(st%gt_exhaust_est_K>st%ambient_C+273.15_dp+GT_RESET_HOT_MARGIN_K) mask=ibset(mask,5)
         if(st%fleet_mode) mask=ibset(mask,6)
+        if(.not.st%gt_trip_latched .or. gt_trip_actuators_mismatch(st)) mask=ibset(mask,7)
     end function gt_trip_permit_mask
 
     integer function gt_trip_restart_mask(st) result(mask)
@@ -342,6 +458,24 @@ contains
         if(any(st%eq_alarm)) mask=ibset(mask,2)
         if(gt_trip_inputs_missing(st)) mask=ibset(mask,3)
         if(st%fleet_mode) mask=ibset(mask,6)
+        if(st%gt_trip_latched .or. .not.st%gt_trip_ack) mask=ibset(mask,1)
+        if(gt_trip_actuators_mismatch(st)) mask=ibset(mask,7)
+        if(st%gt_phase==GT_READY) then
+            if(st%gt_rotor_est_pct>GT_STOP_RPM_PCT .or. &
+               .not.st%gt_turning_gear_on) mask=ibset(mask,4)
+            if(st%gt_exhaust_est_K>st%ambient_C+273.15_dp+ &
+               GT_RESET_HOT_MARGIN_K) mask=ibset(mask,5)
+        else if(st%gt_phase==GT_SYNCHRONIZING) then
+            ! A 50/60 Hz grid frequency band and a synthesized speed are
+            ! illustrative checks ONLY; voltage/angle sync proof is absent.
+            if(.not.ieee_is_finite(st%frequency_Hz) .or. &
+               .not.ieee_is_finite(st%nominal_frequency_Hz)) then
+                mask=ibset(mask,8)
+            else if(abs(st%frequency_Hz-st%nominal_frequency_Hz)>0.5_dp .or. &
+                    st%gt_rotor_est_pct<99.0_dp) then
+                mask=ibset(mask,8)
+            end if
+        end if
     end function gt_trip_restart_mask
 
     pure function gt_trip_reason_for_mask(mask) result(label)
@@ -361,6 +495,10 @@ contains
             label="Simulated exhaust case too hot for restart"
         else if(btest(mask,6)) then
             label="Single-GT simulation only, fleet mode not qualified"
+        else if(btest(mask,7)) then
+            label="Actuator or lube/starter state mismatch (simulation)"
+        else if(btest(mask,8)) then
+            label="Simulated sync speed or grid frequency out of band"
         else
             label="Teaching-model permissives satisfied"
         end if
@@ -379,6 +517,8 @@ contains
         end if
         st%gt_phase=GT_READY
         st%gt_phase_s=0.0_dp
+        st%gt_generator_excitation_on=.false.
+        st%gt_start_motor_on=.false.
         st%gt_trip_latched=.false.
         st%gt_trip_last_denial=""
         call gt_log(st,"TRIP LATCH RESET / MACHINE REMAINS OFFLINE")
@@ -397,13 +537,17 @@ contains
         end if
         st%gt_phase=GT_PURGING
         st%gt_phase_s=0.0_dp
+        st%gt_restart_request_time_s=st%elapsed_s
+        st%gt_start_motor_on=.true.
+        st%gt_generator_excitation_on=.false.
         st%gt_purge_timer_done=.false.
         st%gt_turning_gear_on=.false.
         st%gt_blowoff_open=.true.
         st%gt_fuel_valve_open=.false.
         st%gt_flame_on=.false.
         st%gt_trip_last_denial=""
-        call gt_log(st,"SIMULATED START / PURGE TIMER (NO FLOW PROOF)")
+        call gt_log(st,"OPERATOR RESTART REQUEST ACCEPTED (SIM)")
+        call gt_log(st,"STARTER ON / BLEED OPEN / PURGE TIMER START")
     end subroutine gt_trip_start
 
     subroutine gt_trip_toggle_training_bypass(st)

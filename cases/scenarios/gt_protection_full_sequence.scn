@@ -1,0 +1,60 @@
+# Deterministic, FULL operator-protection sequence (education only).
+# Simulated breaker/valve states are not hardware confirmations. The
+# instructor supplies a balanced external system during restart.
+name gt_protection_full_sequence
+duration 108
+dt       0.25
+
+at 0.0 set auto_balance 0
+at 0.0 set governor_enabled 0
+at 0.0 set fcr_hold 0
+at 0.0 set roi_dispatch 0
+at 0.0 set demand_MW 20
+at 0.0 set renewable_MW 20
+at 0.0 set storage_request_MW 0
+at 0.0 command turbine_trip
+
+at 0.25 assert_near gt_first_out 1.0 0.01
+at 0.25 assert_near gt_trip_latched 1.0 0.01
+at 0.25 assert_near gt_breaker_closed 0.0 0.01
+at 0.25 assert_near gt_excitation_on 0.0 0.01
+at 0.25 assert_near gt_start_motor_on 0.0 0.01
+at 0.25 assert_near gt_fuel_valve_open 0.0 0.01
+at 0.25 assert_near gas_power_MW 0.0 0.001
+at 0.25 assert_above gt_trip_log_count 5.5
+
+at 3.0 command gt_ack
+at 3.25 assert_near gt_trip_ack 1.0 0.01
+at 3.25 assert_near gt_trip_latched 1.0 0.01
+
+at 42.0 assert_near gt_phase 3.0 0.01
+at 42.0 assert_near gt_turning_gear_on 1.0 0.01
+at 42.0 assert_near gt_start_motor_on 0.0 0.01
+
+# This balanced, simulated outside grid is a deliberate scenario boundary,
+# not an assertion that a real disconnected plant can self-synchronize.
+at 60.0 set frequency_Hz 50
+at 60.0 command gt_training_bypass
+at 60.25 command gt_reset
+at 60.50 assert_near gt_phase 4.0 0.01
+at 60.50 assert_near gt_trip_latched 0.0 0.01
+at 60.50 assert_near gt_breaker_closed 0.0 0.01
+at 60.50 command gt_start
+at 61.00 assert_near gt_phase 5.0 0.01
+at 61.00 assert_near gt_start_motor_on 1.0 0.01
+at 61.00 assert_near gt_fuel_valve_open 0.0 0.01
+
+at 73.00 assert_near gt_purge_timer_done 1.0 0.01
+at 73.00 assert_near gt_phase 6.0 0.01
+at 73.00 assert_near gt_fuel_valve_open 1.0 0.01
+at 78.00 assert_near gt_phase 7.0 0.01
+at 97.00 assert_near gt_phase 8.0 0.01
+at 97.00 assert_near gt_excitation_on 1.0 0.01
+at 97.00 assert_near gt_start_motor_on 0.0 0.01
+at 97.00 assert_near gt_breaker_closed 0.0 0.01
+
+at 101.00 assert_near gt_phase 0.0 0.01
+at 101.00 assert_near gt_breaker_closed 1.0 0.01
+at 101.00 assert_above gas_power_MW 0.1
+at 101.00 assert_near gt_first_out 1.0 0.01
+at 101.00 assert_near gt_trip_latched 0.0 0.01

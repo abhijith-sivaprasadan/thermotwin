@@ -39,6 +39,7 @@ contains
         st%eq_value = 0.0_dp
         st%eq_breach_s = 0.0_dp
         st%eq_clear_s = 0.0_dp
+        st%eq_alarm_since_s = -1.0_dp
         st%eq_training_present = .false.
         st%eq_training_value = 0.0_dp
         st%eq_training_stamp_s = -1.0_dp
@@ -119,6 +120,7 @@ contains
                 ! imaginary trip, and clear accumulated dwell on data loss.
                 st%eq_source(id) = EQ_SRC_UNAVAILABLE
                 st%eq_alarm(id) = .false.
+                st%eq_alarm_since_s(id) = -1.0_dp
                 st%eq_breach_s(id) = 0.0_dp
                 st%eq_clear_s(id) = 0.0_dp
                 cycle
@@ -140,6 +142,7 @@ contains
                     st%eq_breach_s(id) = st%eq_breach_s(id) + dt_s
                     if (st%eq_breach_s(id) + 1.0e-10_dp >= EQ_CONFIRM_S(id)) then
                         st%eq_alarm(id) = .true.
+                        st%eq_alarm_since_s(id) = st%elapsed_s
                         st%eq_breach_s(id) = 0.0_dp
                     end if
                 else
@@ -151,6 +154,7 @@ contains
                     st%eq_clear_s(id) = st%eq_clear_s(id) + dt_s
                     if (st%eq_clear_s(id) + 1.0e-10_dp >= EQ_RELEASE_S(id)) then
                         st%eq_alarm(id) = .false.
+                        st%eq_alarm_since_s(id) = -1.0_dp
                         st%eq_clear_s(id) = 0.0_dp
                     end if
                 else

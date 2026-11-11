@@ -889,6 +889,7 @@ module thermotwin_win32_gui
     integer :: fl_card(4,3) = 0            !          3 KPI cards (margin / CO2 / reserve)
     integer :: fl_tile(4,6) = 0            !          6 subsystem tiles (P2X/CCS/GFM/TIE/MPC/OU)
     integer :: alarm_page = 1 ! 1 grid/plant; 2 equipment; 3 trip sequence
+    logical :: trip_events_view = .false. ! narrow-screen F7 status/events switch
     integer :: gui_first_out_seen = GT_CAUSE_NONE
     real(dp) :: gui_first_out_time_seen = -1.0_dp
     logical :: eq_quality_prev(EQ_N) = .false.
@@ -1184,6 +1185,12 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\07-trip-sequence.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\07-trip-sequence-1536.png")
                 case(77)
+                    trip_events_view=.true.
+                case(78)
+                    call visual_qa_capture("build\gui-visual-qa\08-trip-events.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\08-trip-events-1536.png")
+                case(79)
+                    trip_events_view=.false.
                     alarm_page=1
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
@@ -2283,6 +2290,10 @@ contains
              grid%gt_first_out_s/=gui_first_out_time_seen)) then
             gui_first_out_seen=grid%gt_first_out
             gui_first_out_time_seen=grid%gt_first_out_s
+            ! A latched unacknowledged GT trip is a P1 annunciator demand
+            ! even if no grid/equipment alarm is concurrently active.
+            alarm_audio_silenced=.false.
+            alarm_audio_new_event=.true.
             call set_notice("GT TRIP / FIRST OUT: "//trim(gt_trip_cause_text(grid%gt_first_out))// &
                  " - F7 > TRIP SEQUENCE")
         end if
@@ -2361,6 +2372,9 @@ contains
             end if
             priority = 2
         end do
+        ! The GT first-out latch is distinct from ordinary annunciator
+        ! rows; ACK ALL must not silently acknowledge turbine protection.
+        if(grid%gt_trip_latched .and. .not.grid%gt_trip_ack) priority=1
         if (priority==0) then
             alarm_audio_new_event = .false.
             alarm_last_tone_s = -1.0e9_dp
@@ -2472,7 +2486,7 @@ contains
         integer, intent(in) :: x, y
         logical :: handled
         integer :: x0, y0, w, h, content_y, content_h, top_y, btn_y, bx, row_y, row_h, i
-        integer :: ix, iw, table_w, alarm_id
+        integer :: ix, iw, table_w, alarm_id, trip_action, trip_y, trip_btn_w
         logical :: states(ALARM_COUNT)
 
         handled = .false.
@@ -2532,12 +2546,61 @@ contains
             return
         end if
         if(alarm_page==3) then
-            if(point_in_rect(x,y,ix+10,btn_y+137,ix+124,btn_y+170)) then
-                call gt_trip_acknowledge(grid)
-                call set_notice("First-out acknowledged; trip latch remains.")
-                handled=.true.
-                return
-            else if(point_in_rect(x,y,ix+136,btn_y+137,ix+261,btn_y+170)) then
+            trip_action=0
+            if(iw<900) then
+                ! Compact original layout: two-row actions and a dedicated
+                ! event view. Never let 546px fixed-width controls overlap.
+                trip_y=btn_y+91
+                trip_btn_w=max(96,(iw-36)/2)
+                if(point_in_rect(x,y,ix+10,trip_y+57,ix+10+trip_btn_w,trip_y+84)) then
+                    trip_events_view=.false.
+                    handled=.true.
+                    return
+                else if(point_in_rect(x,y,ix+18+trip_btn_w,trip_y+57, &
+                          ix+18+2*trip_btn_w,trip_y+84)) then
+                    trip_events_view=.true.
+                    handled=.true.
+                    return
+                end if
+                if(trip_events_view) then
+                    handled=.true.
+                    return
+                end if
+                if(point_in_rect(x,y,ix+10,trip_y+91, &
+                   ix+10+trip_btn_w,trip_y+120)) then
+                    trip_action=1
+                else if(point_in_rect(x,y,ix+18+trip_btn_w,trip_y+91, &
+                        ix+18+2*trip_btn_w,trip_y+120)) then
+                    trip_action=2
+                else if(point_in_rect(x,y,ix+10,trip_y+124, &
+                        ix+10+trip_btn_w,trip_y+153)) then
+                    trip_action=3
+                else if(point_in_rect(x,y,ix+18+trip_btn_w,trip_y+124, &
+                        ix+18+2*trip_btn_w,trip_y+153)) then
+                    trip_action=4
+                end if
+            else
+                if(point_in_rect(x,y,ix+10,btn_y+137,ix+124,btn_y+170)) then
+                    trip_action=1
+                else if(point_in_rect(x,y,ix+136,btn_y+137,ix+261,btn_y+170)) then
+                    trip_action=2
+                else if(point_in_rect(x,y,ix+273,btn_y+137,ix+386,btn_y+170)) then
+                    trip_action=3
+                else if(point_in_rect(x,y,ix+398,btn_y+137,ix+546,btn_y+170)) then
+                    trip_action=4
+                end if
+            end if
+            select case(trip_action)
+            case(1)
+                if(grid%gt_phase==GT_ONLINE) then
+                    call set_notice("No active GT trip to acknowledge.")
+                else if(grid%gt_trip_ack) then
+                    call set_notice("First-out already acknowledged; latch unchanged.")
+                else
+                    call gt_trip_acknowledge(grid)
+                    call set_notice("First-out acknowledged; trip latch remains.")
+                end if
+            case(2)
                 block
                     logical :: accepted
                     call gt_trip_reset_latch(grid,accepted)
@@ -2547,9 +2610,7 @@ contains
                         call set_notice("Reset denied: "//trim(grid%gt_trip_last_denial))
                     end if
                 end block
-                handled=.true.
-                return
-            else if(point_in_rect(x,y,ix+273,btn_y+137,ix+386,btn_y+170)) then
+            case(3)
                 block
                     logical :: accepted
                     call gt_trip_start(grid,accepted)
@@ -2559,18 +2620,15 @@ contains
                         call set_notice("Restart denied: "//trim(grid%gt_trip_last_denial))
                     end if
                 end block
-                handled=.true.
-                return
-            else if(point_in_rect(x,y,ix+398,btn_y+137,ix+546,btn_y+170)) then
+            case(4)
                 call gt_trip_toggle_training_bypass(grid)
                 if(grid%gt_training_bypass) then
                     call set_notice("SIMULATION BYPASS ACTIVE - not plant-safe authorization.")
                 else
                     call set_notice("Simulation bypass disabled.")
                 end if
-                handled=.true.
-                return
-            end if
+            end select
+            handled=.true.
             return
         end if
         call current_alarm_states(states)
@@ -4340,7 +4398,7 @@ contains
         write(subtitle, '("AGC ",A," | ED ",A," | reserve ",F5.1," MW | inertia ",I4," MWs")') &
             merge("AUTO  ", "MANUAL", grid%auto_balance), merge("ROI", "STB", grid%roi_dispatch), &
             merge(grid%fleet_reserve_MW, grid%reserve_MW, grid%fleet_mode), &
-            nint(merge(grid%fleet_inertia_MWs, INERTIA_MWs, grid%fleet_mode))
+            nint(grid%grid_inertia_energy_MWs)
         call draw_screen_caption(hdc, ix, top_y, iw, SCREEN_FULL_LABEL(SCREEN_GRID), trim(subtitle))
 
         table_w = max(560, int(0.56_dp * real(iw, dp)))
@@ -5689,7 +5747,11 @@ contains
         call draw_industrial_button(hdc,ix+311,btn_y+49,ix+461,btn_y+79, &
             "TRIP SEQUENCE",COL_RED,alarm_page==3)
         if(alarm_page==3) then
-            call draw_trip_sequence_panel(hdc,ix,btn_y+91,iw, y+height-(btn_y+91))
+            if(iw<900) then
+                call draw_trip_sequence_narrow(hdc,ix,btn_y+91,iw, y+height-(btn_y+91))
+            else
+                call draw_trip_sequence_panel(hdc,ix,btn_y+91,iw, y+height-(btn_y+91))
+            end if
             return
         end if
         if (alarm_page==2) then
@@ -5780,6 +5842,107 @@ contains
         end block
     end subroutine draw_alarms_screen
 
+    ! One-column protection faceplate for the native 1024px GUI.
+    ! Keep status/action controls in the same visual column, and switch to
+    ! a dedicated SOE view rather than drawing overlapping panels/buttons.
+    subroutine draw_trip_sequence_narrow(hdc,x,y,width,height)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,width,height
+        integer :: bw,sy,pad,i,begin_idx,mask
+        integer(c_int) :: status_color
+        character(len=128) :: line
+        pad=12
+        bw=max(96,(width-36)/2)
+        call draw_section_title_width(hdc,x,y,"GT TRIP / FIRST-OUT  (SIM ONLY)",width)
+        call draw_panel_box(hdc,x,y+28,width,max(150,height-36))
+        call draw_text(hdc,x+pad,y+34,"SIMULATION - NO HARDWARE PROOF",COL_AMBER)
+        call draw_industrial_button(hdc,x+10,y+57,x+10+bw,y+84, &
+            "EQUIPMENT STATUS",COL_CYAN,.not.trip_events_view)
+        call draw_industrial_button(hdc,x+18+bw,y+57,x+18+2*bw,y+84, &
+            "EVENT HISTORY",COL_CYAN,trip_events_view)
+        if(trip_events_view) then
+            write(line,'("FIRST OUT: ",A,"  t=",F7.2," s")') &
+                trim(gt_trip_cause_text(grid%gt_first_out)),grid%gt_first_out_s
+            call draw_text(hdc,x+pad,y+96, &
+                line(1:min(len_trim(line),max(1,(width-2*pad)/8))),COL_RED)
+            sy=y+125
+            begin_idx=max(1,grid%gt_trip_log_count- &
+                max(1,(max(150,height)-142)/27)+1)
+            do i=begin_idx,grid%gt_trip_log_count
+                if(sy>y+height-24) exit
+                write(line,'("t=",F7.2,"  #",I0,"  ",A)') &
+                    grid%gt_trip_log_s(i),i,trim(grid%gt_trip_log_text(i))
+                call draw_text(hdc,x+pad,sy, &
+                    line(1:min(len_trim(line),max(1,(width-2*pad)/8))),COL_CYAN)
+                sy=sy+27
+            end do
+            if(grid%gt_trip_log_count==0) call draw_text(hdc,x+pad,sy, &
+                "No protection events recorded in this run.",COL_DIM)
+            return
+        end if
+
+        call draw_industrial_button(hdc,x+10,y+91,x+10+bw,y+120, &
+            "ACK FIRST",COL_GREEN,grid%gt_trip_ack)
+        call draw_industrial_button(hdc,x+18+bw,y+91,x+18+2*bw,y+120, &
+            "RESET TRIP",COL_CYAN,.false.)
+        call draw_industrial_button(hdc,x+10,y+124,x+10+bw,y+153, &
+            "SIM RESTART",COL_LIME,.false.)
+        call draw_industrial_button(hdc,x+18+bw,y+124,x+18+2*bw,y+153, &
+            "TRAIN BYPASS",COL_RED,grid%gt_training_bypass)
+        sy=y+158
+        status_color=COL_LIME
+        if(grid%gt_phase/=GT_ONLINE) status_color=COL_RED
+        if(grid%gt_phase==GT_READY .or. grid%gt_phase>=GT_PURGING) status_color=COL_AMBER
+        call draw_value_pair(hdc,x+pad,sy,"Plant phase",trim(gt_trip_phase_text(grid%gt_phase)),status_color)
+        sy=sy+19
+        call draw_value_pair(hdc,x+pad,sy,"First-out",trim(gt_trip_cause_text(grid%gt_first_out)),COL_RED)
+        sy=sy+19
+        write(line,'(F7.2," s (model)")') grid%gt_first_out_s
+        if(grid%gt_first_out==GT_CAUSE_NONE) line="No recorded trip"
+        call draw_value_pair(hdc,x+pad,sy,"First-out time",trim(line),COL_MUTED)
+        sy=sy+19
+        line="OPEN / ISOLATED"
+        if(grid%gt_breaker_closed) line="CLOSED (SIM)"
+        call draw_value_pair(hdc,x+pad,sy,"Generator breaker",trim(line),COL_CYAN)
+        sy=sy+19
+        line="SHUT / FLAME OFF"
+        if(grid%gt_fuel_valve_open) line="OPEN / SIM FLAME ON"
+        call draw_value_pair(hdc,x+pad,sy,"Fuel / flame",trim(line),COL_MUTED)
+        sy=sy+19
+        write(line,'(F5.1,"%  EST ONLY")') grid%gt_rotor_est_pct
+        call draw_value_pair(hdc,x+pad,sy,"Rotor rundown",trim(line),COL_CYAN)
+        sy=sy+19
+        line="BLEED CLOSED / LUBE ON"
+        if(grid%gt_blowoff_open) line="BLEED OPEN / LUBE ON"
+        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT OFF (FAULT)"
+        call draw_value_pair(hdc,x+pad,sy,"Bleed / lube",trim(line),COL_MUTED)
+        sy=sy+19
+        line="STARTER OFF / FIELD OFF"
+        if(grid%gt_start_motor_on) line="STARTER ON / FIELD OFF"
+        if(grid%gt_generator_excitation_on) line="STARTER OFF / FIELD ON"
+        call draw_value_pair(hdc,x+pad,sy,"Start / excite",trim(line),COL_MUTED)
+        sy=sy+19
+        line="TURN GEAR OFF"
+        if(grid%gt_turning_gear_on) line="TURN GEAR ON (ASSUMED)"
+        call draw_value_pair(hdc,x+pad,sy,"Turning gear",trim(line),COL_CYAN)
+        sy=sy+19
+        ! The reason why a protection action is blocked is more important
+        ! than a second copy of the TRAIN BYPASS state (already a red button).
+        ! Keep it in the last visible status row at 1024px instead of below
+        ! the viewport, where an operator could not see an interlock denial.
+        mask=gt_trip_permit_mask(grid)
+        if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING) &
+            mask=ibclr(gt_trip_restart_mask(grid),0)
+        line="INTERLOCK: "//trim(gt_trip_reason_for_mask(mask))
+        if(grid%gt_phase==GT_ONLINE) line="INTERLOCK: Trip sequence idle"
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING .and. mask==0) &
+            line="INTERLOCK: SIM START ACTIVE / NO HARDWARE PROOF"
+        call draw_text(hdc,x+pad,sy, &
+            line(1:min(len_trim(line),max(1,(width-2*pad)/8))), &
+            merge(COL_AMBER,COL_GREEN,mask/=0))
+    end subroutine draw_trip_sequence_narrow
+
     subroutine draw_trip_sequence_panel(hdc,x,y,width,height)
         type(c_ptr),value :: hdc
         integer,intent(in) :: x,y,width,height
@@ -5796,6 +5959,8 @@ contains
         cause=gt_trip_cause_text(grid%gt_first_out)
         mask=gt_trip_permit_mask(grid)
         if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING) &
+            mask=ibclr(gt_trip_restart_mask(grid),0)
         state_col=COL_LIME
         if(grid%gt_phase/=GT_ONLINE) state_col=COL_RED
         if(grid%gt_phase==GT_READY .or. grid%gt_phase>=GT_PURGING) state_col=COL_AMBER
@@ -5826,9 +5991,18 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Fuel isolation",trim(line),COL_MUTED);sy=sy+27
         write(line,'(F6.2,"% (estimated)")') grid%gt_rotor_est_pct
         call draw_value_pair(hdc,x+pad,sy,"Rotor coastdown",trim(line),COL_CYAN);sy=sy+27
-        line="LUBE SUPPORT / ON (ASSUMED)"
-        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT / OFF"
-        call draw_value_pair(hdc,x+pad,sy,"Auxiliary system",trim(line),COL_MUTED);sy=sy+27
+        line="BLEED CLOSED / LUBE ON (SIM)"
+        if(grid%gt_blowoff_open) line="BLEED OPEN / LUBE ON (SIM)"
+        if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT OFF - INTERLOCK"
+        call draw_value_pair(hdc,x+pad,sy,"Bleed / lube",trim(line), &
+            merge(COL_CYAN,COL_RED,grid%gt_lube_support_on));sy=sy+27
+        line="STARTER OFF / FIELD OFF (SIM)"
+        if(grid%gt_start_motor_on) line="STARTER ON / FIELD OFF (SIM)"
+        if(grid%gt_generator_excitation_on) line="STARTER OFF / FIELD ON (SIM)"
+        call draw_value_pair(hdc,x+pad,sy,"Starter / field",trim(line),COL_MUTED);sy=sy+27
+        line="TURN GEAR OFF / SPEED EST ONLY"
+        if(grid%gt_turning_gear_on) line="TURN GEAR ON (ASSUMED)"
+        call draw_value_pair(hdc,x+pad,sy,"Slow-roll auxiliary",trim(line),COL_CYAN);sy=sy+27
         if(grid%gt_training_bypass) then
             line="BYPASS ENABLED - EDUCATIONAL ONLY"
             state_col=COL_RED
@@ -5839,8 +6013,12 @@ contains
         call draw_value_pair(hdc,x+pad,sy,"Sensor permissives",trim(line),state_col);sy=sy+27
         line=gt_trip_reason_for_mask(mask)
         if(grid%gt_phase==GT_ONLINE) line="Normal simulation / no trip latch"
-        call draw_text(hdc,x+pad,sy+8,trim(line),merge(COL_AMBER,COL_GREEN,mask/=0))
-        sy=sy+47
+        if(grid%gt_phase>=GT_PURGING .and. grid%gt_phase<=GT_SYNCHRONIZING .and. mask==0) &
+            line="SIM START ACTIVE / no verified OEM start proof"
+        call draw_text(hdc,x+pad,sy+8, &
+            line(1:min(len_trim(line),max(1,(left_w-2*pad)/8))), &
+            merge(COL_AMBER,COL_GREEN,mask/=0))
+        sy=sy+40
         if(sy < y+height-112) then
             call draw_section_title_width(hdc,x+pad,sy,"SIMULATED OPERATOR PATH",left_w-2*pad)
             sy=sy+30
@@ -5867,11 +6045,17 @@ contains
         if(grid%gt_trip_log_count==0) then
             call draw_text(hdc,right_x+pad,y+44,"No trips in this simulation.",COL_DIM)
         else
+            ! First-out is permanent historical context even if the bounded
+            ! sequence log scrolls past the original trigger.
+            write(line,'("FIRST-OUT ",A,"  @ ",F7.2," s")') &
+                trim(gt_trip_cause_text(grid%gt_first_out)),grid%gt_first_out_s
+            call draw_text(hdc,right_x+pad,y+44, &
+                line(1:min(len_trim(line),max(1,(right_w-2*pad)/8))),COL_RED)
             ! Two-line records: short timestamp and clipped description.
             ! Never paint a 54-character event over the neighboring panel.
             start_idx=max(1,grid%gt_trip_log_count- &
-               max(1,(max(165,height-36)-70)/48)+1)
-            sy=y+44
+               max(1,(max(165,height-36)-95)/48)+1)
+            sy=y+70
             do i=start_idx,grid%gt_trip_log_count
                 if(sy>y+height-48) exit
                 write(line,'("t=",F7.2," s  /  event ",I0)') grid%gt_trip_log_s(i),i

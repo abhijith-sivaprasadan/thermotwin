@@ -1,0 +1,33 @@
+# Withdrawing explicit instructor bypass during a simulated PURGE must
+# abort startup and keep fuel, excitation and breaker isolated.
+name gt_protection_abort_interlock
+duration 70
+dt       0.25
+
+at 0.0 set auto_balance 0
+at 0.0 set governor_enabled 0
+at 0.0 set fcr_hold 0
+at 0.0 set demand_MW 20
+at 0.0 set renewable_MW 20
+at 0.0 command turbine_trip
+
+at 1.0 command gt_ack
+at 60.0 set frequency_Hz 50
+at 60.0 command gt_training_bypass
+at 60.25 command gt_reset
+at 60.50 assert_near gt_phase 4.0 0.01
+at 60.50 command gt_start
+at 61.00 assert_near gt_phase 5.0 0.01
+at 61.00 command gt_training_bypass
+
+at 61.25 assert_near gt_phase 1.0 0.01
+at 61.25 assert_near gt_first_out 5.0 0.01
+at 61.25 assert_near gt_trip_latched 1.0 0.01
+at 61.25 assert_near gt_breaker_closed 0.0 0.01
+at 61.25 assert_near gt_excitation_on 0.0 0.01
+at 61.25 assert_near gt_start_motor_on 0.0 0.01
+at 61.25 assert_near gt_fuel_valve_open 0.0 0.01
+at 61.25 assert_near gas_power_MW 0.0 0.001
+# Rotor already near rest during purge; this aborted startup reaches
+# lockout on the next modeled rundown tick, without any re-energization.
+at 62.00 assert_near gt_phase 3.0 0.01
