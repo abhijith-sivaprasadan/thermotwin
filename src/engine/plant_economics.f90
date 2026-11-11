@@ -20,7 +20,7 @@ contains
         real(dp) :: surplus_without_bess_MW, captured_surplus_MW
         real(dp) :: gross_co2_kg_s, captured_co2_kg_s
 
-        served_MW = min(st%demand_MW, max(0.0_dp, st%supply_MW))
+        served_MW = min(st%served_demand_MW, max(0.0_dp, st%supply_MW))
         st%revenue_usd_h = served_MW * st%power_price_usd_mwh
         st%fuel_cost_usd_h = st%heat_input_MW * 3.6_dp * st%fuel_price_usd_gj
         st%storage_cost_usd_h = abs(st%storage_MW) * STORAGE_CYCLE_COST_USD_MWH
@@ -33,7 +33,8 @@ contains
         st%margin_usd_h = st%revenue_usd_h - st%fuel_cost_usd_h - &
             st%storage_cost_usd_h - st%imbalance_penalty_usd_h - st%co2_cost_usd_h
 
-        imbalance_without_bess_MW = st%plant_power_MW + effective_renewable_MW(st) - st%demand_MW
+        imbalance_without_bess_MW = thermal_generation_MW(st) + &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW) - st%served_demand_MW
         avoided_imbalance_MW = max(0.0_dp, abs(imbalance_without_bess_MW) - abs(st%imbalance_MW))
         st%bess_imbalance_value_usd_h = avoided_imbalance_MW * IMBALANCE_PENALTY_USD_MWH
 

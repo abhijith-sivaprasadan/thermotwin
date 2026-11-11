@@ -66,6 +66,7 @@ contains
 
         ! ── Early exit when GFM is disabled ─────────────────────────────────
         if (.not. st%gfm_mode) then
+            st%gfm_request_MW = 0.0_dp
             st%gfm_synth_MW = 0.0_dp
             st%gfm_H_equiv  = 0.0_dp
             return
@@ -109,12 +110,11 @@ contains
         end if
 
         ! ── Write outputs ────────────────────────────────────────────────────
-        st%gfm_synth_MW = gfm_delivered
-
-        ! Accumulate into storage request, then clamp the command to the
-        ! inverter range. Actual delivered MW is still energy-limited later.
-        st%storage_request_MW = clamp_real(st%storage_request_MW + gfm_delivered, &
-                                           STORAGE_MIN_MW, STORAGE_MAX_MW)
+        ! Keep the requested response separate from commanded storage.
+        ! The central energy arbiter will publish the actually delivered GFM
+        ! contribution after both inverter and timestep SOC limiting.
+        st%gfm_request_MW = clamp_real(gfm_delivered, STORAGE_MIN_MW, STORAGE_MAX_MW)
+        st%gfm_synth_MW = 0.0_dp
 
         ! Equivalent inertia contribution available to the plant. Keep this
         ! nonzero at steady frequency so the HMI and scenarios can distinguish

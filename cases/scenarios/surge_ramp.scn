@@ -5,6 +5,9 @@ name     surge_ramp
 duration 30
 dt       0.25
 
+# Isolate compressor map transient from frequency governor. Otherwise
+# the governor correctly counteracts the full-load manual command.
+at 0.0   set governor_enabled 0
 at 0.0   set auto_balance 0
 at 2.0   set gas_dispatch_pct 25
 at 4.0   assert_above surge_margin_pct 20.0    # deep part load: wide margin

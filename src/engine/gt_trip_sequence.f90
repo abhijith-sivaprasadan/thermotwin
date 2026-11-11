@@ -105,6 +105,9 @@ contains
         ! Keep original online fuel reference through repeated start attempts.
         if(was_online) st%gt_pretrip_fuel_kg_s=max(0.0_dp,st%fuel_flow_kg_s)
         st%gas_dispatch_pct=0.0_dp
+        st%effective_gas_dispatch_pct=0.0_dp
+        st%governor_offset_pct=0.0_dp
+        st%governor_delta_MW=0.0_dp
         st%prev_gas_dispatch_pct=0.0_dp
         st%gas_ramp_pct_per_s=0.0_dp
         st%ccs_active=.false.   ! absorber receives no guaranteed firing
@@ -239,6 +242,9 @@ contains
         real(dp) :: frac
         if(st%gt_phase==GT_ONLINE) return
         st%gas_dispatch_pct=0.0_dp
+        st%effective_gas_dispatch_pct=0.0_dp
+        st%governor_offset_pct=0.0_dp
+        st%governor_delta_MW=0.0_dp
         st%gas_ramp_pct_per_s=0.0_dp
         st%gas_power_MW=0.0_dp
         st%gas_capacity_MW=0.0_dp

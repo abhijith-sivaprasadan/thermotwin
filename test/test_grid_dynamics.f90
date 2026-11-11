@@ -5,6 +5,7 @@ program test_grid_dynamics
     use precision_kinds, only: dp
     use engine_state
     use grid_dynamics, only: tick_frequency_dynamics
+    use grid_primary_balance, only: tick_governor_setpoint, resolve_bess_injection
     use gfm_bess, only: gfm_step
     implicit none
     integer :: failures
@@ -48,10 +49,17 @@ program test_grid_dynamics
         st%renewable_MW = 12.0_dp
         st%gas_power_MW = 23.0_dp
         st%gas_capacity_MW = 29.0_dp       ! 6 MW headroom
-        st%frequency_Hz = 49.0_dp          ! raw droop demand = 0.4 * 29 = 11.6 MW
-        st%battery_energy_MWh = 0.0_dp     ! silence BESS primary for clarity
+        st%frequency_Hz = 49.0_dp
+        st%gas_dispatch_pct = 82.0_dp
+        st%battery_energy_MWh = 0.0_dp
+        call tick_governor_setpoint(st, DT)
+        call expect_near("governor ramps effective load request, not free MW", &
+            st%governor_offset_pct, GAS_RAMP_PCT_PER_S*DT, 1.0e-9_dp, failures)
+        call expect_near("governor effective dispatch is rated-limited", &
+            st%effective_gas_dispatch_pct, 82.0_dp+GAS_RAMP_PCT_PER_S*DT,1.0e-9_dp,failures)
         call tick_frequency_dynamics(st, DT)
-        call expect_near("governor clamps to headroom", st%governor_delta_MW, 6.0_dp, 1.0e-9_dp, failures)
+        call expect_near("frequency integrator does not invent extra GT power", &
+            st%governor_delta_MW, 0.0_dp, 1.0e-9_dp, failures)
     end block
 
     ! --- BESS primary: discharges below nominal, blocked when empty. ---
@@ -63,12 +71,16 @@ program test_grid_dynamics
         st%gas_capacity_MW = 30.0_dp
         st%frequency_Hz = 49.5_dp
         st%battery_energy_MWh = 15.0_dp
-        call tick_frequency_dynamics(st, DT)
+        call resolve_bess_injection(st, DT)
         call expect_near("BESS primary discharges on underfrequency", &
             st%BESS_primary_MW, 0.5_dp * BESS_PRIMARY_GAIN, 1.0e-9_dp, failures)
+        call expect_near("delivered storage includes the primary contribution once", &
+            st%storage_MW,st%BESS_primary_MW,1.0e-9_dp,failures)
+        call tick_frequency_dynamics(st, DT)
 
         st%frequency_Hz = 49.5_dp
         st%battery_energy_MWh = 0.0_dp
+        call resolve_bess_injection(st, DT)
         call tick_frequency_dynamics(st, DT)
         call expect_near("BESS primary blocked when battery empty", &
             st%BESS_primary_MW, 0.0_dp, 1.0e-9_dp, failures)
@@ -88,7 +100,7 @@ program test_grid_dynamics
 
         call gfm_step(st, DT)
         call expect_near("GFM: 60 Hz nominal has no false droop", &
-            st%gfm_synth_MW, 0.0_dp, 1.0e-9_dp, failures)
+            st%gfm_request_MW, 0.0_dp, 1.0e-9_dp, failures)
         call expect_near("GFM: 60 Hz nominal does not drift BESS request", &
             st%storage_request_MW, 0.0_dp, 1.0e-9_dp, failures)
 
@@ -160,6 +172,7 @@ program test_grid_dynamics
         st%reserve_MW = 1.0_dp
         st%battery_soc_pct = 10.0_dp
         st%gas_dispatch_pct = 100.0_dp
+        st%effective_gas_dispatch_pct = 100.0_dp
         st%gas_power_MW = 30.0_dp
         st%gas_capacity_MW = 30.0_dp
         st%demand_MW = 30.0_dp

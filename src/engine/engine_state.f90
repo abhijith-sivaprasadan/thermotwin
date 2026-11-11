@@ -14,7 +14,7 @@ module engine_state
     public :: FLEET_N, FLEET_GT1, FLEET_GT2, FLEET_CC1, FLEET_UNIT_NAME
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: bottoming_power_MW, thermal_generation_MW
-    public :: limited_storage_power, append_history, history_index
+    public :: limited_storage_power, limited_storage_power_for_step, append_history, history_index
     public :: GT_ONLINE, GT_TRIPPED, GT_RUNDOWN, GT_LOCKOUT, GT_READY
     public :: GT_PURGING, GT_IGNITING, GT_ACCELERATING, GT_SYNCHRONIZING
     public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
@@ -158,7 +158,9 @@ module engine_state
         real(dp) :: ROCOF_Hz_s = 0.0_dp
         real(dp) :: nominal_frequency_Hz = FREQ_NOMINAL_HZ
         real(dp) :: governor_delta_MW = 0.0_dp
-        real(dp) :: BESS_primary_MW = 0.0_dp
+        real(dp) :: BESS_primary_MW = 0.0_dp  ! actually delivered, included in storage_MW
+        real(dp) :: served_demand_MW = 35.0_dp   ! gross demand after UFLS
+        real(dp) :: ufls_shed_MW = 0.0_dp
         real(dp) :: UFLS_shed_fraction = 0.0_dp
         real(dp) :: ufls_thresh_1_Hz = UFLS_THRESH_1
         real(dp) :: ufls_thresh_2_Hz = UFLS_THRESH_2
@@ -179,7 +181,10 @@ module engine_state
         real(dp) :: TIT_actual_K = 1400.0_dp
         real(dp) :: PR_op = 15.0_dp
         real(dp) :: gas_ramp_pct_per_s = 0.0_dp
-        real(dp) :: prev_gas_dispatch_pct = 82.0_dp
+        real(dp) :: prev_gas_dispatch_pct = 82.0_dp ! previous effective load for surge ramp
+        logical :: governor_enabled = .true.      ! closed-loop governor exercise on by default
+        real(dp) :: governor_offset_pct = 0.0_dp   ! additive primary governor request
+        real(dp) :: effective_gas_dispatch_pct = 82.0_dp
         ! Phase 3 combined-cycle bottoming system
         logical  :: combined_cycle = .false.
         real(dp) :: hrsg_recovered_heat_MW = 0.0_dp
@@ -447,7 +452,8 @@ module engine_state
         logical  :: gfm_mode          = .false.      ! operator enable/disable
         real(dp) :: gfm_virtual_H     = 4.0_dp      ! virtual inertia constant [s]
         real(dp) :: gfm_droop_pct     = 5.0_dp      ! frequency droop [%]
-        real(dp) :: gfm_synth_MW      = 0.0_dp      ! current GFM power response [MW]
+        real(dp) :: gfm_synth_MW      = 0.0_dp      ! actual delivered incremental GFM MW
+        real(dp) :: gfm_request_MW    = 0.0_dp      ! requested (not guaranteed) GFM MW
         real(dp) :: gfm_H_equiv       = 0.0_dp      ! equivalent H contribution [MWs/MVA]
         real(dp) :: freq_rocof_Hz_s   = 0.0_dp      ! ROCOF filled by nadir predictor [Hz/s]
 
@@ -555,6 +561,22 @@ contains
             mw = st%gas_power_MW + bottoming_power_MW(st)
         end if
     end function thermal_generation_MW
+
+    !> Limit inverter power by both rating and energy actually available for
+    !> this timestep. This avoids clipping SOC after having injected phantom MW.
+    pure function limited_storage_power_for_step(st, request_MW, dt_s) result(actual_MW)
+        type(GridState), intent(in) :: st
+        real(dp), intent(in) :: request_MW, dt_s
+        real(dp) :: actual_MW, up_MW, down_MW
+        actual_MW = limited_storage_power(st, request_MW)
+        if(dt_s<=0.0_dp) return
+        up_MW = max(0.0_dp, st%battery_energy_MWh) * &
+            (3600.0_dp*BATTERY_EFFICIENCY / dt_s)
+        down_MW = max(0.0_dp, BATTERY_CAPACITY_MWH-st%battery_energy_MWh) * &
+            (3600.0_dp/(BATTERY_EFFICIENCY*dt_s))
+        actual_MW = clamp_real(actual_MW, -min(abs(STORAGE_MIN_MW),down_MW), &
+            min(STORAGE_MAX_MW,up_MW))
+    end function limited_storage_power_for_step
 
     !> BESS power actually deliverable for a request, honouring energy limits.
     !> Sign convention: positive = discharge (adds to supply).

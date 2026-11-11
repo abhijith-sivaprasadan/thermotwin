@@ -633,6 +633,7 @@ contains
             st%battery_energy_MWh = BATTERY_CAPACITY_MWH * st%battery_soc_pct / 100.0_dp
         case ("auto_balance");         st%auto_balance = value > 0.5_dp
         case ("fcr_hold");             st%fcr_hold = value > 0.5_dp
+        case ("governor_enabled");     st%governor_enabled = value > 0.5_dp
         case ("roi_dispatch");         st%roi_dispatch = value > 0.5_dp
         case ("combined_cycle")
             if(st%gt_phase/=GT_ONLINE) then
@@ -688,14 +689,18 @@ contains
         select case (trim(name))
         case ("demand_MW");             value = st%demand_MW
         case ("renewable_MW");          value = st%renewable_MW
-        case ("renewable_actual_MW");   value = effective_renewable_MW(st)
+        case ("renewable_actual_MW");   value = max(0.0_dp, &
+            effective_renewable_MW(st)-st%renewable_lfsmo_MW)
         case ("renewable_curtail_MW");  value = st%renewable_curtail_MW
         case ("renewable_lfsmo_MW");    value = st%renewable_lfsmo_MW
         case ("storage_request_MW");    value = st%storage_request_MW
         case ("storage_MW");            value = st%storage_MW
         case ("battery_soc_pct");       value = st%battery_soc_pct
         case ("battery_energy_MWh");    value = st%battery_energy_MWh
+        case ("gfm_delivered_MW");      value = st%gfm_synth_MW
+        case ("gfm_request_MW");        value = st%gfm_request_MW
         case ("gas_dispatch_pct");      value = st%gas_dispatch_pct
+        case ("effective_gas_dispatch_pct"); value = st%effective_gas_dispatch_pct
         case ("gt_phase");             value = real(st%gt_phase,dp)
         case ("gt_trip_latched");      value = merge(1.0_dp,0.0_dp,st%gt_trip_latched)
         case ("gt_breaker_closed");    value = merge(1.0_dp,0.0_dp,st%gt_breaker_closed)
@@ -759,6 +764,8 @@ contains
         case ("PR_op");                 value = st%PR_op
         case ("gas_ramp_pct_per_s");    value = st%gas_ramp_pct_per_s
         case ("supply_MW");             value = st%supply_MW
+        case ("served_demand_MW");      value = st%served_demand_MW
+        case ("ufls_shed_MW");          value = st%ufls_shed_MW
         case ("imbalance_MW");          value = st%imbalance_MW
         case ("reserve_MW");            value = st%reserve_MW
         case ("frequency_Hz");          value = st%frequency_Hz
@@ -843,7 +850,9 @@ contains
             "renewable_curtail_MW,storage_request_MW,storage_MW,BESS_primary_MW,"// &
             "battery_soc_pct,reserve_MW,UFLS_stage,margin_usd_h,CO2_intensity_g_kWh,"// &
             "heat_rate_kJ_kWh,flame_temp_ad_K,nox_mg_nm3_15o2,co_mg_nm3_15o2,"// &
-            "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW"
+            "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW,"// &
+            "served_demand_MW,ufls_shed_MW,renewable_lfsmo_MW,effective_gas_dispatch_pct,"// &
+            "governor_delta_MW,battery_energy_MWh"
     end subroutine open_recorder
 
     subroutine record_row(unit, t_now, st)
@@ -854,12 +863,15 @@ contains
         write(unit, '(*(ES16.8,:,","))') t_now, st%frequency_Hz, st%nominal_frequency_Hz, &
             st%ROCOF_Hz_s, st%demand_MW, st%supply_MW, st%imbalance_MW, st%gas_dispatch_pct, &
             st%gas_power_MW, st%plant_power_MW, st%steam_power_MW, st%renewable_MW, &
-            effective_renewable_MW(st), st%renewable_curtail_MW, st%storage_request_MW, &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW), &
+            st%renewable_curtail_MW, st%storage_request_MW, &
             st%storage_MW, st%BESS_primary_MW, st%battery_soc_pct, st%reserve_MW, &
             real(st%UFLS_stage, dp), st%margin_usd_h, st%CO2_intensity_g_kWh, &
             st%heat_rate_kJ_kWh, st%flame_temp_ad_K, st%nox_mg_nm3_15o2, &
             st%co_mg_nm3_15o2, st%flashback_margin_pct, st%turbine_cooling_air_pct, &
-            st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW
+            st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW, &
+            st%served_demand_MW, st%ufls_shed_MW, st%renewable_lfsmo_MW, &
+            st%effective_gas_dispatch_pct, st%governor_delta_MW, st%battery_energy_MWh
     end subroutine record_row
 
 end module scenario_runner

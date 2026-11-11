@@ -40,7 +40,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         tag_bus h2_blend combustion_physics engine_state physics_fidelity exergy exergy_uq exergy_sobol thermo_limits data_reconciliation scientific_report market_data fleet_dispatch grid_dynamics dispatch_agc plant_economics \
         dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
         anomaly_detector rl_dispatch fault_classifier forecast_engine \
-        p2x_electrolyser ccs_model gfm_bess tie_line mpc_agc \
+        p2x_electrolyser ccs_model gfm_bess grid_primary_balance tie_line mpc_agc \
         equipment_protection gt_trip_sequence engine_core scenario_runner
 
 # opcua_bridge is GUI-only: its C backend (open62541) is not linked into the
@@ -138,6 +138,7 @@ $(BUILD)/forecast_engine.o:      $(BUILD)/engine_state.o $(BUILD)/precision_kind
 $(BUILD)/p2x_electrolyser.o:    $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/ccs_model.o:           $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/gfm_bess.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
+$(BUILD)/grid_primary_balance.o: $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/tie_line.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/mpc_agc.o:             $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
@@ -154,7 +155,7 @@ $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.
                                   $(BUILD)/anomaly_detector.o $(BUILD)/rl_dispatch.o \
                                   $(BUILD)/fault_classifier.o $(BUILD)/forecast_engine.o \
                                   $(BUILD)/p2x_electrolyser.o $(BUILD)/ccs_model.o \
-                                  $(BUILD)/gfm_bess.o $(BUILD)/tie_line.o $(BUILD)/mpc_agc.o \
+                                  $(BUILD)/gfm_bess.o $(BUILD)/grid_primary_balance.o $(BUILD)/tie_line.o $(BUILD)/mpc_agc.o \
                                   $(BUILD)/combustion_physics.o
 $(BUILD)/scenario_runner.o:      $(BUILD)/engine_core.o $(BUILD)/engine_state.o \
                                  $(BUILD)/dispatch_agc.o $(BUILD)/tag_bus.o
