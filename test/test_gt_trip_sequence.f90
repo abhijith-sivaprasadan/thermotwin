@@ -6,7 +6,7 @@ program test_gt_trip_sequence
     use engine_core, only: engine_init, engine_step, refresh_model, &
          apply_turbine_trip, reset_controls, balance_now
     implicit none
-    type(GridState) :: st, out, ft
+    type(GridState) :: st, out, ft, guard
     integer :: failures, k, old_cause, event_n
     real(dp) :: before_t, older_speed
     logical :: accepted
@@ -65,6 +65,13 @@ program test_gt_trip_sequence
     call check("no automatic restart on following tick",&
        st%gt_phase/=GT_ONLINE .and. st%gas_power_MW==0.0_dp)
     call check("first-out event logged",st%gt_trip_log_count>=4)
+    call engine_step(st,0.25_dp)
+    call engine_step(st,0.25_dp)
+    call check("offline turbine cannot show green STATUS OK", &
+        index(st%advisory_text,"SIM GT OFFLINE")>0 .and. &
+        index(st%advisory_text,"STATUS OK")==0)
+    call check("trip advisory must not recommend increasing GT dispatch", &
+        index(st%advisory_text,"increase GT dispatch")==0)
 
     ! Isolated state machine: do not rely on selftest nominal operating data.
     call gt_trip_reset_state(out)
@@ -146,6 +153,56 @@ program test_gt_trip_sequence
     call gt_trip_request(ft,GT_CAUSE_MANUAL,accepted)
     call check("unmodeled fleet single-unit trip not falsely presented",&
        .not.accepted .and. ft%gt_phase==GT_ONLINE)
+
+    ! Restart interlocks must remain asserted for the entire simulated
+    ! start, including a final check before the breaker may close.
+    call gt_trip_reset_state(guard)
+    guard%gt_phase=GT_READY
+    guard%gt_training_bypass=.true.
+    guard%gt_pretrip_fuel_kg_s=1.0_dp
+    call gt_trip_start(guard,accepted)
+    call check("guarded educational startup begins",accepted)
+    call gt_trip_toggle_training_bypass(guard)
+    call gt_trip_advance(guard,0.25_dp)
+    call check("withdrawn bypass aborts an in-progress start", &
+        guard%gt_phase==GT_TRIPPED .and. guard%gt_trip_latched .and. &
+        guard%gt_first_out==GT_CAUSE_START_ABORT .and. &
+        .not.guard%gt_breaker_closed .and. .not.guard%gt_fuel_valve_open)
+    call check("start abort preserves historical log and fuel reference", &
+        guard%gt_trip_log_count>=3 .and. &
+        guard%gt_pretrip_fuel_kg_s==1.0_dp .and. guard%fuel_flow_kg_s==0.0_dp)
+
+    call gt_trip_reset_state(guard)
+    guard%gt_phase=GT_READY
+    guard%gt_training_bypass=.true.
+    call gt_trip_start(guard,accepted)
+    guard%eq_alarm(EQ_OIL)=.true.
+    guard%eq_source(EQ_OIL)=EQ_SRC_TRAINING
+    call gt_trip_advance(guard,0.25_dp)
+    call check("new training oil alarm aborts start with specific first-out", &
+        guard%gt_phase==GT_TRIPPED .and. guard%gt_first_out==GT_CAUSE_OIL)
+
+    call gt_trip_reset_state(guard)
+    guard%gt_phase=GT_READY
+    guard%elapsed_s=10.0_dp
+    guard%eq_source(EQ_OVERSPEED)=EQ_SRC_TRAINING
+    guard%eq_source(EQ_COMBUST)=EQ_SRC_TRAINING
+    guard%eq_source(EQ_OIL)=EQ_SRC_TRAINING
+    guard%eq_source(EQ_BEARING)=EQ_SRC_TRAINING
+    guard%eq_training_present=.true.
+    guard%eq_training_value=1.0_dp
+    guard%eq_training_stamp_s=0.0_dp
+    call check("cached TRAIN sources are insufficient when samples are stale", &
+        btest(gt_trip_restart_mask(guard),3))
+
+    call gt_trip_reset_state(guard)
+    guard%gt_phase=GT_SYNCHRONIZING
+    guard%gt_training_bypass=.true.
+    guard%gt_phase_s=GT_SYNC_DEMO_S-0.1_dp
+    guard%eq_alarm(EQ_BEARING)=.true.
+    call gt_trip_advance(guard,0.25_dp)
+    call check("standing alarm blocks simulated sync breaker closure", &
+        guard%gt_phase==GT_TRIPPED .and. .not.guard%gt_breaker_closed)
 
     if(failures>0) then
         write(*,'("FAIL GT trip validation: ",I0)') failures
