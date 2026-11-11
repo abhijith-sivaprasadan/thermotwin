@@ -28,7 +28,7 @@
 - `cases/scenarios/gt_protection_abort_interlock.scn`: same setup, bypass withdrawn during purge → immediate trip latch, breaker, fuel, excitation and starter isolated.
 - `test/test_gt_trip_sequence.f90`: timed first-out selection, follow-on logging, no-duplicate ACK, actuator interlocks, denied reset, no-breaker until sync, each auxiliary stage, starter-loss abort and wrong-grid-frequency sync abort.
 - `test/test_equipment_protection.f90`: alarm debounce, source provenance, missing/stale data and hysteresis.
-- `gui/gui_win32.f90`: F7 displays first-out history, dependent actuator command states, restart-denial reason and model-time SOE; values are **not field contacts**.
+- `gui/gui_win32.f90`: F7 displays first-out history, dependent actuator command states, restart-denial reason and model-time SOE; values are **not field contacts**. At narrow native Windows widths, F7 uses separate **EQUIPMENT STATUS** and **EVENT HISTORY** views, with two rows of operator controls rather than overlapping 546px-wide buttons and a neighboring event pane. The full two-column engineering view remains at wider desktop widths. Native screenshot QA captures both narrow status and event layouts plus the wide viewport.
 
 Acceptance is successful **exact-commit** cross-platform CI, scenario and independent model/trace checks plus a separate **manual Windows HMI acceptance** of mouse controls, scaling, clipping, audible annunciation, and trend updates. GUI compilation alone does not complete human acceptance.
 

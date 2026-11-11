@@ -1185,6 +1185,12 @@ contains
                     call visual_qa_capture("build\gui-visual-qa\07-trip-sequence.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\07-trip-sequence-1536.png")
                 case(77)
+                    trip_events_view=.true.
+                case(78)
+                    call visual_qa_capture("build\gui-visual-qa\08-trip-events.png")
+                    call visual_qa_capture_virtual("build\gui-visual-qa\08-trip-events-1536.png")
+                case(79)
+                    trip_events_view=.false.
                     alarm_page=1
                 case(85)
                     control_scroll_y=huge(1) ! test the last controls remain reachable
