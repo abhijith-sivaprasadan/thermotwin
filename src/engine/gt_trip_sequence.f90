@@ -340,6 +340,8 @@ contains
         st%reserve_MW=0.0_dp
         st%fuel_flow_kg_s=0.0_dp
         st%heat_input_MW=0.0_dp
+        st%CO2_rate_kg_s=0.0_dp
+        st%fuel_cost_usd_h=0.0_dp
         st%gt_thermal_efficiency=0.0_dp
         st%gt_heat_rate_kJ_kWh=0.0_dp
         st%igv_pct=0.0_dp
