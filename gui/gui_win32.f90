@@ -38,6 +38,9 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: WM_COMMAND = 273_c_int
     integer(c_int), parameter :: WM_TIMER = 275_c_int
     integer(c_int), parameter :: WM_HSCROLL = 276_c_int
+    integer(c_int), parameter :: WM_MOUSEWHEEL = 522_c_int
+    integer(c_int), parameter :: VK_PRIOR = 33_c_int
+    integer(c_int), parameter :: VK_NEXT  = 34_c_int
     integer(c_int), parameter :: WM_MOUSEMOVE = 512_c_int
     integer(c_int), parameter :: WM_LBUTTONDOWN = 513_c_int
     integer(c_int), parameter :: WM_LBUTTONUP = 514_c_int
@@ -1071,7 +1074,7 @@ contains
         integer(c_intptr_t) :: lres
         type(PaintStruct) :: ps
         type(c_ptr) :: hdc
-        integer(c_int) :: ok
+        integer(c_int) :: ok, wheel_delta
         character(len=8) :: qa_env
         integer :: qa_status
 
@@ -1175,6 +1178,23 @@ contains
             call handle_mouse_down(hwnd, mouse_x(lParam), mouse_y(lParam))
             call invalidate_dashboard(hwnd)
             lres = 0_c_intptr_t
+            return
+
+        case (WM_MOUSEWHEEL)
+            if (mouse_hover_valid .and. mouse_hover_x>=layout_control_left .and. &
+                mouse_hover_x<=layout_control_left+layout_control_w) then
+                wheel_delta=int(ibits(wParam,16,16),c_int)
+                if(wheel_delta>=32768_c_int) wheel_delta=wheel_delta-65536_c_int
+                if (wheel_delta/=0_c_int) then
+                    control_scroll_y=max(0,min(control_scroll_max,control_scroll_y- &
+                        merge(92,-92,wheel_delta>0_c_int)))
+                    call compute_layout_from_window(hwnd)
+                    call invalidate_dashboard(hwnd)
+                    lres=0_c_intptr_t
+                    return
+                end if
+            end if
+            lres=DefWindowProcA(hwnd,msg,wParam,lParam)
             return
 
         case (WM_MOUSEMOVE)
@@ -1444,6 +1464,17 @@ contains
             return
         end if
 
+        ! Click-to-scroll track in the existing control panel; no hidden
+        ! setpoints or duplicate action buttons.
+        if (point_in_rect(x,y,layout_control_left+layout_control_w-20,layout_control_top+76, &
+            layout_control_left+layout_control_w-2,layout_footer_y-24)) then
+            control_scroll_y=max(0,min(control_scroll_max, &
+                (y-layout_control_top-76)*control_scroll_max / &
+                max(1,layout_footer_y-layout_control_top-100)))
+            call compute_layout_from_window(hwnd)
+            active_control=ID_NONE
+            return
+        end if
         nav_target = hit_test_nav(x, y)
         if (nav_target == NAV_RAIL_TOGGLE) then
             nav_rail_collapsed = .not. nav_rail_collapsed
@@ -1695,6 +1726,14 @@ contains
         end if
 
         select case (kval)
+        case (VK_PRIOR)
+            control_scroll_y=max(0,control_scroll_y-180)
+            call compute_layout_from_window(hwnd)
+            return
+        case (VK_NEXT)
+            control_scroll_y=min(control_scroll_max,control_scroll_y+180)
+            call compute_layout_from_window(hwnd)
+            return
         case (VK_F1)
             if (hmi_screen == SCREEN_OVERVIEW) then
                 overview_detail = .not. overview_detail   ! [5.0-B] toggle flagship <-> detail
@@ -2685,7 +2724,40 @@ contains
         end do
         idx = modulo(idx - 1 + delta, FOCUS_COUNT) + 1
         focus_control_id = FOCUS_IDS(idx)
+        call reveal_focused_control()
     end subroutine cycle_focus
+
+    subroutine reveal_focused_control()
+        integer :: target,step,by
+        target=-1
+        step=ui_button_step()
+        by=layout_button_y
+        select case(focus_control_id)
+        case(ID_DEMAND); target=layout_slider_y(1)
+        case(ID_RENEWABLE); target=layout_slider_y(2)
+        case(ID_STORAGE); target=layout_slider_y(3)
+        case(ID_GAS); target=layout_slider_y(4)
+        case(ID_AMBIENT); target=layout_slider_y(5)
+        case(ID_TIT); target=layout_slider_y(6)
+        case(ID_AUTO,ID_BALANCE); target=by
+        case(ID_CC_MODE,ID_FCR_HOLD); target=by+step
+        case(ID_ROI_MODE,ID_LOAD_STEP); target=by+2*step
+        case(ID_CLOUD_RAMP,ID_TURBINE_TRIP); target=by+3*step
+        case(ID_MARKET_PROFILE,ID_MARKET_REPLAY); target=by+4*step
+        case(ID_RESET); target=by+5*step
+        case(ID_SCN_NEXT); target=by+6*step+58
+        case(ID_SCN_PREV,ID_SCN_RUN_STOP); target=by+6*step+108
+        case(ID_EXPORT_CSV,ID_EXPORT_PDF); target=by+6*step+158
+        end select
+        if(target<0) return
+        if(target<layout_control_top+116) then
+            control_scroll_y=max(0,control_scroll_y-(layout_control_top+116-target))
+        else if(target+ui_button_h()>layout_footer_y-33) then
+            control_scroll_y=min(control_scroll_max, &
+                control_scroll_y+target+ui_button_h()-(layout_footer_y-33))
+        end if
+        call compute_layout(layout_canvas_w,layout_canvas_h)
+    end subroutine reveal_focused_control
 
     subroutine activate_focused_control()
         active_control = focus_control_id
@@ -2842,6 +2914,10 @@ contains
         integer :: bx1, bx2, bx3, by, bw, bh, gap, step
 
         control_id = ID_NONE
+        if (point_in_rect(x,y,layout_control_left,layout_control_top, &
+            layout_control_left+layout_control_w,layout_control_bottom)) then
+            if (y<layout_control_top+70 .or. y>layout_footer_y-20) return
+        end if
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(1) - 38, &
                 layout_slider_x + layout_slider_w + 14, layout_slider_y(1) + 38)) control_id = ID_DEMAND
         if (point_in_rect(x, y, layout_slider_x - 14, layout_slider_y(2) - 38, &
@@ -3143,9 +3219,14 @@ contains
         call hmi_fill_alpha_rect(hdc, int(x0 + w - 340, c_int), int(y0, c_int), &
             int(x0 + w, c_int), int(y0 + 44, c_int), COL_CYAN, 12_c_int)
         call draw_line(hdc, x0, y0 + 44, x0 + w, y0 + 44, COL_BORDER, 1)
-        write(title, '("ThermoTwin-F  |  Plant Control Console  |  ",I2," Hz  ",A)') &
-            nint(grid%nominal_frequency_Hz), trim(grid%market_power_zone)
-        call draw_title_text(hdc, inner_x + 10, y0 + 10, trim(title), COL_INK)
+        ! Keep the original blueprint header but prevent long mode/status
+        ! strings from painting over its title on smaller canvases.
+        if (w<850) then
+            title="ThermoTwin-F"
+        else
+            title="ThermoTwin-F  |  Plant Control Console"
+        end if
+        call draw_title_text(hdc,inner_x+10,y0+10,trim(title),COL_INK)
         if (grid%auto_balance) then
             auto_text = "AUTO"
         else
@@ -3168,10 +3249,15 @@ contains
         else
             plant_text = "GT ONLY"
         end if
-        write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
-            grid%elapsed_s, trim(plant_text), trim(auto_text), trim(dispatch_text), trim(reserve_text)
-        call draw_text(hdc, x0 + w - 490, y0 + 14, trim(subtitle), &
-            merge(COL_LIME, COL_AMBER, grid%auto_balance))
+        if(w>=850) then
+            write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
+                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(dispatch_text),trim(reserve_text)
+            call draw_text(hdc,x0+w-445,y0+14,trim(subtitle), &
+                merge(COL_LIME,COL_AMBER,grid%auto_balance))
+        else
+            write(subtitle,'("t=",F5.1,"s | ",A)') grid%elapsed_s,trim(auto_text)
+            call draw_text(hdc,x0+w-198,y0+14,trim(subtitle),COL_MUTED)
+        end if
         ! [?] shortcuts button — top-right of header
         block
             integer :: bx, bw2, by2, bh2
