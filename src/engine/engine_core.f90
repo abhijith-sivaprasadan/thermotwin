@@ -24,6 +24,11 @@ module engine_core
         MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     use grid_dynamics, only: tick_frequency_dynamics
     use equipment_protection, only: reset_equipment_monitor, tick_equipment_monitor
+    use gt_trip_sequence, only: gt_trip_reset_state, gt_trip_advance, &
+        gt_trip_apply_boundary, gt_trip_monitor, gt_trip_acknowledge, &
+        gt_trip_reset_latch, gt_trip_start, gt_trip_toggle_training_bypass, &
+        gt_trip_phase_text, gt_trip_cause_text, gt_trip_permit_mask, &
+        gt_trip_restart_mask, gt_trip_reason_for_mask
     use dispatch_agc, only: tick_auto_balance, tick_frequency_support, balance_now, reset_controls, &
         ramp_renewable_curtailment_to, should_curtail_renewables, &
         apply_load_step, apply_cloud_ramp, apply_turbine_trip
@@ -61,6 +66,10 @@ module engine_core
 
     ! Re-exported engine API (state, physics, dispatch, economics)
     public :: GridState, clamp_real
+    public :: GT_ONLINE, GT_TRIPPED, GT_RUNDOWN, GT_LOCKOUT, GT_READY
+    public :: GT_PURGING, GT_IGNITING, GT_ACCELERATING, GT_SYNCHRONIZING
+    public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
+    public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL
     public :: effective_renewable_MW, renewable_headroom_MW
     public :: limited_storage_power, append_history, history_index
     public :: bottoming_power_MW, thermal_generation_MW
@@ -68,6 +77,10 @@ module engine_core
     public :: tick_auto_balance, balance_now, reset_controls
     public :: ramp_renewable_curtailment_to, should_curtail_renewables
     public :: apply_load_step, apply_cloud_ramp, apply_turbine_trip
+    public :: gt_trip_acknowledge, gt_trip_reset_latch, gt_trip_start
+    public :: gt_trip_toggle_training_bypass, gt_trip_phase_text
+    public :: gt_trip_cause_text, gt_trip_permit_mask, gt_trip_restart_mask
+    public :: gt_trip_reason_for_mask, gt_trip_apply_boundary
     public :: trip_fleet_unit, restore_fleet_units
     public :: apply_market_profile, cycle_market_profile, refresh_market_data, market_profile_name
     public :: refresh_economics
@@ -111,6 +124,7 @@ contains
         st%dnn_hr_mae = DNN_HR_MAE
 
         call set_property_model(PROP_VARIABLE)
+        call gt_trip_reset_state(st)  ! explicit NEW RUN, not operator reset
         call reset_controls(st)
         call reset_equipment_monitor(st)
         st%prev_gas_dispatch_pct = st%gas_dispatch_pct
@@ -134,6 +148,7 @@ contains
         real(dp), intent(in) :: dt_s
         real(dp) :: old_ou_demand_noise, old_ou_wind_noise
 
+        if (dt_s <= 0.0_dp) return
         st%elapsed_s = st%elapsed_s + dt_s
         old_ou_demand_noise = st%ou_demand_noise
         old_ou_wind_noise = st%ou_wind_noise
@@ -141,6 +156,8 @@ contains
         call tick_ou_disturbance(st, dt_s, old_ou_demand_noise, old_ou_wind_noise)
         call tick_auto_balance(st, dt_s)        ! AGC secondary ramp
         call tick_frequency_support(st, dt_s)  ! BESS+RES freq support even in MANUAL mode
+        call gt_trip_advance(st,dt_s)
+        if(st%gt_phase/=GT_ONLINE) st%gas_dispatch_pct=0.0_dp
         ! Dispatch slew rate over this tick (slider moves + AGC combined);
         ! upward ramps drive the transient surge-margin excursion.
         st%gas_ramp_pct_per_s = (st%gas_dispatch_pct - st%prev_gas_dispatch_pct) / dt_s
@@ -148,7 +165,21 @@ contains
         call refresh_model(st, dt_s)            ! gas/steam power, imbalance, economics
         call update_battery_soc(st, dt_s)       ! SOC tracking
         call tick_frequency_dynamics(st, dt_s)  ! swing eq + primary response + UFLS
-        call tick_equipment_monitor(st, dt_s)   ! condition ONLY, no automatic trip
+        call tick_equipment_monitor(st, dt_s)
+        block
+            integer :: before_trip
+            before_trip=st%gt_phase
+            call gt_trip_monitor(st)
+            if(before_trip/=st%gt_phase .and. st%gt_phase==GT_TRIPPED) then
+                ! Trip disconnects generation in this tick; grid frequency
+                ! integration reacts at the NEXT tick (125 ms nominal GUI).
+                call gt_trip_apply_boundary(st)
+                st%supply_MW=thermal_generation_MW(st)+ &
+                    effective_renewable_MW(st)+st%storage_MW
+                st%imbalance_MW=st%supply_MW-st%demand_MW
+                call refresh_economics(st)
+            end if
+        end block
         st%CO2_cumulative_t = st%CO2_cumulative_t + &
             st%CO2_rate_kg_s * dt_s / 1000.0_dp
         ! Daily CO2 accumulation (resets every 86400 sim-seconds)
@@ -198,7 +229,8 @@ contains
         call update_fault_classifier(st)
 
         ! Online DNN adaptation every tick (if active and DNN loaded)
-        if (st%dnn_adapting .and. DNN_ACTIVE .and. st%plant_power_MW > 1.0_dp) then
+        if (st%dnn_adapting .and. DNN_ACTIVE .and. st%gas_capacity_MW>1.0_dp .and. &
+            st%gt_heat_rate_kJ_kWh>0.0_dp .and. st%plant_power_MW > 1.0_dp) then
             call dnn_online_update( &
                 st%plant_power_MW / st%gas_capacity_MW, &
                 st%ambient_C, &
@@ -233,7 +265,7 @@ contains
         if (st%tie_active) call tie_line_step(st, dt_s)
 
         ! MPC-AGC: compute 5-step optimal setpoint, apply as dispatch %
-        if (st%mpc_active) then
+        if (st%mpc_active .and. st%gt_phase==GT_ONLINE) then
             call mpc_step(st)
             if (st%gas_capacity_MW > 0.0_dp) &
                 st%gas_dispatch_pct = min(100.0_dp, max(30.0_dp, &
@@ -287,7 +319,8 @@ contains
         end block
 
         ! ── DNN MC-dropout uncertainty (every 8 ticks to reduce cost) ────────────
-        if (DNN_ACTIVE .and. st%plant_power_MW > 1.0_dp) then
+        if (DNN_ACTIVE .and. st%gas_capacity_MW>1.0_dp .and. &
+            st%gt_heat_rate_kJ_kWh>0.0_dp .and. st%plant_power_MW > 1.0_dp) then
             block
                 integer, save :: mc_tick = 0
                 real(dp) :: mc_mean
@@ -302,6 +335,7 @@ contains
             end block
         end if
 
+        if(st%gt_phase/=GT_ONLINE) st%gas_dispatch_pct=0.0_dp
         call publish_tags(st)
     end subroutine engine_step
 
@@ -492,6 +526,7 @@ contains
             st%condenser_pressure_kPa = 0.0_dp
             st%alarm_hrsg_pinch = .false.
         end if
+        if(st%gt_phase/=GT_ONLINE) call gt_trip_apply_boundary(st)
         st%plant_power_MW = st%gas_power_MW + bottoming_power_MW(st)
         if (st%heat_input_MW > 1.0e-9_dp) then
             st%plant_efficiency = st%plant_power_MW / st%heat_input_MW
@@ -573,6 +608,15 @@ contains
         call tag_set("GRID.UFLS_STAGE",       real(st%UFLS_stage, dp), "-",     t)
         call tag_set("GRID.INERTIA_MWS",      merge(st%fleet_inertia_MWs, INERTIA_MWs, &
             st%fleet_mode), "MWs", t)
+        call tag_set("GT1.SIM_TRIP_PHASE",     real(st%gt_phase,dp), "-",t)
+        call tag_set("GT1.SIM_FIRSTOUT_CODE",  real(st%gt_first_out,dp), "-",t)
+        call tag_set("GT1.SIM_TRIP_LATCHED",   merge(1.0_dp,0.0_dp,st%gt_trip_latched),"-",t)
+        call tag_set("GT1.SIM_BREAKER_CLOSED", merge(1.0_dp,0.0_dp,st%gt_breaker_closed),"-",t)
+        call tag_set("GT1.SIM_FUEL_VALVE_OPEN",merge(1.0_dp,0.0_dp,st%gt_fuel_valve_open),"-",t)
+        call tag_set("GT1.SIM_FLAME_ON",       merge(1.0_dp,0.0_dp,st%gt_flame_on),"-",t)
+        call tag_set("GT1.SIM_ROTOR_EST_PCT",  st%gt_rotor_est_pct,"%",t)
+        call tag_set("GT1.SIM_TRAIN_BYPASS",   merge(1.0_dp,0.0_dp,st%gt_training_bypass),"-",t)
+        call tag_set("GT1.SIM_RESET_MASK",    real(gt_trip_permit_mask(st),dp),"-",t)
         call tag_set("GT1.POWER_MW",          st%gas_power_MW,        "MW",     t)
         call tag_set("GT1.CAPACITY_MW",       st%gas_capacity_MW,     "MW",     t)
         call tag_set("GT1.DISPATCH_PCT",      st%gas_dispatch_pct,    "%",      t)
