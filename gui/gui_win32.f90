@@ -13144,6 +13144,7 @@ contains
             return
         end if
         if(measured_view) then
+            if(.not.point_in_rect(px,py,ix,top+55,ix+iw,layout_main_top+layout_main_h)) return
             handled=.true.
             call handle_measured_replay_mouse(px,py,ix,iw,top)
             return
@@ -13391,6 +13392,122 @@ contains
 
     end subroutine draw_scenario_screen
 
+
+
+    ! Read-only measured-data mode. Never mutates GridState, trained coefficients
+    ! or simulated interlocks. Local CSV is NOT cryptographically verified here.
+    subroutine handle_measured_replay_mouse(px,py,ix,iw,top)
+        integer,intent(in) :: px,py,ix,iw,top
+        logical :: accepted
+        integer :: plot_left,plot_right,lo,hi,k
+        if(point_in_rect(px,py,ix,top+112,ix+150,top+150)) then
+            call replay_load('build/uci551/replay/measured_vs_predicted_2014_2015.csv', &
+                             measured_data,accepted)
+            if(accepted) then
+                call set_notice('UCI 551 original data replay loaded. CSV hash not validated in GUI.')
+            else
+                call set_notice(trim(measured_data%status))
+            end if
+            return
+        end if
+        if(measured_data%n==0) return
+        if(point_in_rect(px,py,ix,top+178,ix+118,top+216)) then
+            call replay_seek(measured_data,-100)
+        else if(point_in_rect(px,py,ix+130,top+178,ix+245,top+216)) then
+            call replay_seek(measured_data,-1)
+        else if(point_in_rect(px,py,ix+257,top+178,ix+372,top+216)) then
+            call replay_seek(measured_data,1)
+        else if(point_in_rect(px,py,ix+384,top+178,ix+min(520,iw),top+216)) then
+            call replay_seek(measured_data,100)
+        else if(point_in_rect(px,py,ix+30,top+258,ix+iw-28,top+660)) then
+            lo=max(1,measured_data%index-100)
+            hi=min(measured_data%n,measured_data%index+100)
+            plot_left=ix+30
+            plot_right=ix+iw-28
+            k=lo+nint(real(max(0,min(plot_right-plot_left,px-plot_left)),dp) / &
+                      real(max(1,plot_right-plot_left),dp)*real(hi-lo,dp))
+            call replay_seek(measured_data,k-measured_data%index)
+        end if
+    end subroutine handle_measured_replay_mouse
+
+    subroutine draw_measured_replay_screen(hdc,x,y,width,height)
+        type(c_ptr),value :: hdc
+        integer,intent(in) :: x,y,width,height
+        integer :: ix,iw,top,lo,hi,i,px,py,oldx,oldy,oldq,oldr
+        integer :: gx,gy,gw,gh
+        real(dp) :: vmin,vmax,scale
+        character(len=192) :: label
+        ix=x+18
+        iw=width-36
+        top=y+8
+        call draw_screen_caption(hdc,ix,top,iw,'F15  REAL TURBINE REPLAY', &
+            'UCI 551 observed source data / read-only / NOT LIVE PLANT')
+        call draw_industrial_button(hdc,ix+iw-340,top+12,ix+iw-182,top+42, &
+            'SCENARIOS',COL_PANEL_ALT,.false.)
+        call draw_industrial_button(hdc,ix+iw-174,top+12,ix+iw,top+42, &
+            'INSTRUCTOR [I]',COL_PANEL_ALT,.false.)
+        call draw_text(hdc,ix,top+67,'HISTORICAL ACTUAL MEASUREMENTS - independent of live GT model/trips',COL_CYAN)
+        call draw_text(hdc,ix,top+88,'2011-13 fit / 2014-15 test. TEY SOURCE UNITS, not independently verified MW.',COL_MUTED)
+        call draw_button(hdc,ix,top+112,ix+150,top+150,'LOAD CSV',COL_PANEL_ALT)
+        if(measured_data%n==0) then
+            call draw_text(hdc,ix+164,top+123,trim(measured_data%status),COL_AMBER)
+            call draw_text(hdc,ix,top+186,'First run: python scripts/fetch_uci_gt551.py --output-dir build/uci551',COL_MUTED)
+            call draw_text(hdc,ix,top+212, &
+                'Then: python -m scripts.replay_uci_gt551 --data-dir build/uci551 --out build/uci551/replay', &
+                COL_MUTED)
+            call draw_text(hdc,ix,top+250,'No synthetic turbine data substituted when files are absent.',COL_RED)
+            return
+        end if
+        write(label,'("LOCAL CSV / HASH NOT VERIFIED IN GUI  |  RECORD ",I0," / ",I0)') &
+            measured_data%index,measured_data%n
+        call draw_text(hdc,ix+164,top+123,trim(label),COL_AMBER)
+        call draw_button(hdc,ix,top+178,ix+118,top+216,'-100 rows',COL_PANEL_ALT)
+        call draw_button(hdc,ix+130,top+178,ix+245,top+216,'PREVIOUS',COL_PANEL_ALT)
+        call draw_button(hdc,ix+257,top+178,ix+372,top+216,'NEXT',COL_PANEL_ALT)
+        call draw_button(hdc,ix+384,top+178,ix+min(520,iw),top+216,'+100 rows',COL_PANEL_ALT)
+        i=measured_data%index
+        write(label,'("SOURCE YEAR ",I0,"   |   PUBLISHED ROW ",I0,"   |   NO EXACT TIMESTAMP")') &
+            measured_data%year(i),measured_data%source_row(i)
+        call draw_text(hdc,ix,top+232,trim(label),COL_INK)
+        gx=ix+30
+        gy=top+258
+        gw=max(80,iw-58)
+        gh=max(120,min(310,height-365))
+        call fill_soft_box(hdc,gx,gy,gx+gw,gy+gh,COL_PANEL_DEEP)
+        call stroke_soft_box(hdc,gx,gy,gx+gw,gy+gh,COL_BORDER_SOFT,1)
+        lo=max(1,i-100)
+        hi=min(measured_data%n,i+100)
+        vmin=min(minval(measured_data%measured(lo:hi)),minval(measured_data%predicted(lo:hi)))
+        vmax=max(maxval(measured_data%measured(lo:hi)),maxval(measured_data%predicted(lo:hi)))
+        scale=max(1.0_dp,vmax-vmin)
+        do i=lo,hi
+            px=gx+8+nint(real(i-lo,dp)/real(max(1,hi-lo),dp)*real(gw-16,dp))
+            py=gy+gh-10-nint((measured_data%measured(i)-vmin)/scale*real(gh-20,dp))
+            if(i>lo) call draw_line(hdc,oldx,oldy,px,py,COL_CYAN,2)
+            oldx=px
+            oldy=py
+            py=gy+gh-10-nint((measured_data%predicted(i)-vmin)/scale*real(gh-20,dp))
+            if(i>lo) call draw_line(hdc,oldq,oldr,px,py,COL_AMBER,2)
+            oldq=px
+            oldr=py
+        end do
+        i=measured_data%index
+        px=gx+8+nint(real(i-lo,dp)/real(max(1,hi-lo),dp)*real(gw-16,dp))
+        call draw_line(hdc,px,gy+6,px,gy+gh-6,COL_INK,1)
+        call draw_text(hdc,ix,gy+gh+11,'CYAN: measured TEY    AMBER: conditional estimate',COL_CYAN)
+        write(label,'("MEASURED ",F8.3,"  PREDICTED ",F8.3,"  ERROR OBS-PRED ",SP,F8.3,SS)') &
+            measured_data%measured(i),measured_data%predicted(i),measured_data%residual(i)
+        call draw_text(hdc,ix,gy+gh+38,trim(adjustl(label)),COL_INK)
+        write(label,'("Observed ambient ",F6.1," C  /  TIT ",F7.1," C  |  ",A)') &
+            measured_data%ambient(i),measured_data%tit(i), &
+            merge('OUTSIDE TRAINING RANGE','WITHIN TRAINING RANGE ',measured_data%outside(i))
+        call draw_text(hdc,ix,gy+gh+62,trim(adjustl(label)), &
+            merge(COL_AMBER,COL_MUTED,measured_data%outside(i)))
+        call draw_text(hdc,ix,gy+gh+85, &
+            'Source-ordered replay only. Never feeds fuel, trip, breaker, model time or OPC UA.',COL_MUTED)
+        call draw_text(hdc,ix,max(gy+gh+110,top+height-26), &
+            'Ctrl+U: measured tab | Left/Right: rows | source ZIP hashes checked by Python producer',COL_DIM)
+    end subroutine draw_measured_replay_screen
 
     ! Separate instructional surface; original F15 comparison stays intact.
     subroutine draw_instructor_screen(hdc,x,y,width,height)
