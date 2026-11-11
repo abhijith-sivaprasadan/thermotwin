@@ -17,7 +17,7 @@ program test_grid_primary_energy
     ! solution, not inject anonymous additional MW into the swing equation.
     call engine_init(st)
     st%auto_balance=.false.
-    st%fcr_hold=.false.
+    st%fcr_hold=.true.
     st%frequency_Hz=50.0_dp
     st%storage_request_MW=0.0_dp
     p0=st%gas_power_MW
