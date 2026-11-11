@@ -120,7 +120,7 @@ $(BUILD)/scientific_report.o:    $(BUILD)/exergy.o $(BUILD)/exergy_uq.o $(BUILD)
 $(BUILD)/grid_frequency_physics.o: $(BUILD)/engine_state.o
 $(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o $(BUILD)/grid_frequency_physics.o
 $(BUILD)/equipment_protection.o:   $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
-$(BUILD)/gt_trip_sequence.o:      $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o
+$(BUILD)/gt_trip_sequence.o:      $(BUILD)/engine_state.o $(BUILD)/equipment_protection.o $(BUILD)/grid_frequency_physics.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o $(BUILD)/gt_trip_sequence.o
 $(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
 $(BUILD)/dnn_surrogate.o:          $(BUILD)/precision_kinds.o
