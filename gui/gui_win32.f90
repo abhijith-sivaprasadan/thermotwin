@@ -85,6 +85,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
+    integer(c_int), parameter :: VK_B   = 66_c_int  ! audible alarm enable/disable
     integer(c_int), parameter :: VK_A   = 65_c_int   ! toggle DNN adapting
     integer(c_int), parameter :: VK_T   = 84_c_int   ! Ctrl+T theme toggle
     integer(c_int), parameter :: VK_C   = 67_c_int
@@ -218,6 +219,9 @@ module thermotwin_win32_gui
     integer, parameter :: ICON_OU  = 6
     integer, parameter :: ALARM_COUNT = 8
     integer, parameter :: ALARM_LOG_N = 36
+    integer(c_int), parameter :: SOUND_P1 = int(Z'00000010', c_int)
+    integer(c_int), parameter :: SOUND_P2 = int(Z'00000030', c_int)
+    integer, parameter :: ALARM_SHELVE_SECONDS = 600
 
     integer(c_int), parameter :: CANVAS_W = 1280_c_int
     integer(c_int), parameter :: CANVAS_H = 940_c_int
@@ -692,6 +696,12 @@ module thermotwin_win32_gui
             integer(c_int) :: ok
         end function hmi_native_init
 
+        function MessageBeep(code) bind(C, name="MessageBeep") result(ok)
+            import :: c_int
+            integer(c_int), value :: code
+            integer(c_int) :: ok
+        end function MessageBeep
+
         function hmi_save_window_png(hwnd, lpPath) bind(C, name="hmi_save_window_png") result(ok)
             import :: c_int, c_ptr
             type(c_ptr), value :: hwnd
@@ -841,6 +851,10 @@ module thermotwin_win32_gui
     logical :: alarm_seen(ALARM_COUNT) = .false.
     logical :: alarm_ack(ALARM_COUNT) = .false.
     logical :: alarm_shelved(ALARM_COUNT) = .false.
+    real(dp) :: alarm_shelve_expiry(ALARM_COUNT) = 0.0_dp
+    logical :: alarm_sound_enabled = .true.
+    logical :: alarm_audio_silenced = .false.
+    integer :: alarm_audio_ticks = 0
     integer :: alarm_log_count = 0
     real(dp) :: alarm_log_time(ALARM_LOG_N) = 0.0_dp
     character(len=20) :: alarm_log_name(ALARM_LOG_N) = ""
@@ -1076,6 +1090,7 @@ contains
             end if
             call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
             call update_alarm_workflow()
+            call update_alarm_audio()
             call flush_opcua_tags()
             call opcua_iterate()
             history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
@@ -1691,6 +1706,10 @@ contains
             grid%rl_mode = .not. grid%rl_mode
         case (VK_A)
             grid%dnn_adapting = .not. grid%dnn_adapting
+        case (VK_B)
+            alarm_sound_enabled = .not. alarm_sound_enabled
+            alarm_audio_silenced = .false.
+            call set_bool_notice("Alarm audio enabled.", "Alarm audio disabled.", alarm_sound_enabled)
         case (VK_T)
             hmi_theme = modulo(hmi_theme + 1, THEME_COUNT)   ! [6.0] Blueprint -> Classic dark -> Classic light
             call apply_theme()
@@ -2057,6 +2076,8 @@ contains
                 color_blind_safe = ival /= 0
             case ("nav_rail_collapsed")
                 nav_rail_collapsed = ival /= 0
+            case ("alarm_sound_enabled")
+                alarm_sound_enabled = ival /= 0
             end select
         end do
         close(unit)
@@ -2083,6 +2104,7 @@ contains
         write(unit, '("ui_scale_pct ",I0)') ui_scale_pct
         write(unit, '("color_blind_safe ",I0)') merge(1, 0, color_blind_safe)
         write(unit, '("nav_rail_collapsed ",I0)') merge(1, 0, nav_rail_collapsed)
+        write(unit, '("alarm_sound_enabled ",I0)') merge(1, 0, alarm_sound_enabled)
         write(unit, "(A)") "units SI"
         write(unit, "(A)") "api_eia_key"
         write(unit, "(A)") "api_entsoe_token"
@@ -2094,6 +2116,9 @@ contains
         alarm_seen = .false.
         alarm_ack = .false.
         alarm_shelved = .false.
+        alarm_shelve_expiry = 0.0_dp
+        alarm_audio_silenced = .false.
+        alarm_audio_ticks = 0
         alarm_log_count = 0
         alarm_log_name = ""
         alarm_log_state = ""
@@ -2111,6 +2136,9 @@ contains
                 alarm_seen(i) = .true.
                 alarm_ack(i) = .false.
                 alarm_shelved(i) = .false.
+                alarm_shelve_expiry(i) = 0.0_dp
+                alarm_audio_silenced = .false.
+                alarm_audio_ticks = 100
                 call log_alarm_event(i, "UNACK")
             else if (.not. states(i) .and. alarm_prev(i)) then
                 alarm_seen(i) = .true.
@@ -2120,8 +2148,52 @@ contains
                 alarm_seen(i) = .true.
             end if
         end do
+        do i = 1, ALARM_COUNT
+            if (alarm_shelved(i) .and. grid%elapsed_s >= alarm_shelve_expiry(i)) then
+                alarm_shelved(i) = .false.
+                alarm_shelve_expiry(i) = 0.0_dp
+                call log_alarm_event(i, "EXPIRE")
+            end if
+        end do
         alarm_prev = states
     end subroutine update_alarm_workflow
+
+    ! Windows system sounds: priority-encoded and rate-limited. This is a
+    ! simulator annunciator, NOT a safety-critical certified alarm subsystem.
+    subroutine update_alarm_audio()
+        logical :: states(ALARM_COUNT)
+        integer :: i, top_priority
+        integer(c_int) :: beep_ok
+        if (.not. alarm_sound_enabled .or. alarm_audio_silenced .or. visual_qa_mode) return
+        call current_alarm_states(states)
+        top_priority = 0
+        do i = 1, ALARM_COUNT
+            if (.not. states(i) .or. alarm_ack(i) .or. alarm_shelved(i)) cycle
+            if (trim(alarm_priority_text(i)) == "P1") then
+                top_priority = 2
+            else if (top_priority < 1) then
+                top_priority = 1
+            end if
+        end do
+        if (top_priority == 0) then
+            alarm_audio_ticks = 0
+            return
+        end if
+        alarm_audio_ticks = alarm_audio_ticks + 1
+        if (alarm_audio_ticks < merge(24, 48, top_priority == 2)) return
+        alarm_audio_ticks = 0
+        if (top_priority == 2) then
+            beep_ok = MessageBeep(SOUND_P1)
+        else
+            beep_ok = MessageBeep(SOUND_P2)
+        end if
+    end subroutine update_alarm_audio
+
+    subroutine silence_alarm_audio()
+        alarm_audio_silenced = .true.
+        call set_notice("ALARM AUDIO SILENCED - visual alarms remain active.")
+        call log_debug("operator: alarm audio silenced without acknowledgement")
+    end subroutine silence_alarm_audio
 
     subroutine ack_all_alarms()
         logical :: states(ALARM_COUNT)
@@ -2147,8 +2219,9 @@ contains
 
         call current_alarm_states(states)
         do i = 1, ALARM_COUNT
-            if (states(i) .and. alarm_seen(i)) then
+            if (states(i) .and. alarm_seen(i) .and. trim(alarm_priority_text(i)) /= "P1") then
                 alarm_shelved(i) = .true.
+                alarm_shelve_expiry(i) = grid%elapsed_s + real(ALARM_SHELVE_SECONDS,dp)
                 call log_alarm_event(i, "SHLV")
             end if
         end do
@@ -2161,6 +2234,7 @@ contains
             if (alarm_shelved(i)) call log_alarm_event(i, "UNSHLV")
         end do
         alarm_shelved = .false.
+        alarm_shelve_expiry = 0.0_dp
     end subroutine unshelve_all_alarms
 
     subroutine log_alarm_event(alarm_id, state_text)
@@ -2216,6 +2290,18 @@ contains
             handled = .true.
             return
         end if
+        if (point_in_rect(x, y, bx + 400, btn_y, bx + 510, btn_y + 34)) then
+            call silence_alarm_audio()
+            handled = .true.
+            return
+        end if
+        if (point_in_rect(x, y, bx + 520, btn_y, bx + 630, btn_y + 34)) then
+            alarm_sound_enabled = .not. alarm_sound_enabled
+            alarm_audio_silenced = .false.
+            call set_bool_notice("Alarm audio enabled.", "Alarm audio disabled.", alarm_sound_enabled)
+            handled = .true.
+            return
+        end if
         if (point_in_rect(x, y, bx + 262, btn_y, bx + 390, btn_y + 34)) then
             call unshelve_all_alarms()
             handled = .true.
@@ -2230,8 +2316,14 @@ contains
                 if (alarm_seen(i) .and. states(i) .and. .not. alarm_ack(i)) then
                     alarm_ack(i) = .true.
                     call log_alarm_event(i, "ACK")
-                else if (alarm_seen(i) .and. states(i)) then
+                else if (alarm_seen(i) .and. states(i) .and. &
+                    trim(alarm_priority_text(i)) /= "P1") then
                     alarm_shelved(i) = .not. alarm_shelved(i)
+                    if (alarm_shelved(i)) then
+                        alarm_shelve_expiry(i) = grid%elapsed_s + real(ALARM_SHELVE_SECONDS,dp)
+                    else
+                        alarm_shelve_expiry(i) = 0.0_dp
+                    end if
                     call log_alarm_event(i, merge("SHLV  ", "UNSHLV", alarm_shelved(i)))
                 else if (alarm_seen(i)) then
                     alarm_seen(i) = .false.
@@ -5196,8 +5288,13 @@ contains
         btn_y = top_y + 76
         call draw_industrial_button(hdc, ix, btn_y, ix + 110, btn_y + 34, "ACK ALL", COL_GREEN, .true.)
         call draw_industrial_button(hdc, ix + 122, btn_y, ix + 250, btn_y + 34, "SHELVE ACTIVE", COL_AMBER, .false.)
-        call draw_industrial_button(hdc, ix + 262, btn_y, ix + 390, btn_y + 34, "UNSHELVE", COL_CYAN, .false.)
-        call draw_text(hdc, ix + 410, btn_y + 8, "Alarm actions and chronological event state", COL_MUTED)
+        call draw_industrial_button(hdc, ix + 262, btn_y, ix + 390, btn_y + 34, "UNSHELVE", COL_PANEL_ALT, .false.)
+        call draw_industrial_button(hdc, ix + 400, btn_y, ix + 510, btn_y + 34, &
+            "SILENCE", COL_PANEL_ALT, alarm_audio_silenced)
+        call draw_industrial_button(hdc, ix + 520, btn_y, ix + 630, btn_y + 34, &
+            merge("AUDIO ON ", "AUDIO OFF", alarm_sound_enabled), COL_PANEL_ALT, alarm_sound_enabled)
+        call draw_text(hdc, ix, btn_y + 42, &
+            "SILENCE does not ACK. P1 cannot be shelved; P2 shelves expire after 600 simulation s.", COL_MUTED)
 
         table_w = max(650, int(0.62_dp * real(iw, dp)))
         log_x = ix + table_w + 18
