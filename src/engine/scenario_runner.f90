@@ -627,6 +627,13 @@ contains
         case ("ambient_C");            st%ambient_C = value
         case ("TIT_K");                st%TIT_K = value
         case ("frequency_Hz");         st%frequency_Hz = value
+        case ("grid_damping_MW_per_Hz"); st%grid_damping_MW_per_Hz=max(0.0_dp,value)
+        case ("grid_external_inertia_H_s"); st%grid_external_inertia_H_s=max(0.0_dp,value)
+        case ("grid_external_inertia_rated_MW"); st%grid_external_inertia_rated_MW=max(0.0_dp,value)
+        case ("grid_gt_inertia_H_s"); st%grid_gt_inertia_H_s=max(0.0_dp,value)
+        case ("grid_gt_inertia_rated_MW"); st%grid_gt_inertia_rated_MW=max(0.0_dp,value)
+        case ("nadir_trip_MW"); st%nadir_trip_MW=max(0.0_dp,value)
+        case ("nadir_horizon_s"); st%nadir_horizon_s=max(0.0_dp,value)
         case ("renewable_curtail_MW"); st%renewable_curtail_MW = value
         case ("battery_soc_pct")
             st%battery_soc_pct = clamp_real(value, 0.0_dp, 100.0_dp)
@@ -764,6 +771,14 @@ contains
         case ("PR_op");                 value = st%PR_op
         case ("gas_ramp_pct_per_s");    value = st%gas_ramp_pct_per_s
         case ("supply_MW");             value = st%supply_MW
+        case ("static_served_demand_MW"); value = st%static_served_demand_MW
+        case ("grid_damping_load_MW"); value = st%grid_damping_load_MW
+        case ("grid_stored_inertia_MWs"); value = st%grid_inertia_energy_MWs
+        case ("grid_swing_MW_s_per_Hz"); value = st%grid_swing_coeff_MW_s_per_Hz
+        case ("grid_model_valid"); value = merge(1.0_dp,0.0_dp,st%grid_model_valid)
+        case ("grid_frequency_clamped"); value = merge(1.0_dp,0.0_dp,st%grid_frequency_clamped)
+        case ("fixed_step_min_Hz"); value = st%freq_nadir_Hz
+        case ("fixed_step_valid"); value = merge(1.0_dp,0.0_dp,st%nadir_forecast_valid)
         case ("served_demand_MW");      value = st%served_demand_MW
         case ("ufls_shed_MW");          value = st%ufls_shed_MW
         case ("imbalance_MW");          value = st%imbalance_MW
@@ -852,7 +867,10 @@ contains
             "heat_rate_kJ_kWh,flame_temp_ad_K,nox_mg_nm3_15o2,co_mg_nm3_15o2,"// &
             "flashback_margin_pct,cooling_air_pct,tip_loss_pct,gfm_synth_MW,gfm_H_equiv,mpc_setpt_MW,"// &
             "served_demand_MW,ufls_shed_MW,renewable_lfsmo_MW,effective_gas_dispatch_pct,"// &
-            "governor_delta_MW,battery_energy_MWh"
+            "governor_delta_MW,battery_energy_MWh,static_served_demand_MW,"// &
+            "grid_damping_load_MW,grid_damping_MW_per_Hz,grid_stored_inertia_MWs,"// &
+            "grid_swing_MW_s_per_Hz,grid_model_valid,grid_frequency_clamped,"// &
+            "fixed_step_min_Hz,fixed_step_valid,nadir_horizon_s,nadir_trip_MW"
     end subroutine open_recorder
 
     subroutine record_row(unit, t_now, st)
@@ -871,7 +889,12 @@ contains
             st%co_mg_nm3_15o2, st%flashback_margin_pct, st%turbine_cooling_air_pct, &
             st%tip_loss_pct, st%gfm_synth_MW, st%gfm_H_equiv, st%mpc_setpt_MW, &
             st%served_demand_MW, st%ufls_shed_MW, st%renewable_lfsmo_MW, &
-            st%effective_gas_dispatch_pct, st%governor_delta_MW, st%battery_energy_MWh
+            st%effective_gas_dispatch_pct, st%governor_delta_MW, st%battery_energy_MWh, &
+            st%static_served_demand_MW, st%grid_damping_load_MW, &
+            st%grid_damping_MW_per_Hz, st%grid_inertia_energy_MWs, &
+            st%grid_swing_coeff_MW_s_per_Hz, merge(1.0_dp,0.0_dp,st%grid_model_valid), &
+            merge(1.0_dp,0.0_dp,st%grid_frequency_clamped), st%freq_nadir_Hz, &
+            merge(1.0_dp,0.0_dp,st%nadir_forecast_valid), st%nadir_horizon_s, st%nadir_trip_MW
     end subroutine record_row
 
 end module scenario_runner

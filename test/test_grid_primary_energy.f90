@@ -6,6 +6,7 @@ program test_grid_primary_energy
     use engine_core, only: engine_init, engine_step, update_battery_soc
     use grid_primary_balance, only: tick_governor_setpoint, resolve_bess_injection
     use grid_dynamics, only: tick_frequency_dynamics
+    use grid_frequency_physics, only: grid_swing_MW_s_per_Hz
     use gfm_bess, only: gfm_step
     implicit none
     type(GridState) :: st, one, many, qt
@@ -154,10 +155,16 @@ program test_grid_primary_energy
     qt%frequency_Hz=48.3_dp
     call tick_frequency_dynamics(qt,0.25_dp)
     call check("deep UFLS trip reaches stage 3",qt%UFLS_stage==3)
-    call check_close("UFLS served MW reconciled",qt%served_demand_MW,21.0_dp,1.0e-9_dp)
-    call check_close("UFLS net power mismatch reported accurately",qt%imbalance_MW,-6.0_dp,1.0e-9_dp)
-    call check_close("swing ROCOF uses that SAME mismatch",qt%ROCOF_Hz_s, &
-        qt%imbalance_MW/INERTIA_MWs,1.0e-9_dp)
+    call check_close("UFLS nominal-frequency served MW reconciled", &
+        qt%static_served_demand_MW,21.0_dp,1.0e-9_dp)
+    call check_close("frequency-sensitive demand is an explicit MW sink", &
+        qt%grid_damping_load_MW,-0.85_dp,1.0e-9_dp)
+    call check_close("UFLS actual served MW includes demand damping", &
+        qt%served_demand_MW,20.15_dp,1.0e-9_dp)
+    call check_close("UFLS net power mismatch reported accurately", &
+        qt%imbalance_MW,-5.15_dp,1.0e-9_dp)
+    call check_close("swing ROCOF uses same dimensional MW mismatch",qt%ROCOF_Hz_s, &
+        qt%imbalance_MW/grid_swing_MW_s_per_Hz(qt),1.0e-9_dp)
 
     qt=GridState()
     qt%gt_phase=GT_TRIPPED
@@ -169,8 +176,8 @@ program test_grid_primary_energy
     call check("LFSM-O active above deadband",qt%renewable_lfsmo_MW>0.0_dp)
     call check_close("LFSM-O physically subtracts generated renewable MW", &
         qt%supply_MW,20.0_dp-qt%renewable_lfsmo_MW,1.0e-9_dp)
-    call check_close("LFSM-O appears in published imbalance and swing", &
-        qt%imbalance_MW,-qt%renewable_lfsmo_MW,1.0e-9_dp)
+    call check_close("LFSM-O and damping appear in published net imbalance", &
+        qt%imbalance_MW,-qt%renewable_lfsmo_MW-0.35_dp,1.0e-9_dp)
 
     if(failures/=0) then
         print '(A,I0)', "FAIL grid primary energy reconciliation: ", failures

@@ -5,6 +5,7 @@ program test_grid_dynamics
     use precision_kinds, only: dp
     use engine_state
     use grid_dynamics, only: tick_frequency_dynamics
+    use grid_frequency_physics, only: grid_swing_MW_s_per_Hz
     use grid_primary_balance, only: tick_governor_setpoint, resolve_bess_injection
     use gfm_bess, only: gfm_step
     implicit none
@@ -37,9 +38,9 @@ program test_grid_dynamics
         st%storage_MW = 0.0_dp
         st%frequency_Hz = 50.0_dp          ! delta_f = 0 -> primary inactive this tick
         call tick_frequency_dynamics(st, DT)
-        call expect_near("shortage: ROCOF = -P/M", st%ROCOF_Hz_s, -5.0_dp / INERTIA_MWs, 1.0e-9_dp, failures)
+        call expect_near("shortage: ROCOF = -P/M", st%ROCOF_Hz_s, -5.0_dp / grid_swing_MW_s_per_Hz(st), 1.0e-9_dp, failures)
         call expect_near("shortage: freq integrates one step", st%frequency_Hz, &
-            50.0_dp - 5.0_dp / INERTIA_MWs * DT, 1.0e-9_dp, failures)
+            50.0_dp - 5.0_dp / grid_swing_MW_s_per_Hz(st) * DT, 1.0e-9_dp, failures)
     end block
 
     ! --- Governor droop output is clamped to spinning headroom. ---
