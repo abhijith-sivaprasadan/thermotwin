@@ -44,6 +44,7 @@ def verify(rows: list[dict[str, str]]) -> int:
         "static_served_demand_MW", "grid_damping_load_MW",
         "grid_damping_MW_per_Hz", "grid_stored_inertia_MWs",
         "grid_swing_MW_s_per_Hz", "grid_model_valid",
+        "fixed_step_min_Hz", "fixed_step_valid", "nadir_horizon_s", "nadir_trip_MW",
     }
     missing = required.difference(rows[0])
     if missing:
@@ -64,6 +65,34 @@ def verify(rows: list[dict[str, str]]) -> int:
              v["grid_swing_MW_s_per_Hz"], EPS_MW, t)
         if v["grid_model_valid"] != 1.0:
             raise AssertionError(f"Invalid grid physics at t={t:.2f}s")
+        # Independently derive the exact first-order fixed-loss solution from
+        # reported coefficients. This is NOT a closed-loop or OEM nadir check.
+        m = v["grid_swing_MW_s_per_Hz"]
+        d = v["grid_damping_MW_per_Hz"]
+        horizon = v["nadir_horizon_s"]
+        fnom = v["nominal_frequency_Hz"]
+        fnow = v["frequency_Hz"]
+        fixed_power = (
+            v["imbalance_MW"] + v["grid_damping_load_MW"] - v["nadir_trip_MW"]
+        )
+        if m <= 0 or d < 0 or horizon <= 0:
+            raise AssertionError(f"Invalid dimensioned forecast parameters at t={t:.2f}s")
+        if d == 0.0:
+            projected = fnow + (fixed_power / m) * horizon
+        else:
+            decay = math.exp(-d * horizon / m)
+            projected = (
+                fnom + (fnow - fnom) * decay + (fixed_power / d) * (1.0 - decay)
+            )
+        predicted_min = min(fnow, projected)
+        near("independent analytical fixed-loss horizon min", v["fixed_step_min_Hz"],
+             predicted_min, EPS_HZ, t)
+        should_be_valid = float(
+            abs(fnow - fnom) <= 3.0 and abs(projected - fnom) <= 3.0
+            and abs(predicted_min - fnom) <= 3.0
+        )
+        near("forecast validity must expose out-of-domain prediction",
+             v["fixed_step_valid"], should_be_valid, 1e-9, t)
         # This scenario is single-GT simple cycle with no P2X or CCS.
         near("one physical supply sum",
              v["plant_power_MW"] + v["renewable_actual_MW"] + v["storage_MW"],
@@ -142,7 +171,8 @@ def main() -> int:
         for field, offset in [("battery_energy_MWh", 0.1), ("supply_MW", 1.0),
                               ("ROCOF_Hz_s", 1.0),
                               ("grid_swing_MW_s_per_Hz", 2.0),
-                              ("grid_damping_load_MW", 1.0)]:
+                              ("grid_damping_load_MW", 1.0),
+                              ("fixed_step_min_Hz", 1.0)]:
             altered = [dict(row) for row in rows]
             altered[3][field] = str(float(altered[3][field]) + offset)
             try:
