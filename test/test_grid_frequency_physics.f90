@@ -64,6 +64,11 @@ program test_grid_frequency_physics
     call grid_fixed_loss_horizon_min(st,100.0_dp,5.0_dp,predicted,valid)
     call check("out-of-range projection reported invalid, not concealed by clipping", &
         .not.valid .and. predicted<47.0_dp)
+    st%grid_damping_MW_per_Hz=0.50_dp
+    st%imbalance_MW=90.0_dp
+    call grid_fixed_loss_horizon_min(st,0.0_dp,5.0_dp,predicted,valid)
+    call check("positive excursion outside domain also invalidates horizon", &
+        .not.valid .and. abs(predicted-50.0_dp)<1.0e-12_dp)
 
     ! Reduced-order isolated step, no feedback. Compare explicit numerical
     ! model against an analytic first-order solution at two resolutions.

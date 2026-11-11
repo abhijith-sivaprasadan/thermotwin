@@ -191,6 +191,11 @@ contains
                 st%supply_MW=thermal_generation_MW(st)+ &
                     max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+st%storage_MW
                 st%imbalance_MW=st%supply_MW-st%served_demand_MW
+                ! First-out disconnect has changed connected rotor energy.
+                ! Correct the published inertia tag immediately even though
+                ! the frequency Euler step responds on the NEXT tick.
+                st%grid_inertia_energy_MWs=grid_stored_energy_MWs(st)
+                st%grid_swing_coeff_MW_s_per_Hz=grid_swing_MW_s_per_Hz(st)
                 call refresh_economics(st)
             end if
         end block
