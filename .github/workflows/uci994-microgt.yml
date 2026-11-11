@@ -1,0 +1,42 @@
+name: Real UCI 994 micro-gas-turbine dynamical forecasting
+on:
+  pull_request:
+    paths:
+      - 'scripts/fetch_uci994_microgt.py'
+      - 'scripts/forecast_uci994_microgt.py'
+      - 'scripts/test_uci994_microgt.py'
+      - '.github/workflows/uci994-microgt.yml'
+  push:
+    paths:
+      - 'scripts/fetch_uci994_microgt.py'
+      - 'scripts/forecast_uci994_microgt.py'
+      - 'scripts/test_uci994_microgt.py'
+      - '.github/workflows/uci994-microgt.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  microgt-source-and-forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy==2.2.6
+      - name: Validate exact source importer and causal dynamical forecast algebra
+        run: python -m unittest scripts.test_uci994_microgt -v
+      - name: Download canonical original microturbine experimental measurements
+        run: python scripts/fetch_uci994_microgt.py --output-dir build/uci994
+      - name: Forecast heldout real experiment power from voltage-command history
+        run: python -m scripts.forecast_uci994_microgt --data-dir build/uci994 --out build/uci994/forecast
+      - name: Assert original data provenance and untouched experiment evaluation
+        run: |
+          python -c "import json,hashlib,math; from pathlib import Path; p=Path('build/uci994'); m=json.loads((p/'manifest.json').read_text()); r=json.loads((p/'forecast/forecast_report.json').read_text()); assert m['total_observations']==71225 and m['original_zip_sha256']==hashlib.sha256((p/'uci994_original.zip').read_bytes()).hexdigest(); assert m['untouched_test_experiments']==[4,22] and m['training_experiments']==[1,9,20,21,23,24]; assert r['test_experiments']==[4,22] and r['train_experiments']==[1,9,20,21,23,24]; assert r['is_oem_cycle_thermodynamics']==False and r['uses_future_measured_power_as_input']==False; assert math.isfinite(r['test_rmse_watt']) and math.isfinite(r['static_baseline_rmse_watt'])"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-audited-uci994-real-microturbine-forecast
+          path: build/uci994/
+          if-no-files-found: warn

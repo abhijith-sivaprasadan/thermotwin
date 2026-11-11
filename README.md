@@ -44,6 +44,21 @@ Run: `python scripts/fetch_uci_gt551.py --output-dir build/uci551` then
 `python -m scripts.replay_uci_gt551 --data-dir build/uci551 --out build/uci551/replay`.
 Open `build/uci551/replay/measured_turbine_replay.html`.
 
+## Real measured microturbine dynamic prediction (3 kW, original time in seconds)
+
+The [UCI #994 measured dynamic forecast](docs/UCI994_MEASURED_DYNAMIC_FORECAST.md)
+uses actual ~1-second voltage-command and electrical-power observations
+(71,225 samples, eight experiments) from a **3 kW commercial micro gas
+turbine**, with experiments 1/9/20/21/23/24 for identification and 4/22
+reserved untouched. It predicts **future output under a supplied command
+trajectory** with an explicit bounded first-order response and independent
+static baseline. This is **not** the generic 30 MW physical Brayton model, an
+industrial turbine forecast or fault diagnosis. The first measured sample is
+an explicitly declared starting state, never a scored prediction.
+
+Reproduce with `python scripts/fetch_uci994_microgt.py --output-dir build/uci994`
+then `python -m scripts.forecast_uci994_microgt --data-dir build/uci994 --out build/uci994/forecast`.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
