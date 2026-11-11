@@ -5,6 +5,7 @@ module gt_trip_sequence
     use precision_kinds, only: dp
     use engine_state
     use equipment_protection, only: EQ_INPUT_STALE_S, equipment_name
+    use grid_frequency_physics, only: grid_stored_energy_MWs, grid_swing_MW_s_per_Hz
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     implicit none
     private
@@ -137,6 +138,15 @@ contains
         call gt_log(st,"FUEL SHUT / FLAME OFF / STARTER INHIBIT (SIM)")
         call gt_log(st,"BLEED OPEN / LUBE SUPPORT ON (ASSUMED)")
         call gt_log(st,"AGC GT / CCS / MPC / RL ISOLATED (SIM)")
+        ! Apply the physical/electrical teaching-model isolation AT THE
+        ! request boundary; API callers must not observe old GT MW or fuel.
+        call gt_trip_apply_boundary(st)
+        st%grid_inertia_energy_MWs=grid_stored_energy_MWs(st)
+        st%grid_swing_coeff_MW_s_per_Hz=grid_swing_MW_s_per_Hz(st)
+        st%supply_MW=thermal_generation_MW(st)+ &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+ &
+            st%storage_MW
+        st%imbalance_MW=st%supply_MW-st%served_demand_MW
         ! Capture other simultaneous qualified alarms, without replacing
         ! the latched first-out. All receive the same model timestamp when
         ! observed on the same engine tick.
