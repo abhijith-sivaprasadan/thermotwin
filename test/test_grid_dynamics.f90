@@ -172,6 +172,24 @@ program test_grid_dynamics
         call expect_true("turbine max alarm raises", st%alarm_turbine_max, failures)
     end block
 
+    ! Tripped gas turbine cannot generate false compressor surge alarms from
+    ! its zeroed/offline map values. Underfrequency remains a real grid state.
+    block
+        type(GridState) :: st
+        st%gt_phase=GT_RUNDOWN
+        st%gas_dispatch_pct=0.0_dp
+        st%surge_margin_pct=0.0_dp
+        st%gas_power_MW=0.0_dp
+        st%gas_capacity_MW=0.0_dp
+        st%demand_MW=35.0_dp
+        st%renewable_MW=10.0_dp
+        call tick_frequency_dynamics(st,DT)
+        call expect_true("offline GT does not invent compressor surge", &
+            .not.st%alarm_surge,failures)
+        call expect_true("offline GT cannot be at turbine output limit", &
+            .not.st%alarm_turbine_max,failures)
+    end block
+
     call finish("grid_dynamics", failures)
 
 contains

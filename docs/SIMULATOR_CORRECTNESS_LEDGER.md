@@ -47,3 +47,5 @@ Real GT flange-state data, rotor speed and shutdown torque tests, electrical rel
 ## Additional regression-discovered misconception
 
 The old `turbine_trip.scn` and `gfm_bess_inertia.scn` assumed a full frequency return to 50 Hz after an event that *actually left the gas turbine producing at least 20%*. With the real modeled breaker/fuel trip, the reduced grid can remain short by 8–12 MW, settle below 49.5 Hz and invoke UFLS. Those old assertions were physically misleading and have been replaced with first-out, zero electric/fuel power, and sustained imbalance/frequency protection checks. The existence of a positive GFM synthesis term alone does **not** establish that GFM improves the nadir: that requires a matched counterfactual on/off experiment that is still missing.
+
+- **Offline surge false positive**: when the GT trip boundary set dispatch and map surge margin to zero, the older alarm formula interpreted `0% margin` as an active compressor surge while the machine was stopped. The grid dynamics alarm is now gated on GT ONLINE state. This is a consistency fix, not an OEM surge-protection validation.

@@ -96,8 +96,12 @@ contains
             st%reserve_MW < 2.0_dp, st%fleet_mode)
         st%alarm_low_soc     = st%battery_soc_pct < 15.0_dp
         st%alarm_ufls_active = st%UFLS_stage > 0
-        st%alarm_turbine_max = st%gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
-        st%alarm_surge       = st%surge_margin_pct < SURGE_ALARM_PCT
+        ! A stopped compressor has no running-map surge margin. Do not
+        ! raise a fictitious surge or max-output alarm after fuel isolation.
+        st%alarm_turbine_max = st%gt_phase==GT_ONLINE .and. &
+            st%gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
+        st%alarm_surge       = st%gt_phase==GT_ONLINE .and. &
+            st%surge_margin_pct < SURGE_ALARM_PCT
     end subroutine tick_frequency_dynamics
 
 end module grid_dynamics
