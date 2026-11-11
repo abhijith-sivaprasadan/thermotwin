@@ -62,7 +62,7 @@ contains
         if(ieee_is_finite(st%frequency_Hz) .and. &
            ieee_is_finite(st%nominal_frequency_Hz) .and. st%nominal_frequency_Hz>0.0_dp) then
             delta_f=st%frequency_Hz-st%nominal_frequency_Hz
-            if(abs(delta_f)>BESS_PRIMARY_DB) then
+            if(st%fcr_hold .and. abs(delta_f)>BESS_PRIMARY_DB) then
                 primary_target_MW=clamp_real(-delta_f*BESS_PRIMARY_GAIN,-5.0_dp,5.0_dp)
             end if
         end if
