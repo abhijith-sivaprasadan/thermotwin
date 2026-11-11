@@ -28,6 +28,14 @@ program test_gt_trip_sequence
        .not.st%gt_generator_excitation_on .and. .not.st%gt_start_motor_on)
     call check("trip commands assumed lube support and open compressor bleed",&
        st%gt_lube_support_on .and. st%gt_blowoff_open)
+    call check("direct trip API immediately removes actual GT MW/fuel/heat input",&
+       st%gas_power_MW==0.0_dp .and. st%fuel_flow_kg_s==0.0_dp .and. &
+       st%heat_input_MW==0.0_dp)
+    call check("direct trip API immediately removes GT kinetic inertia",&
+       abs(st%grid_inertia_energy_MWs- &
+       st%grid_external_inertia_H_s*st%grid_external_inertia_rated_MW)<1.0e-8_dp)
+    call check("direct trip API immediately reconciles grid MW",&
+       abs(st%supply_MW-st%served_demand_MW-st%imbalance_MW)<1.0e-9_dp)
     call check("separate accepted trigger, first-out and breaker SOE entries",&
        st%gt_trip_log_count>=6 .and. &
        index(st%gt_trip_log_text(1),"TRIGGER ACCEPTED")==1 .and. &
