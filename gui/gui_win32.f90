@@ -5848,7 +5848,7 @@ contains
         bw=max(96,(width-36)/2)
         call draw_section_title_width(hdc,x,y,"GT TRIP / FIRST-OUT  (SIM ONLY)",width)
         call draw_panel_box(hdc,x,y+28,width,max(150,height-36))
-        call draw_text(hdc,x+pad,y+40,"TRAINING STATES - NO BREAKER / FLAME PROOF",COL_AMBER)
+        call draw_text(hdc,x+pad,y+34,"TRAINING STATES - NO BREAKER / FLAME PROOF",COL_AMBER)
         call draw_industrial_button(hdc,x+10,y+57,x+10+bw,y+84, &
             "EQUIPMENT STATUS",COL_CYAN,.not.trip_events_view)
         call draw_industrial_button(hdc,x+18+bw,y+57,x+18+2*bw,y+84, &
@@ -5882,48 +5882,48 @@ contains
             "SIM RESTART",COL_LIME,.false.)
         call draw_industrial_button(hdc,x+18+bw,y+124,x+18+2*bw,y+153, &
             "TRAIN BYPASS",COL_RED,grid%gt_training_bypass)
-        sy=y+162
+        sy=y+158
         status_color=COL_LIME
         if(grid%gt_phase/=GT_ONLINE) status_color=COL_RED
         if(grid%gt_phase==GT_READY .or. grid%gt_phase>=GT_PURGING) status_color=COL_AMBER
         call draw_value_pair(hdc,x+pad,sy,"Plant phase",trim(gt_trip_phase_text(grid%gt_phase)),status_color)
-        sy=sy+22
+        sy=sy+19
         call draw_value_pair(hdc,x+pad,sy,"First-out",trim(gt_trip_cause_text(grid%gt_first_out)),COL_RED)
-        sy=sy+22
+        sy=sy+19
         write(line,'(F7.2," s (model)")') grid%gt_first_out_s
         if(grid%gt_first_out==GT_CAUSE_NONE) line="No recorded trip"
         call draw_value_pair(hdc,x+pad,sy,"First-out time",trim(line),COL_MUTED)
-        sy=sy+22
+        sy=sy+19
         line="OPEN / ISOLATED"
         if(grid%gt_breaker_closed) line="CLOSED (SIM)"
         call draw_value_pair(hdc,x+pad,sy,"Generator breaker",trim(line),COL_CYAN)
-        sy=sy+22
+        sy=sy+19
         line="SHUT / FLAME OFF"
         if(grid%gt_fuel_valve_open) line="OPEN / SIM FLAME ON"
         call draw_value_pair(hdc,x+pad,sy,"Fuel / flame",trim(line),COL_MUTED)
-        sy=sy+22
+        sy=sy+19
         write(line,'(F5.1,"%  EST ONLY")') grid%gt_rotor_est_pct
         call draw_value_pair(hdc,x+pad,sy,"Rotor rundown",trim(line),COL_CYAN)
-        sy=sy+22
+        sy=sy+19
         line="BLEED CLOSED / LUBE ON"
         if(grid%gt_blowoff_open) line="BLEED OPEN / LUBE ON"
         if(.not.grid%gt_lube_support_on) line="LUBE SUPPORT OFF (FAULT)"
         call draw_value_pair(hdc,x+pad,sy,"Bleed / lube",trim(line),COL_MUTED)
-        sy=sy+22
+        sy=sy+19
         line="STARTER OFF / FIELD OFF"
         if(grid%gt_start_motor_on) line="STARTER ON / FIELD OFF"
         if(grid%gt_generator_excitation_on) line="STARTER OFF / FIELD ON"
         call draw_value_pair(hdc,x+pad,sy,"Start / excite",trim(line),COL_MUTED)
-        sy=sy+22
+        sy=sy+19
         line="TURN GEAR OFF"
         if(grid%gt_turning_gear_on) line="TURN GEAR ON (ASSUMED)"
         call draw_value_pair(hdc,x+pad,sy,"Turning gear",trim(line),COL_CYAN)
-        sy=sy+22
+        sy=sy+19
         line="TRAIN INPUT PROOF MISSING"
         if(grid%gt_training_bypass) line="BYPASS ACTIVE / SIM ONLY"
         call draw_value_pair(hdc,x+pad,sy,"Input quality",trim(line), &
             merge(COL_RED,COL_MUTED,grid%gt_training_bypass))
-        sy=sy+23
+        sy=sy+18
         mask=gt_trip_permit_mask(grid)
         if(grid%gt_phase==GT_READY) mask=gt_trip_restart_mask(grid)
         line=gt_trip_reason_for_mask(mask)
