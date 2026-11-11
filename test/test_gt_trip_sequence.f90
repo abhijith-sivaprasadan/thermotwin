@@ -39,6 +39,12 @@ program test_gt_trip_sequence
     call reset_controls(st)
     call check("RESET cannot erase trip latch or change sim time",&
        st%gt_trip_latched .and. st%elapsed_s==before_t)
+    ! Even if a caller wrongly toggles fleet_mode, protection boundary wins.
+    st%fleet_total_MW=45.0_dp
+    st%fleet_mode=.true.
+    call check("thermal power dispatch cannot bypass tripped GT latch", &
+        abs(thermal_generation_MW(st)-(st%gas_power_MW+st%steam_power_MW))<1.0e-9_dp)
+    st%fleet_mode=.false.
     event_n=st%gt_trip_seq
     old_cause=st%gt_first_out
     call gt_trip_request(st,GT_CAUSE_OIL,accepted)

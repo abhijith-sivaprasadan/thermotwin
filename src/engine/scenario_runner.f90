@@ -618,7 +618,12 @@ contains
         case ("demand_MW");            st%demand_MW = value
         case ("renewable_MW");         st%renewable_MW = value
         case ("storage_request_MW");   st%storage_request_MW = value
-        case ("gas_dispatch_pct");     st%gas_dispatch_pct = value
+        case ("gas_dispatch_pct")
+            if(st%gt_phase/=GT_ONLINE) then
+                ok=.false.
+            else
+                st%gas_dispatch_pct=value
+            end if
         case ("ambient_C");            st%ambient_C = value
         case ("TIT_K");                st%TIT_K = value
         case ("frequency_Hz");         st%frequency_Hz = value
@@ -629,10 +634,19 @@ contains
         case ("auto_balance");         st%auto_balance = value > 0.5_dp
         case ("fcr_hold");             st%fcr_hold = value > 0.5_dp
         case ("roi_dispatch");         st%roi_dispatch = value > 0.5_dp
-        case ("combined_cycle");       st%combined_cycle = value > 0.5_dp
+        case ("combined_cycle")
+            if(st%gt_phase/=GT_ONLINE) then
+                ok=.false.
+            else
+                st%combined_cycle = value > 0.5_dp
+            end if
         case ("fleet_mode")
-            st%fleet_mode = value > 0.5_dp
-            if (st%fleet_mode) st%combined_cycle = .true.
+            if(st%gt_phase/=GT_ONLINE) then
+                ok=.false.
+            else
+                st%fleet_mode = value > 0.5_dp
+                if (st%fleet_mode) st%combined_cycle = .true.
+            end if
         case ("fuel_price_usd_gj");    st%fuel_price_usd_gj = value
         case ("fleet_load_target_MW"); st%fleet_load_target_MW = value
         case ("gt1_online");           st%fleet_unit_online(FLEET_GT1) = value > 0.5_dp

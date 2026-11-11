@@ -543,7 +543,12 @@ contains
     pure function thermal_generation_MW(st) result(mw)
         type(GridState), intent(in) :: st
         real(dp) :: mw
-        if (st%fleet_mode) then
+        ! Protection isolation takes precedence over fleet-dispatch context.
+        ! A delayed scenario or user command cannot resurrect the gas turbine
+        ! by enabling fleet mode during a latched single-GT trip.
+        if (st%gt_phase/=GT_ONLINE) then
+            mw = st%gas_power_MW + bottoming_power_MW(st)
+        else if (st%fleet_mode) then
             mw = st%fleet_total_MW
         else
             mw = st%gas_power_MW + bottoming_power_MW(st)
