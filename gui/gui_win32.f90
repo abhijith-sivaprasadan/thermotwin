@@ -1609,6 +1609,10 @@ contains
     subroutine handle_command(control_id)
         integer(c_int), intent(in) :: control_id
 
+        if(instructor%frozen) then
+            call set_notice('INSTRUCTOR FROZEN - resume before changing operator setpoints.')
+            return
+        end if
         select case (control_id)
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
@@ -1788,6 +1792,13 @@ contains
         end if
 
         active_control = hit_test_control(x, y)
+        if(instructor%frozen.and.active_control/=ID_NONE.and. &
+            active_control/=ID_EXPORT_CSV.and.active_control/=ID_EXPORT_PDF.and. &
+            active_control/=ID_SHORTCUTS) then
+            call set_notice('INSTRUCTOR FROZEN - operator inputs are held.')
+            active_control=ID_NONE
+            return
+        end if
         select case (active_control)
         case (ID_AUTO)
             grid%auto_balance = .not. grid%auto_balance
@@ -1980,6 +1991,13 @@ contains
             call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
             return
         end if
+        if(instructor%frozen) then
+            if((kval>=VK_1.and.kval<=VK_6).or.kval==VK_R.or.kval==VK_A.or. &
+                kval==VK_UP.or.kval==VK_DOWN) then
+                call set_notice('INSTRUCTOR FROZEN - operator model hotkeys held.')
+                return
+            end if
+        end if
         if (kval == VK_TAB) then
             call cycle_focus(1)
             return
@@ -1988,10 +2006,14 @@ contains
             call refresh_model(grid)
             return
         else if (kval == VK_LEFT) then
-            if (adjust_focused_slider(-1)) call refresh_model(grid)
+            if(.not.instructor%frozen) then
+                if (adjust_focused_slider(-1)) call refresh_model(grid)
+            end if
             return
         else if (kval == VK_RIGHT) then
-            if (adjust_focused_slider(1)) call refresh_model(grid)
+            if(.not.instructor%frozen) then
+                if (adjust_focused_slider(1)) call refresh_model(grid)
+            end if
             return
         end if
 
@@ -3193,6 +3215,12 @@ contains
 
     subroutine activate_focused_control()
         active_control = focus_control_id
+        if(instructor%frozen.and.focus_control_id/=ID_EXPORT_CSV.and. &
+            focus_control_id/=ID_EXPORT_PDF.and.focus_control_id/=ID_SHORTCUTS) then
+            call set_notice('INSTRUCTOR FROZEN - focused model input held.')
+            active_control=ID_NONE
+            return
+        end if
         select case (focus_control_id)
         case (ID_AUTO, ID_BALANCE, ID_RESET, ID_ROI_MODE, ID_FCR_HOLD, ID_LOAD_STEP, &
               ID_CLOUD_RAMP, ID_TURBINE_TRIP, ID_CC_MODE, ID_MARKET_PROFILE, ID_MARKET_REPLAY)
