@@ -633,6 +633,7 @@ contains
             st%battery_energy_MWh = BATTERY_CAPACITY_MWH * st%battery_soc_pct / 100.0_dp
         case ("auto_balance");         st%auto_balance = value > 0.5_dp
         case ("fcr_hold");             st%fcr_hold = value > 0.5_dp
+        case ("governor_enabled");     st%governor_enabled = value > 0.5_dp
         case ("roi_dispatch");         st%roi_dispatch = value > 0.5_dp
         case ("combined_cycle")
             if(st%gt_phase/=GT_ONLINE) then
