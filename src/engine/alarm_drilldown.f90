@@ -4,7 +4,7 @@ module alarm_drilldown
     use precision_kinds, only: dp
     use engine_state
     use equipment_protection, only: equipment_name, equipment_unit, &
-        EQ_THRESHOLD_ON, EQ_THRESHOLD_CLEAR
+        EQ_THRESHOLD_ON, EQ_THRESHOLD_CLEAR, EQ_INPUT_STALE_S
     use off_design, only: SURGE_ALARM_PCT
     use hrsg, only: HRSG_MIN_PINCH_K
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -170,6 +170,24 @@ contains
             o%active=st%eq_alarm(k)
             o%source=st%eq_source(k)
             o%valid=(o%source==DRILL_SRC_MODEL .or. o%source==DRILL_SRC_TRAIN)
+            ! A cached source enum is not independent proof of fresh input.
+            ! Check the actual injected sample stamp and identity, even when
+            ! the equipment-monitor callback has not yet run this HMI frame.
+            if(o%source==DRILL_SRC_TRAIN) then
+                o%valid=o%valid .and. st%eq_training_present(k) .and. &
+                    ieee_is_finite(st%elapsed_s) .and. &
+                    ieee_is_finite(st%eq_training_stamp_s(k)) .and. &
+                    ieee_is_finite(st%eq_training_value(k))
+                if(o%valid) then
+                    o%valid=st%elapsed_s>=st%eq_training_stamp_s(k) .and. &
+                        st%elapsed_s-st%eq_training_stamp_s(k)<=EQ_INPUT_STALE_S .and. &
+                        abs(st%eq_value(k)-st%eq_training_value(k))<1.0e-8_dp
+                end if
+            else if(o%source==DRILL_SRC_MODEL) then
+                if(k==EQ_SURGE .or. k==EQ_EXHAUST) &
+                    o%valid=o%valid .and. st%gt_phase==GT_ONLINE
+                if(k==EQ_GENERATOR) o%valid=o%valid .and. st%grid_model_valid
+            end if
             if(k==EQ_SURGE .or. k==EQ_OIL) o%lower_is_bad=.true.
             o%limit_note="TRAINING/MODEL ALARM THRESHOLD ONLY"
             select case(k)
