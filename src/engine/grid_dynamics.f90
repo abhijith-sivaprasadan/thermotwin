@@ -80,7 +80,7 @@ contains
         ! A stopped compressor has no running-map surge margin. Do not
         ! raise a fictitious surge or max-output alarm after fuel isolation.
         st%alarm_turbine_max = st%gt_phase==GT_ONLINE .and. &
-            st%gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
+            st%effective_gas_dispatch_pct >= (GAS_MAX_PCT - 0.5_dp)
         st%alarm_surge       = st%gt_phase==GT_ONLINE .and. &
             st%surge_margin_pct < SURGE_ALARM_PCT
     end subroutine tick_frequency_dynamics
