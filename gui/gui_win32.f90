@@ -11,8 +11,15 @@ module thermotwin_win32_gui
         c_ptr, c_short, c_sizeof
     use precision_kinds, only: dp
     use engine_core
-    use engine_state, only: EQ_N, EQ_COMBUST, EQ_OIL, EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
+    use engine_state, only: EQ_N, EQ_COMBUST, EQ_OIL, EQ_OVERSPEED, EQ_BEARING, &
+        EQ_SRC_UNAVAILABLE, EQ_SRC_MODEL, EQ_SRC_TRAINING
     use equipment_protection, only: equipment_name, equipment_unit, equipment_priority, EQ_THRESHOLD_ON
+    use instructor_console, only: InstructorSession, instructor_set_frozen, &
+        instructor_capture, instructor_restore, instructor_inject_fault, &
+        instructor_clear_fault, instructor_refresh_fault, instructor_change_boundary, &
+        instructor_observe, instructor_operator_action, instructor_score, &
+        INSTR_LOG_N, INSTR_LOAD_UP, INSTR_LOAD_DOWN, INSTR_RENEWABLE_DROP, &
+        INSTR_AMBIENT_HOT, INSTR_ACK, INSTR_RESET, INSTR_RESTART
     use alarm_drilldown, only: DrillObservation, DrillHistory, DRILL_N, DRILL_PLANT_N, &
         DRILL_MAP, DRILL_TURBINE, DRILL_PID, DRILL_FACEPLATE, DRILL_GRID, DRILL_BESS, &
         drill_observe, drill_record, drill_history_index, drill_annunciator_hit, &
@@ -92,6 +99,7 @@ module thermotwin_win32_gui
     integer(c_int), parameter :: VK_LEFT  = 37_c_int
     integer(c_int), parameter :: VK_RIGHT = 39_c_int
     integer(c_int), parameter :: VK_CONTROL = 17_c_int
+    integer(c_int), parameter :: VK_I   = 73_c_int   ! F15 instructor-console toggle
     integer(c_int), parameter :: VK_E   = 69_c_int
     integer(c_int), parameter :: VK_R   = 82_c_int   ! toggle RL mode
     integer(c_int), parameter :: VK_B   = 66_c_int   ! alarm audio enable/mute
@@ -978,6 +986,8 @@ module thermotwin_win32_gui
     integer :: scn_selected = 1
     integer :: scn_compare_selected = 2
     logical :: scn_playing = .false.
+    type(InstructorSession) :: instructor
+    logical :: instructor_view=.false.   ! F15 instructor tab; existing comparison preserved
     type(Scenario) :: scn_active
     type(ScenarioComparison) :: scn_cmp
     character(len=96) :: scn_compare_status = "No comparison run"
@@ -1100,6 +1110,7 @@ contains
             call init_fonts()
             call create_controls(hwnd)
             call engine_init(grid)
+            instructor=InstructorSession()
             call load_hmi_config()
             call apply_theme()                 ! [6.0-P1] activate the selected palette at launch
             qa_env = ""
@@ -1138,24 +1149,29 @@ contains
         case (WM_TIMER)
             ! HMI scan/render tick: advance engine every frame, sample trend history at
             ! the plant-HMI cadence so a 240-sample buffer remains a real 60 s window.
-            if (scn_playing) then
-                block
-                    logical :: scn_done
-                    call scenario_gui_tick(scn_active, grid, grid%elapsed_s, scn_done)
-                    if (scn_done) scn_playing = .false.
-                end block
+            if (.not.instructor%frozen) then
+                if (scn_playing) then
+                    block
+                        logical :: scn_done
+                        call scenario_gui_tick(scn_active, grid, grid%elapsed_s, scn_done)
+                        if (scn_done) scn_playing = .false.
+                    end block
+                end if
+                call instructor_refresh_fault(instructor,grid)
+                call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
+                call instructor_observe(instructor,grid)
+                call update_alarm_workflow()
+                call flush_opcua_tags()
+                history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
+                if (history_sample_ms_accum >= HISTORY_SAMPLE_MS) then
+                    call append_history(grid)
+                    call drill_record(alarm_drill_hist,grid)
+                    history_sample_ms_accum = mod(history_sample_ms_accum, HISTORY_SAMPLE_MS)
+                end if
             end if
-            call engine_step(grid, real(TIMER_MS, dp) / 1000.0_dp)
-            call update_alarm_workflow()
+            ! Rendering and Win32 interaction continue while modeled time is frozen.
             call update_alarm_audio()
-            call flush_opcua_tags()
             call opcua_iterate()
-            history_sample_ms_accum = history_sample_ms_accum + int(TIMER_MS)
-            if (history_sample_ms_accum >= HISTORY_SAMPLE_MS) then
-                call append_history(grid)
-                call drill_record(alarm_drill_hist,grid)
-                history_sample_ms_accum = mod(history_sample_ms_accum, HISTORY_SAMPLE_MS)
-            end if
             anim_tick = anim_tick + 1                 ! [6.0-P5] animation clock
             if (boot_ticks > 0) boot_ticks = boot_ticks - 1
             if (notice_ticks > 0) notice_ticks = notice_ticks - 1
@@ -1661,6 +1677,13 @@ contains
             active_control = ID_NONE
             return
         end if
+        ! F15 is split into independent scenario comparison and instructor tabs.
+        if (hmi_screen==SCREEN_SCENARIO) then
+            if (handle_instructor_mouse(x,y)) then
+                active_control=ID_NONE
+                return
+            end if
+        end if
         handled = handle_alarm_mouse(x, y)
         if (handled) then
             active_control = ID_NONE
@@ -1862,6 +1885,10 @@ contains
             end select
         end if
 
+        if (hmi_screen==SCREEN_SCENARIO.and.instructor_view.and.kval==VK_SPACE) then
+            call instructor_set_frozen(instructor,grid,.not.instructor%frozen)
+            return
+        end if
         if (kval == VK_TAB) then
             call cycle_focus(1)
             return
@@ -1945,6 +1972,8 @@ contains
             grid%mpc_active = .not. grid%mpc_active
         case (VK_6)
             grid%ou_active = .not. grid%ou_active
+        case (VK_I)
+            if(hmi_screen==SCREEN_SCENARIO) instructor_view=.not.instructor_view
         case (VK_E)
             call export_shift_csv(grid)
         case (VK_R)
@@ -2699,12 +2728,14 @@ contains
                     call set_notice("First-out already acknowledged; latch unchanged.")
                 else
                     call gt_trip_acknowledge(grid)
+                    call instructor_operator_action(instructor,grid,INSTR_ACK,.true.)
                     call set_notice("First-out acknowledged; trip latch remains.")
                 end if
             case(2)
                 block
                     logical :: accepted
                     call gt_trip_reset_latch(grid,accepted)
+                    call instructor_operator_action(instructor,grid,INSTR_RESET,accepted)
                     if(accepted) then
                         call set_notice("GT trip reset; unit OFFLINE, restart separate.")
                     else
@@ -2715,6 +2746,7 @@ contains
                 block
                     logical :: accepted
                     call gt_trip_start(grid,accepted)
+                    call instructor_operator_action(instructor,grid,INSTR_RESTART,accepted)
                     if(accepted) then
                         call set_notice("Simulation purge timer started; no flow verified.")
                     else
@@ -3683,7 +3715,11 @@ contains
             case (SCREEN_ADVISORY)
                 call draw_advisory_screen(hdc, x0, content_y, w, content_h)
             case (SCREEN_SCENARIO)
-                call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                if(instructor_view) then
+                    call draw_instructor_screen(hdc,x0,content_y,w,content_h)
+                else
+                    call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                end if
             case (SCREEN_EXERGY)
                 call draw_exergy_screen(hdc, x0, content_y, w, content_h)
             end select
