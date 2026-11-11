@@ -41,7 +41,7 @@ MODS := precision_kinds constants types utilities fluid_properties ambient \
         dnn_surrogate model_validation minlp_dayahead gt_optimizer fleet_uc \
         anomaly_detector rl_dispatch fault_classifier forecast_engine \
         p2x_electrolyser ccs_model gfm_bess tie_line mpc_agc \
-        engine_core scenario_runner
+        equipment_protection engine_core scenario_runner
 
 # opcua_bridge is GUI-only: its C backend (open62541) is not linked into the
 # CLI or tests.  Compile separately and include only in GUI link targets.
@@ -118,6 +118,7 @@ $(BUILD)/thermo_limits.o:        $(BUILD)/engine_state.o $(BUILD)/precision_kind
 $(BUILD)/data_reconciliation.o:  $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/scientific_report.o:    $(BUILD)/exergy.o $(BUILD)/exergy_uq.o $(BUILD)/exergy_sobol.o $(BUILD)/thermo_limits.o $(BUILD)/data_reconciliation.o $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/grid_dynamics.o:        $(BUILD)/engine_state.o $(BUILD)/off_design.o
+$(BUILD)/equipment_protection.o:   $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/dispatch_agc.o:         $(BUILD)/engine_state.o
 $(BUILD)/plant_economics.o:      $(BUILD)/engine_state.o
 $(BUILD)/dnn_surrogate.o:          $(BUILD)/precision_kinds.o
@@ -139,6 +140,7 @@ $(BUILD)/gfm_bess.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds
 $(BUILD)/tie_line.o:            $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/mpc_agc.o:             $(BUILD)/engine_state.o $(BUILD)/precision_kinds.o
 $(BUILD)/engine_core.o:          $(BUILD)/engine_state.o $(BUILD)/grid_dynamics.o \
+                                  $(BUILD)/equipment_protection.o \
                                   $(BUILD)/dispatch_agc.o $(BUILD)/plant_economics.o \
                                   $(BUILD)/tag_bus.o $(BUILD)/cycle_solver.o \
                                   $(BUILD)/types.o $(BUILD)/constants.o \
