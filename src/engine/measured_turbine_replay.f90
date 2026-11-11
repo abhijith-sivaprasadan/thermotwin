@@ -3,6 +3,7 @@
 !> An import from disk is locally UNVERIFIED; only the Python producer audits hashes.
 module measured_turbine_replay
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: iso_fortran_env, only: iostat_end
     use precision_kinds, only: dp
     implicit none
     private
@@ -35,7 +36,7 @@ contains
         type(MeasuredReplay), intent(inout) :: r
         logical, intent(out) :: ok
         type(MeasuredReplay) :: work
-        integer :: u,ios,i,yr,row,oof,largeflag,expect_year,expect_row,close_ios
+        integer :: u,ios,i,loaded,yr,row,oof,largeflag,expect_year,expect_row,close_ios
         character(len=1800) :: line
         real(dp) :: at,ap,afdp,tit,tat,actual,pred,baseline,resid
         ok=.false.
@@ -55,6 +56,7 @@ contains
         allocate(work%measured(REPLAY_EXPECTED_N),work%predicted(REPLAY_EXPECTED_N))
         allocate(work%ambient(REPLAY_EXPECTED_N),work%tit(REPLAY_EXPECTED_N))
         allocate(work%residual(REPLAY_EXPECTED_N),work%outside(REPLAY_EXPECTED_N))
+        loaded=0
         do i=1,REPLAY_EXPECTED_N
             read(u,'(A)',iostat=ios) line
             if(ios/=0) exit
@@ -93,25 +95,19 @@ contains
             work%tit(i)=tit
             work%residual(i)=resid
             work%outside(i)=oof==1
+            loaded=i
         end do
-        if(ios==0) then
-            ! One additional line means the source record count is not exact.
+        if(loaded==REPLAY_EXPECTED_N.and.ios==0) then
             read(u,'(A)',iostat=ios) line
-            if(ios>=0) ios=-1
-            if(ios<0.and.len_trim(line)>0) ios=-1
-            ! End-of-file is negative; distinguish by explicitly reading with
-            ! a zero-length sentinel below instead of assuming the iostat code.
+            if(ios/=iostat_end) ios=1
+        else
+            ios=1
         end if
         close(u,iostat=close_ios)
-        if(i/=REPLAY_EXPECTED_N.or.ios==0.or.close_ios/=0) then
-            r%status="REJECTED - CSV row count, measured values or ordering invalid"
+        if(loaded/=REPLAY_EXPECTED_N.or.ios/=iostat_end.or.close_ios/=0) then
+            r%status="REJECTED - CSV row count, source values or ordering invalid"
             return
         end if
-        if(ios>0) then
-            r%status="REJECTED - CSV contains invalid numerical source records"
-            return
-        end if
-        ! Note: iostat<0 after final row is expected only from the explicit EOF probe.
         work%n=REPLAY_EXPECTED_N
         work%status="LOCAL UCI 551 REPLAY - read-only; source file hash NOT checked by GUI"
         r=work
