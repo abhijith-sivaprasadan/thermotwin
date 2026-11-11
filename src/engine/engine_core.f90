@@ -23,6 +23,7 @@ module engine_core
         market_profile_name, MARKET_PROFILE_N, MARKET_STOCKHOLM_SE3, MARKET_GERMANY_DELU, &
         MARKET_TEXAS_ERCOT, MARKET_LOUISIANA_HH
     use grid_dynamics, only: tick_frequency_dynamics
+    use grid_primary_balance, only: tick_governor_setpoint, resolve_bess_injection
     use equipment_protection, only: reset_equipment_monitor, tick_equipment_monitor
     use gt_trip_sequence, only: gt_trip_reset_state, gt_trip_advance, &
         gt_trip_apply_boundary, gt_trip_monitor, gt_trip_acknowledge, &
@@ -71,7 +72,7 @@ module engine_core
     public :: GT_CAUSE_NONE, GT_CAUSE_MANUAL, GT_CAUSE_OVERSPEED
     public :: GT_CAUSE_COMBUST, GT_CAUSE_OIL, GT_CAUSE_START_ABORT
     public :: effective_renewable_MW, renewable_headroom_MW
-    public :: limited_storage_power, append_history, history_index
+    public :: limited_storage_power, limited_storage_power_for_step, append_history, history_index
     public :: bottoming_power_MW, thermal_generation_MW
     public :: tick_frequency_dynamics
     public :: tick_auto_balance, balance_now, reset_controls
@@ -127,7 +128,8 @@ contains
         call gt_trip_reset_state(st)  ! explicit NEW RUN, not operator reset
         call reset_controls(st)
         call reset_equipment_monitor(st)
-        st%prev_gas_dispatch_pct = st%gas_dispatch_pct
+        st%effective_gas_dispatch_pct = st%gas_dispatch_pct
+        st%prev_gas_dispatch_pct = st%effective_gas_dispatch_pct
         st%gas_ramp_pct_per_s = 0.0_dp
         call refresh_model(st)
         da_tick_counter = 0
@@ -155,16 +157,25 @@ contains
         call refresh_market_data(st, dt_s)      ! location weather, prices, and replayed load
         call tick_ou_disturbance(st, dt_s, old_ou_demand_noise, old_ou_wind_noise)
         call tick_auto_balance(st, dt_s)        ! AGC secondary ramp
-        call tick_frequency_support(st, dt_s)  ! BESS+RES freq support even in MANUAL mode
+        call tick_frequency_support(st, dt_s)  ! BESS+RES support in MANUAL mode
+        call tick_governor_setpoint(st,dt_s) ! actual GT power/fuel handled by off-design
+        ! Compute a fresh GFM request for THIS tick; do not accumulate
+        ! yesterday's GFM response in the storage dispatch setpoint.
+        call gfm_step(st,dt_s)
         call gt_trip_advance(st,dt_s)
-        if(st%gt_phase/=GT_ONLINE) st%gas_dispatch_pct=0.0_dp
+        if(st%gt_phase/=GT_ONLINE) then
+            st%gas_dispatch_pct=0.0_dp
+            st%effective_gas_dispatch_pct=0.0_dp
+            st%governor_offset_pct=0.0_dp
+        end if
         ! Dispatch slew rate over this tick (slider moves + AGC combined);
         ! upward ramps drive the transient surge-margin excursion.
-        st%gas_ramp_pct_per_s = (st%gas_dispatch_pct - st%prev_gas_dispatch_pct) / dt_s
-        st%prev_gas_dispatch_pct = st%gas_dispatch_pct
-        call refresh_model(st, dt_s)            ! gas/steam power, imbalance, economics
-        call update_battery_soc(st, dt_s)       ! SOC tracking
-        call tick_frequency_dynamics(st, dt_s)  ! swing eq + primary response + UFLS
+        st%gas_ramp_pct_per_s = (st%effective_gas_dispatch_pct - st%prev_gas_dispatch_pct) / dt_s
+        st%prev_gas_dispatch_pct = st%effective_gas_dispatch_pct
+        call refresh_model(st, dt_s)            ! solved GT and single net BESS injection
+        call update_battery_soc(st, dt_s)       ! same delivered BESS MW debit/credit
+        call tick_frequency_dynamics(st, dt_s)  ! swing eq from reconciled power + UFLS
+        call refresh_economics(st)              ! recalc after current-tick LFSM-O/UFLS
         call tick_equipment_monitor(st, dt_s)
         block
             integer :: before_trip
@@ -175,8 +186,8 @@ contains
                 ! integration reacts at the NEXT tick (125 ms nominal GUI).
                 call gt_trip_apply_boundary(st)
                 st%supply_MW=thermal_generation_MW(st)+ &
-                    effective_renewable_MW(st)+st%storage_MW
-                st%imbalance_MW=st%supply_MW-st%demand_MW
+                    max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+st%storage_MW
+                st%imbalance_MW=st%supply_MW-st%served_demand_MW
                 call refresh_economics(st)
             end if
         end block
@@ -253,13 +264,8 @@ contains
         ! P2X electrolyser: absorb curtailed renewable power
         call p2x_step(st, dt_s)
 
-        ! GFM BESS: add virtual inertia + droop response to storage_request
-        if (st%gfm_mode) then
-            call gfm_step(st, dt_s)
-        else
-            st%gfm_synth_MW = 0.0_dp
-            st%gfm_H_equiv = 0.0_dp
-        end if
+        ! GFM is already arbitrated in this tick's BESS delivered-power ledger.
+        ! Do not append a second post-SOC power injection.
 
         ! Tie-line + ACE: advance two-zone dynamics
         if (st%tie_active) call tie_line_step(st, dt_s)
@@ -411,7 +417,7 @@ contains
         type(GridState), intent(inout) :: st
         real(dp), intent(in), optional :: dt_s
         type(InputCase) :: ic
-        type(OffDesignPoint) :: od_cap, od
+        type(OffDesignPoint) :: od_cap, od, od_command
         type(HrsgResult) :: hrsg_cap, hrsg_live
         type(SteamCycleResult) :: steam_cap, steam_live
         type(CombustionPhysicsResult) :: comb
@@ -448,8 +454,17 @@ contains
         st%steam_capacity_MW = merge(steam_cap%net_power_MW, 0.0_dp, st%combined_cycle)
         st%plant_capacity_MW = st%gas_capacity_MW + st%steam_capacity_MW
 
-        load_fraction = clamp_real(st%gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
+        ! Governor changes the off-design load request *before* the physical
+        ! solve, so its electrical response, fuel and exhaust share one state.
+        load_fraction = clamp_real(st%effective_gas_dispatch_pct / 100.0_dp, 0.0_dp, 1.0_dp)
         call solve_off_design(ic, load_fraction, st%gas_ramp_pct_per_s, od)
+        st%governor_delta_MW=0.0_dp
+        if(st%gt_phase==GT_ONLINE .and. .not.st%fleet_mode .and. &
+           abs(st%governor_offset_pct)>1.0e-8_dp) then
+            call solve_off_design(ic, clamp_real(st%gas_dispatch_pct/100.0_dp,0.0_dp,1.0_dp), &
+                0.0_dp, od_command)
+            st%governor_delta_MW=od%cyc%net_power_MW-od_command%cyc%net_power_MW
+        end if
 
         st%gas_power_MW = max(0.0_dp, od%cyc%net_power_MW)
         st%gt_heat_rate_kJ_kWh = od%cyc%heat_rate_kJ_kWh
@@ -490,7 +505,12 @@ contains
         st%compressor_poly_loss_pct = comb%compressor_poly_loss_pct
         st%turbine_poly_loss_pct = comb%turbine_poly_loss_pct
         st%combustor_pattern_factor_pct = comb%combustor_pattern_factor_pct
-        st%storage_MW = limited_storage_power(st, st%storage_request_MW)
+        if (present(dt_s)) then
+            call resolve_bess_injection(st,dt_s)
+        else
+            ! Initial algebraic solve still respects inverter and SOC limits.
+            call resolve_bess_injection(st,0.0_dp)
+        end if
         call solve_hrsg(od%cyc%exhaust_temperature_K, od%cyc%mdot_gas_kg_s, &
             ic%ambient_T_K, hrsg_live)
         call solve_steam_cycle(hrsg_live, ic%ambient_T_K, steam_live)
@@ -545,8 +565,11 @@ contains
             st%plant_efficiency = 0.0_dp
             st%heat_rate_kJ_kWh = huge(1.0_dp)
         end if
-        st%supply_MW = thermal_generation_MW(st) + effective_renewable_MW(st) + st%storage_MW
-        st%imbalance_MW = st%supply_MW - st%demand_MW
+        st%served_demand_MW=st%demand_MW*(1.0_dp-st%UFLS_shed_fraction)
+        st%ufls_shed_MW=st%demand_MW-st%served_demand_MW
+        st%supply_MW=thermal_generation_MW(st)+ &
+            max(0.0_dp,effective_renewable_MW(st)-st%renewable_lfsmo_MW)+st%storage_MW
+        st%imbalance_MW=st%supply_MW-st%served_demand_MW
         if (.not. st%fleet_mode) st%reserve_MW = max(0.0_dp, st%plant_capacity_MW - st%plant_power_MW)
         ! frequency_Hz is integrated by tick_frequency_dynamics; not recomputed here
         call refresh_economics(st)
@@ -603,6 +626,8 @@ contains
         call tag_set("GRID.NOMINAL_HZ",       st%nominal_frequency_Hz, "Hz",    t)
         call tag_set("GRID.ROCOF_HZ_S",       st%ROCOF_Hz_s,          "Hz/s",   t)
         call tag_set("GRID.DEMAND_MW",        st%demand_MW,           "MW",     t)
+        call tag_set("GRID.SERVED_MW",        st%served_demand_MW,   "MW",     t)
+        call tag_set("GRID.UFLS_SHED_MW",    st%ufls_shed_MW,       "MW",     t)
         call tag_set("GRID.SUPPLY_MW",        st%supply_MW,           "MW",     t)
         call tag_set("GRID.IMBALANCE_MW",     st%imbalance_MW,        "MW",     t)
         call tag_set("GRID.UFLS_STAGE",       real(st%UFLS_stage, dp), "-",     t)
@@ -620,6 +645,7 @@ contains
         call tag_set("GT1.POWER_MW",          st%gas_power_MW,        "MW",     t)
         call tag_set("GT1.CAPACITY_MW",       st%gas_capacity_MW,     "MW",     t)
         call tag_set("GT1.DISPATCH_PCT",      st%gas_dispatch_pct,    "%",      t)
+        call tag_set("GT1.EFFECTIVE_DISPATCH_PCT",st%effective_gas_dispatch_pct,"%",t)
         call tag_set("GT1.RESERVE_MW",        st%reserve_MW,          "MW",     t)
         call tag_set("GT1.GOVERNOR_MW",       st%governor_delta_MW,   "MW",     t)
         call tag_set("GT1.HEAT_RATE_KJ_KWH",  st%gt_heat_rate_kJ_kWh, "kJ/kWh", t)
@@ -664,6 +690,7 @@ contains
         call tag_set("BESS.POWER_MW",         st%storage_MW,          "MW",     t)
         call tag_set("BESS.REQUEST_MW",       st%storage_request_MW,  "MW",     t)
         call tag_set("BESS.PRIMARY_MW",       st%BESS_primary_MW,     "MW",     t)
+        call tag_set("BESS.GFM_DELIVERED_MW", st%gfm_synth_MW,        "MW",     t)
         call tag_set("BESS.SOC_PCT",          st%battery_soc_pct,     "%",      t)
         call tag_set("BESS.ENERGY_MWH",       st%battery_energy_MWh,  "MWh",    t)
         call tag_set("MARKET.PROFILE",        real(st%market_profile_id, dp), "-", t)
