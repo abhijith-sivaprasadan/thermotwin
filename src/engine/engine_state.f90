@@ -84,6 +84,7 @@ module engine_state
     integer, parameter :: GT_IGNITING=6, GT_ACCELERATING=7, GT_SYNCHRONIZING=8
     integer, parameter :: GT_CAUSE_NONE=0, GT_CAUSE_MANUAL=1
     integer, parameter :: GT_CAUSE_OVERSPEED=2, GT_CAUSE_COMBUST=3, GT_CAUSE_OIL=4
+    integer, parameter :: GT_CAUSE_START_ABORT=5  ! loss of restart permissive during a simulated start
     integer, parameter :: GT_TRIP_LOG_N=24
     integer,  parameter, public :: HISTORY_N = 240
     integer,  parameter, public :: DA_H     = 24   ! day-ahead planning horizon (hours)
