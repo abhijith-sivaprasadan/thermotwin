@@ -74,6 +74,14 @@ program test_grid_primary_energy
     call check_close("FCR disabled changes no BESS output", &
         qt%storage_MW,0.0_dp,1.0e-10_dp)
 
+    qt=GridState()
+    qt%battery_soc_pct=10.0_dp
+    qt%battery_energy_MWh=0.1_dp*BATTERY_CAPACITY_MWH
+    qt%frequency_Hz=49.0_dp
+    call resolve_bess_injection(qt,0.25_dp)
+    call check_close("FCR outside symmetrical SOC band remains unarmed", &
+        qt%BESS_primary_MW,0.0_dp,1.0e-10_dp)
+
     ! When energy would be exhausted part-way through a timestep, the
     ! delivered power is limited BEFORE integration, not clipped afterward.
     qt=GridState()
