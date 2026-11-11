@@ -64,6 +64,10 @@ program test_alarm_drilldown
         .not.o%valid .and. o%source==DRILL_SRC_NONE .and. &
         o%diagram==DRILL_FACEPLATE)
     st%eq_source(EQ_OIL)=EQ_SRC_TRAINING
+    st%eq_training_present(EQ_OIL)=.true.
+    st%eq_training_value(EQ_OIL)=0.8_dp
+    st%eq_training_stamp_s(EQ_OIL)=0.0_dp
+    st%elapsed_s=1.0_dp
     st%eq_value(EQ_OIL)=0.8_dp
     st%eq_alarm(EQ_OIL)=.true.
     call drill_observe(st,DRILL_PLANT_N+EQ_OIL,o)
@@ -71,6 +75,14 @@ program test_alarm_drilldown
         o%source==DRILL_SRC_TRAIN .and. o%lower_is_bad .and. &
         abs(o%limit-1.2_dp)<1.0e-10_dp .and. abs(o%value-0.8_dp)<1.0e-10_dp)
     call ck("retains alarm clear hysteresis threshold",abs(o%clear_limit-1.8_dp)<1.0e-10_dp)
+    st%elapsed_s=7.0_dp
+    call drill_observe(st,DRILL_PLANT_N+EQ_OIL,o)
+    call ck("cached TRAIN enum cannot mask a stale training sample",&
+        .not.o%valid .and. o%source==DRILL_SRC_NONE)
+    st%elapsed_s=1.0_dp
+    st%eq_training_present(EQ_OIL)=.false.
+    call drill_observe(st,DRILL_PLANT_N+EQ_OIL,o)
+    call ck("cached TRAIN enum without underlying sample is NO DATA",.not.o%valid)
     st%eq_source(EQ_OIL)=EQ_SRC_UNAVAILABLE
     call drill_observe(st,DRILL_PLANT_N+EQ_OIL,o)
     call ck("source loss immediately changes context to NO DATA",.not.o%valid)
@@ -79,9 +91,13 @@ program test_alarm_drilldown
     do i=1,HISTORY_N+8
         st%elapsed_s=real(i,dp)*0.25_dp
         st%eq_source(EQ_OIL)=EQ_SRC_UNAVAILABLE
+        st%eq_training_present(EQ_OIL)=.false.
         if(i>HISTORY_N+3) then
             st%eq_source(EQ_OIL)=EQ_SRC_TRAINING
-            st%eq_value(EQ_OIL)=real(i,dp)/100.0_dp
+            st%eq_training_present(EQ_OIL)=.true.
+            st%eq_training_stamp_s(EQ_OIL)=st%elapsed_s
+            st%eq_training_value(EQ_OIL)=real(i,dp)/100.0_dp
+            st%eq_value(EQ_OIL)=st%eq_training_value(EQ_OIL)
         end if
         call drill_record(hist,st)
     end do
