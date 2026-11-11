@@ -4959,15 +4959,19 @@ contains
             abs(grid%gt_opt_saving_h) >= 5.0_dp), grid%gt_opt_saving_h > 5.0_dp))
     end subroutine draw_gt_optim_panel
 
-    subroutine draw_gt_map(hdc, x, y, width, height)
+    subroutine draw_gt_map(hdc, x, y, width, height, compact_mode)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
+        logical,optional,intent(in) :: compact_mode
+        logical :: compact
         integer :: gx, gy, gw, gh, i, px, py, pxp, pyp, is, smx
         real(dp) :: f, pr, pr_run, n, f_surge_at_PR
         character(len=64) :: line
         real(dp), parameter :: N_ISO(3)   = [0.80_dp, 0.90_dp, 1.00_dp]
         integer(c_int) :: COL_ISO(3)
         COL_ISO = [COL_DIM, COL_MUTED, COL_CYAN]
+        compact=.false.
+        if(present(compact_mode)) compact=compact_mode
 
         gx = x + 58
         gy = y + 28
@@ -4983,7 +4987,13 @@ contains
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
 
         ! Axis labels and tick values
-        call draw_text(hdc, gx + gw / 2 - 60, y + 8, "Corrected mass flow fraction", COL_MUTED)
+        if(compact) then
+            call draw_text(hdc,x+10,y+8, &
+                "FLOW  | N 80/90/100% (grey/cyan) | SURGE (red)",COL_MUTED)
+        else
+            call draw_text(hdc, gx + gw / 2 - 60, y + 8, &
+                "Corrected mass flow fraction", COL_MUTED)
+        end if
         call draw_text(hdc, x + 6, gy + gh / 2 - 6, "PR", COL_MUTED)
         call draw_text(hdc, gx - 4,          gy + gh + 2, "0.35", COL_DIM)
         call draw_text(hdc, gx + gw / 2 - 8, gy + gh + 2, "0.68", COL_DIM)
@@ -5006,8 +5016,11 @@ contains
                     call draw_line(hdc, pxp, pyp, px, py, COL_ISO(is), merge(2, 1, is == 3))
                 pxp = px; pyp = py
             end do
-            write(line, '(I0,"% N")') nint(n * 100.0_dp)
-            call draw_text(hdc, min(px + 3, gx + gw - 52), py - 8, trim(adjustl(line)), COL_ISO(is))
+            if(.not.compact) then
+                write(line, '(I0,"% N")') nint(n * 100.0_dp)
+                call draw_text(hdc, min(px + 3, gx + gw - 52), py - 8, &
+                    trim(adjustl(line)),COL_ISO(is))
+            end if
         end do
 
         ! Surge limit line
@@ -5020,7 +5033,7 @@ contains
             if (i > 0 .and. pxp >= 0) call draw_line(hdc, pxp, pyp, px, py, COL_RED, 2)
             pxp = px; pyp = py
         end do
-        call draw_text(hdc, gx + gw - 88, gy + 14, "surge limit", COL_RED)
+        if(.not.compact) call draw_text(hdc,gx+gw-88,gy+14,"surge limit",COL_RED)
 
         ! Operating point dot
         px = gx + int((clamp_real(grid%flow_frac, 0.35_dp, 1.0_dp) - 0.35_dp) / 0.65_dp * real(gw, dp))
@@ -6246,7 +6259,7 @@ contains
             alarm_drill_selected=0
             return
         end if
-        if(point_in_rect(px,py,x+18,y+h-46,x+258,y+h-13)) then
+        if(point_in_rect(px,py,x+18,y+h-46,x+220,y+h-13)) then
             call drill_observe(grid,alarm_drill_selected,obs)
             select case(obs%diagram)
             case(DRILL_MAP,DRILL_TURBINE)
@@ -6333,15 +6346,15 @@ contains
             if(line_y>y+h-90) exit
         end do
         call draw_line(hdc,x+18,y+h-55,x+w-18,y+h-55,COL_BORDER_SOFT,1)
-        call draw_industrial_button(hdc,x+18,y+h-46,x+258,y+h-13, &
-            "OPEN ENGINEERING SCREEN",COL_CYAN,.false.)
+        call draw_industrial_button(hdc,x+18,y+h-46,x+220,y+h-13, &
+            "OPEN FULL VIEW",COL_CYAN,.false.)
         if(obs%valid) then
             detail_label="SIMULATED/INPUT - NOT OEM PROTECTION"
         else
             detail_label="NO VALID POINT - CHECK SOURCE FIRST"
         end if
-        call draw_text(hdc,x+270,y+h-35, &
-            detail_label(1:min(len_trim(detail_label),max(1,(w-282)/8))),COL_AMBER)
+        call draw_text(hdc,x+280,y+h-35, &
+            detail_label(1:min(len_trim(detail_label),max(1,(w-296)/8))),COL_AMBER)
     end subroutine draw_alarm_drill_popup
 
     subroutine draw_alarm_advice_wrapped(hdc,x,y,w,message,n_lines)
@@ -6397,7 +6410,7 @@ contains
         case(DRILL_MAP)
             ! Reuse the real GT compressor map, its surge boundary,
             ! isospeed curves and CURRENT solver operating-point marker.
-            call draw_gt_map(hdc,x,y,w,h)
+            call draw_gt_map(hdc,x,y,w,h,.true.)
         case(DRILL_TURBINE)
             if(grid%gt_phase==GT_ONLINE) then
                 ! Live Brayton temperature/entropy state-point diagram.
