@@ -38,6 +38,7 @@ NATIVE_IDS = (
     + ["native_export_invoked", "native_png_export_invoked"]
     + [f"{prefix}_{n:02d}" for n in range(2, 16)
        for prefix in ("pan_geometry", "pan_mouse_right", "pan_mouse_down")]
+    + ["panned_alarm_audio_click", "panned_instructor_tab_click"]
 )
 ADDITIONAL_GATES = [
     ("process_clean_exit", "process"),
