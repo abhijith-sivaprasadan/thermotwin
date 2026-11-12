@@ -1603,14 +1603,16 @@ contains
         layout_nav_left = layout_control_left + layout_control_w + layout_gap
         layout_nav_top = layout_control_top
         layout_nav_bottom = layout_control_bottom
-        if (nav_rail_collapsed) then
-            layout_nav_w = 58
+        ! Fit all three structural columns within the actual client bounds.
+        ! The old min-620 main canvas overran the right edge at 1024px.
+        if (nav_rail_collapsed.or.layout_canvas_w<1200) then
+            layout_nav_w=58
         else
-            layout_nav_w = min(220, max(178, layout_canvas_w / 9))
+            layout_nav_w=min(220,max(178,layout_canvas_w/9))
         end if
-        layout_main_left = layout_nav_left + layout_nav_w + max(10, layout_gap / 2)
-        layout_main_top = layout_margin
-        layout_main_w = max(620, layout_canvas_w - layout_margin - layout_main_left)
+        layout_main_left=layout_nav_left+layout_nav_w+max(10,layout_gap/2)
+        layout_main_top=layout_margin
+        layout_main_w=max(1,layout_canvas_w-layout_margin-layout_main_left)
         layout_main_h = layout_canvas_h - 2 * layout_margin
     end subroutine compute_layout
 
