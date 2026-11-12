@@ -36,6 +36,8 @@ NATIVE_IDS = (
        "cycle_alarm_gain", "scenario_next", "scenario_prev"]
     + [f"scenario_load_{n:02d}" for n in range(1, 16)]
     + ["native_export_invoked", "native_png_export_invoked"]
+    + [f"{prefix}_{n:02d}" for n in range(2, 16)
+       for prefix in ("pan_geometry", "pan_mouse_right", "pan_mouse_down")]
 )
 ADDITIONAL_GATES = [
     ("process_clean_exit", "process"),
@@ -392,6 +394,43 @@ def collect(source: Path, target: Path, args):
     add_test(results, "full_screen_render_set", "visual",
              "PASS" if all_screens_ok else "FAIL",
              "16 real 1024px window captures plus 16 virtual 1536px screen draws")
+
+    # The narrow viewport has two physical pan directions. Capture BOTH
+    # extremes and compare decoded RGB pixels, rather than trusting a
+    # progress-bar state or a list of existing PNG filenames.
+    from PIL import Image, ImageChops
+    pan_ok = True
+    for n in range(2, 16):
+        base = source / f"screen-{n:02d}-1024.png"
+        right = source / f"screen-{n:02d}-1024-pan-right.png"
+        bottom = source / f"screen-{n:02d}-1024-pan-bottom.png"
+        right_valid, right_desc = check_png(right) if right.is_file() else (False, "missing")
+        bottom_valid, bottom_desc = check_png(bottom) if bottom.is_file() else (False, "missing")
+        add_test(results, f"capture_pan_right_{n:02d}", "viewport",
+                 "PASS" if right_valid else "FAIL", right_desc,
+                 f"screenshots/{right.name}")
+        add_test(results, f"capture_pan_bottom_{n:02d}", "viewport",
+                 "PASS" if bottom_valid else "FAIL", bottom_desc,
+                 f"screenshots/{bottom.name}")
+        changed = False
+        if base.is_file() and right_valid and bottom_valid:
+            try:
+                with Image.open(base) as b, Image.open(right) as r, Image.open(bottom) as d:
+                    b_rgb, r_rgb, d_rgb = b.convert("RGB"), r.convert("RGB"), d.convert("RGB")
+                    changed = (b_rgb.size == r_rgb.size == d_rgb.size
+                               and ImageChops.difference(b_rgb, r_rgb).getbbox() is not None
+                               and ImageChops.difference(r_rgb, d_rgb).getbbox() is not None)
+            except (OSError, ValueError):
+                changed = False
+        pan_ok = pan_ok and right_valid and bottom_valid and changed
+        add_test(results, f"pan_render_delta_{n:02d}", "viewport",
+                 "PASS" if changed else "FAIL",
+                 "Decoded native pixels differ across origin, pan-right and pan-bottom captures",
+                 f"screenshots/{bottom.name}")
+    add_test(results, "narrow_viewport_two_axis_pan", "viewport",
+             "PASS" if pan_ok else "FAIL",
+             "14 live 1024px pages have reachable, visually distinct right and bottom views; "
+             "operator readability still requires visual review")
 
     defect_file = Path(args.repo) / "docs" / "GUI_VISUAL_DEFECTS.json"
     try:
