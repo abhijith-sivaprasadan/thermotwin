@@ -9980,7 +9980,7 @@ contains
         gx = x + 12; gy = y + 28
         gw = width - 24; gh = max(80, height / 2 - 16)
 
-        call draw_text_fit(hdc,gx,y+10,gw,"Net margin $/h | revenue less fuel and CO2",COL_MUTED)
+        call draw_text_fit(hdc,gx,y+10,gw,"Net margin ($/h)",COL_MUTED)
         call fill_box(hdc, gx, gy, gx + gw, gy + gh, COL_BG)
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
 
@@ -10043,7 +10043,7 @@ contains
         call draw_text(hdc, x + 12, row_y, trim(lbl), merge(COL_GREEN, COL_RED, net >= 0.0_dp))
         row_y = row_y + 22
         call draw_text_fit(hdc,x+12,row_y,width-24, &
-            "Min up/down 2/1h | SOC=50, GT=20 states",COL_DIM)
+            "Min up/down 2/1h | SOC50 GT20",COL_DIM)
         row_y=row_y+18
         write(lbl,'("LP relaxation gap ",F5.1,"%")') grid%da_gap_pct
         call draw_text_fit(hdc,x+12,row_y,width-24,trim(adjustl(lbl)),COL_DIM)
