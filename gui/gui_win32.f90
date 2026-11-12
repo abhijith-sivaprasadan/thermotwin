@@ -3994,11 +3994,11 @@ contains
         if(w>=850) then
             write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
                 grid%elapsed_s,trim(plant_text),trim(auto_text),trim(dispatch_text),trim(reserve_text)
-            call draw_text(hdc,x0+w-445,y0+14,trim(subtitle), &
+            call draw_text_fit(hdc,x0+w-445,y0+14,360,trim(subtitle), &
                 merge(COL_LIME,COL_AMBER,grid%auto_balance))
         else
             write(subtitle,'("t=",F5.1,"s | ",A)') grid%elapsed_s,trim(auto_text)
-            call draw_text(hdc,x0+w-198,y0+14,trim(subtitle),COL_MUTED)
+            call draw_text_fit(hdc,x0+w-198,y0+14,125,trim(subtitle),COL_MUTED)
         end if
         ! [?] shortcuts button — top-right of header
         block
@@ -4022,21 +4022,20 @@ contains
         call fill_box(hdc, x0, y0 + 44, x0 + w, y0 + 68, COL_PANEL_ALT)
         call fill_box(hdc, x0, y0 + 44, x0 + 6, y0 + 68, status_color)
         call draw_line(hdc, x0, y0 + 68, x0 + w, y0 + 68, COL_BORDER_SOFT, 1)
-        ! At 1024px the main canvas is narrower than the six module chips
-        ! plus alert cluster. Keep the first-out/status unobscured on that view.
-        if(w < 850) then
+        ! Reserve the whole banner for a single priority message on normal
+        ! desktop widths. Previously status, notice, alert badges and six chips
+        ! all painted into the same 24-pixel strip at 1024/1536.
+        if(w < 1200) then
             if(grid%gt_phase/=GT_ONLINE.or.instructor%frozen.or. &
-               notice_ticks<=0.or.len_trim(operator_notice)==0) then
-                call draw_text(hdc,inner_x+10,y0+50,trim(status(1:min(len_trim(status),62))),status_color)
+                notice_ticks<=0.or.len_trim(operator_notice)==0) then
+                call draw_text_fit(hdc,inner_x+10,y0+49,w-2*PAD_PANEL_X-26, &
+                    trim(status),status_color)
             else
-                call draw_text(hdc,inner_x+10,y0+50, &
-                    trim(operator_notice(1:min(len_trim(operator_notice),62))),COL_CYAN)
+                call draw_text_fit(hdc,inner_x+10,y0+49,w-2*PAD_PANEL_X-26, &
+                    trim(operator_notice),COL_CYAN)
             end if
         else
-        call draw_text(hdc, inner_x + 10, y0 + 50, trim(status), status_color)
-        if (notice_ticks > 0 .and. len_trim(operator_notice) > 0) then
-            call draw_text(hdc, inner_x + min(520, w / 2), y0 + 50, trim(operator_notice), COL_CYAN)
-        end if
+        call draw_text_fit(hdc, inner_x+10, y0+49, max(180,w-650),trim(status),status_color)
         ! --- Right-aligned status cluster: subsystem chips + transient alerts ---
         ! [5.0-P1] One shared right-to-left cursor keeps the two groups from ever
         ! overlapping (they previously both anchored at x0+w and collided).
@@ -4086,7 +4085,7 @@ contains
             end if
         end block
 
-        end if  ! wide header chips only; narrow status stays readable
+        end if  ! status/badges never overlap at 1024 or 1536
 
         ! --- Screen navigation ---
         call draw_nav_bar(hdc, x0, y0 + 72, w, 32)
@@ -4333,9 +4332,8 @@ contains
         call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
         call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
-        call draw_text(hdc, title_x, top + 68, "WHEEL / PGDN  :  MORE CONTROLS", COL_DIM)
         if (native_renderer_ready) call hmi_push_clip(hdc,int(left+4,c_int), &
-            int(top+70,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
+            int(top+98,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
 
         write(value, '(F5.1," MW")') grid%demand_MW
         call draw_custom_slider(hdc, ID_DEMAND, layout_slider_x, layout_slider_y(1), layout_slider_w, &
@@ -4550,10 +4548,15 @@ contains
         end if
 
         if (native_renderer_ready) call hmi_pop_clip(hdc)
+        ! Paint the fixed scroll hint ABOVE clipped content, never in the
+        ! same rectangle as the first scrolling slider heading.
+        call fill_box(hdc,left+7,top+64,right-4,top+96,COL_PANEL_DEEP)
+        call draw_text_fit(hdc,title_x,top+72,right-title_x-22, &
+            "WHEEL / PGDN : MORE CONTROLS",COL_MUTED)
         if (control_scroll_max>0) then
             block
                 integer :: scroll_top,scroll_bot,track_h,thumb_y
-                scroll_top=top+78
+                scroll_top=top+98
                 scroll_bot=layout_footer_y-28
                 track_h=max(1,scroll_bot-scroll_top-34)
                 thumb_y=scroll_top+int(real(track_h)* &
@@ -4564,11 +4567,11 @@ contains
             end block
         end if
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
-        write(line, '("Scan ",I0," ms | trends 250 ms | ",A)') int(TIMER_MS), trim(grid%market_profile_name)
-        call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)
-        write(line, '("Price $",I3,"/MWh | Gas $",F4.1,"/GJ | CO2 $",I3,"/t")') &
-            nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj, nint(grid%carbon_price_usd_t)
-        call draw_text(hdc, title_x, layout_footer_y + 20, trim(adjustl(line)), COL_DIM)
+        write(line, '("SCAN ",I0," ms  |  TREND 250 ms")') int(TIMER_MS)
+        call draw_text_fit(hdc,title_x,layout_footer_y,right-title_x-20,trim(line),COL_MUTED)
+        write(line, '("Price $",I0,"/MWh  |  Gas $",F4.1,"/GJ")') &
+            nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj
+        call draw_text_fit(hdc,title_x,layout_footer_y+20,right-title_x-20,trim(adjustl(line)),COL_DIM)
     end subroutine draw_control_panel
 
     subroutine draw_nav_rail(hdc)
@@ -4899,6 +4902,39 @@ contains
         call fill_box(hdc, x + SP_1, y, min(x + width, x + 120), y + 2, accent)
     end subroutine draw_accent_card
 
+    ! Conservative width-aware text: never allow variable strings to occupy
+    ! the following card, chip, control label or window region.
+    subroutine draw_text_fit(hdc, x, y, width, label, color, headline)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width
+        character(len=*), intent(in) :: label
+        integer(c_int), intent(in) :: color
+        logical, intent(in), optional :: headline
+        integer :: maxchars, n, cell_px
+        logical :: big
+        character(len=:), allocatable :: shown
+
+        big=.false.
+        if(present(headline)) big=headline
+        cell_px=10
+        if(big) cell_px=16
+        maxchars=max(0,(width-6)/cell_px)
+        if(maxchars==0) return
+        n=len_trim(label)
+        if(n<=maxchars) then
+            shown=trim(label)
+        else if(maxchars>3) then
+            shown=label(1:maxchars-3)//'...'
+        else
+            shown=label(1:maxchars)
+        end if
+        if(big) then
+            call draw_title_text(hdc,x,y,shown,color)
+        else
+            call draw_text(hdc,x,y,shown,color)
+        end if
+    end subroutine draw_text_fit
+
     subroutine draw_kpi_card(hdc, x, y, width, height, label, value_text, value_color)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
@@ -4908,9 +4944,15 @@ contains
 
         call draw_accent_card(hdc, x, y, width, height, value_color)
         sep_y = y + max(28, height - 38)
-        call draw_text(hdc, x + PAD_CARD_X, y + PAD_CARD_Y, label, COL_MUTED)
+        call draw_text_fit(hdc, x + PAD_CARD_X, y + PAD_CARD_Y, width - 2*PAD_CARD_X, label, COL_MUTED)
         call draw_line(hdc, x + PAD_CARD_X, sep_y, x + width - PAD_CARD_X, sep_y, COL_BORDER_SOFT, 1)
-        call draw_mono_title(hdc, x + PAD_CARD_X, sep_y + SP_1, value_text, value_color)
+        if(width<170) then
+            call draw_text_fit(hdc, x + PAD_CARD_X, sep_y + SP_1, width - 2*PAD_CARD_X, &
+                value_text, value_color)
+        else
+            call draw_text_fit(hdc, x + PAD_CARD_X, sep_y + SP_1, width - 2*PAD_CARD_X, &
+                value_text, value_color, .true.)
+        end if
     end subroutine draw_kpi_card
 
     subroutine draw_screen_caption(hdc, x, y, width, title, subtitle)
@@ -10286,7 +10328,7 @@ contains
         character(len=*), intent(in) :: label, value_text
         real(dp), intent(in) :: value, lo, hi
         integer(c_int), intent(in) :: color
-        integer :: knob_x
+        integer :: knob_x, value_reserve
         real(dp) :: f
         integer(c_int) :: slider_color
         logical :: trip_locked
@@ -10294,12 +10336,13 @@ contains
 
         trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
         slider_color=merge(COL_DIM,color,trip_locked)
-            call draw_text(hdc, x, y - 34, label, merge(COL_DIM,COL_INK,trip_locked))
-            if(trip_locked) then
-                call draw_text(hdc,x+width-86,y-34,'TRIP LOCK',COL_AMBER)
-            else
-                call draw_text(hdc,x+width-78,y-34,value_text,color)
-            end if
+        value_reserve=min(154,max(86,10*len_trim(value_text)+4))
+        call draw_text_fit(hdc,x,y-34,width-value_reserve-4,label,merge(COL_DIM,COL_INK,trip_locked))
+        if(trip_locked) then
+            call draw_text_fit(hdc,x+width-value_reserve,y-34,value_reserve-3,'TRIP LOCK',COL_AMBER)
+        else
+            call draw_text_fit(hdc,x+width-value_reserve,y-34,value_reserve-3,value_text,color)
+        end if
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
         ! Flat pill track
