@@ -3450,6 +3450,13 @@ contains
                 grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
             write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1536.png")') i
             call visual_qa_capture_virtual(trim(shot))
+            ! Independently capture each screen from the real 1024px window.
+            ! Offscreen 1536 rendering alone cannot qualify narrow layouts.
+            call compute_layout_from_window(hwnd)
+            call invalidate_dashboard(hwnd)
+            ios=UpdateWindow(hwnd)
+            write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024.png")') i
+            call visual_qa_capture(trim(shot))
         end do
 
         ! Explicitly exercise all six keyboard-adjustable controls through
