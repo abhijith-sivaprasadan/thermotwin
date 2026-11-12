@@ -1848,7 +1848,7 @@ contains
             return
         end if
         ! F15 includes read-only measured replay, instructor and A/B scenario tabs.
-        if (hmi_screen==SCREEN_SCENARIO) then
+        if (hmi_screen==SCREEN_SCENARIO.and.main_pan_max_x==0) then
             if (handle_instructor_mouse(x,y)) then
                 active_control=ID_NONE
                 return
@@ -3527,6 +3527,31 @@ contains
                 ios=UpdateWindow(hwnd)
                 write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024-pan-bottom.png")') i
                 call visual_qa_capture(trim(shot))
+                ! Verify real on-screen control hit targets after panning,
+                ! not just screenshot existence and in-memory pan offsets.
+                main_pan_y=0
+                if(i==SCREEN_ALARMS) then
+                    old_bool=alarm_audio_enabled
+                    call handle_mouse_down(hwnd, &
+                        layout_main_left-main_pan_x+18+570, &
+                        hmi_content_top(layout_main_top)+8+76+16)
+                    call qa_check(results_unit,'panned_alarm_audio_click','viewport_mouse', &
+                        old_bool.neqv.alarm_audio_enabled, &
+                        'audio_toggle_changed','audio_toggle_changed')
+                    if(old_bool.neqv.alarm_audio_enabled) call toggle_alarm_audio()
+                end if
+                if(i==SCREEN_SCENARIO) then
+                    instructor_view=.false.
+                    measured_view=.false.
+                    call handle_mouse_down(hwnd, &
+                        layout_main_left-main_pan_x+18+main_pan_virtual_w-36-90, &
+                        hmi_content_top(layout_main_top)+8+22)
+                    call qa_check(results_unit,'panned_instructor_tab_click','viewport_mouse', &
+                        instructor_view.and..not.measured_view, &
+                        'instructor_view_enabled','instructor_view_enabled')
+                    instructor_view=.false.
+                    measured_view=.false.
+                end if
             end if
         end do
 
@@ -4029,7 +4054,7 @@ contains
     ! retain physical (unshifted) coordinates.
     logical function main_pan_content_click(x,y) result(handled)
         integer,intent(in)::x,y
-        integer::old_left,old_top,old_w,view_h
+        integer::old_left,old_top,old_w,old_h,view_h
         logical::ignored
         handled=.false.
         if(main_pan_max_x==0.and.main_pan_max_y==0) return
@@ -4043,9 +4068,11 @@ contains
         old_left=layout_main_left
         old_top=layout_main_top
         old_w=layout_main_w
+        old_h=layout_main_h
         layout_main_left=old_left-main_pan_x
         layout_main_top=old_top-main_pan_y
         layout_main_w=main_pan_virtual_w
+        layout_main_h=main_pan_virtual_h+166
         select case(hmi_screen)
         case(SCREEN_ALARMS)
             ignored=handle_alarm_mouse(x,y)
@@ -4055,6 +4082,7 @@ contains
         layout_main_left=old_left
         layout_main_top=old_top
         layout_main_w=old_w
+        layout_main_h=old_h
     end function main_pan_content_click
 
     subroutine draw_dashboard_buffered(hwnd, hdc)
