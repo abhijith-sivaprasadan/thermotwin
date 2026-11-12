@@ -216,6 +216,7 @@ def make_pdf(output: Path, results, context, field_stats, evidence, debug_lines)
                         ("native_qa_measurements.csv", "In-process state at every test checkpoint"),
                         ("gui_telemetry.csv", "125-ms model timer samples with units in header"),
                         ("gui_debug.log", "Complete native startup, action and shutdown trace"),
+                        ("gui-acceptance-*.log", "Complete compiler and Windows harness output"),
                         ("shift_data_t*.csv", "Original native full multi-section shift export"),
                         ("screenshots/*.png", "Original per-screen native and virtual HMI captures"),
                         ("test_results.csv / json", "Normalized status ledger and metadata"),
@@ -391,17 +392,21 @@ def collect(source: Path, target: Path, args):
         shutil.copy2(p, evidence / p.name)
     for p in sorted(source.glob("*.png")):
         shutil.copy2(p, screenshots / p.name)
-    for p in valid_exports:
+    for p in shift_files:
         shutil.copy2(p, evidence / p.name)
     if logpath.exists():
         shutil.copy2(logpath, evidence / "gui_debug.log")
+    for name in ("gui-acceptance-build.log", "gui-acceptance-runner.log"):
+        p = Path(args.repo) / "build" / name
+        if p.is_file():
+            shutil.copy2(p, evidence / name)
     for p in sorted(source.glob("*.jpg")):
         shutil.copy2(p, screenshots / p.name)
     (target / "README.txt").write_text(
         SCOPE_NOTICE + "\n\n"
         "report.pdf: human-readable decision, QA assertions, measurements and limits.\n"
         "test_results.csv/json: complete declared PASS/FAIL/NOT_TESTED ledger.\n"
-        "evidence/: original native CSV, raw trace, debug log and screenshots.\n"
+        "evidence/: original native CSV, compiler/GUI logs, raw trace and screenshots.\n"
         "evidence_sha256.csv: checksum of each archived input/output.\n"
         "A missing item is a failure or NOT_TESTED, never a silent PASS.\n",
         encoding="utf-8")
