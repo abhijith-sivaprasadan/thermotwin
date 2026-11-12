@@ -3574,6 +3574,8 @@ contains
         call export_shift_csv(grid)
         call qa_check(results_unit,'native_export_invoked','export', &
             .true.,'export_called','file_verified_separately')
+        call invalidate_dashboard(hwnd)
+        ios=UpdateWindow(hwnd)
         call export_screen_png()
         call qa_check(results_unit,'native_png_export_invoked','export', &
             .true.,'export_called','file_verified_separately')
