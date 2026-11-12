@@ -8527,7 +8527,7 @@ contains
             write(anlz, '("eta_II ",F4.1,"% +/-",F3.1,"% | 95% CI ",F4.1,"-",F4.1,"% | Carnot ",F4.1,"% | driver ",A)') &
                 100.0_dp*exergy_an_uq%eta_II_mean, 100.0_dp*exergy_an_uq%eta_II_std, &
                 100.0_dp*exergy_an_uq%eta_II_lo95, 100.0_dp*exergy_an_uq%eta_II_hi95, &
-                100.0_dp*lim%eta_carnot, nint(100.0_dp*lim%carnot_fraction), trim(drv)
+                100.0_dp*lim%eta_carnot, trim(drv)
             call draw_text_fit(hdc,ix,kpi_y+82,iw-8,trim(anlz),COL_CYAN)
             ! [7.0-P4] Sobol total-effect tornado (which input drives eta_II variance)
             block
