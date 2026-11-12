@@ -42,3 +42,8 @@ gui/open62541.h
 # Generated configs
 thermotwin.ini
 release/
+
+# Generated native GUI acceptance and operator export data
+shift_data_t*.csv
+shift_data_t*.pdf
+output/screen_f*.png
