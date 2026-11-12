@@ -1331,8 +1331,11 @@ contains
                 case(91)
                     block
                         integer :: ix,iw,top
-                        ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        call update_main_pan_geometry(layout_main_w, &
+                            max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
+                        main_pan_x=main_pan_max_x
+                        ix=layout_main_left+18-main_pan_x
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         call handle_mouse_down(hwnd,ix+iw-90,top+26)
                         if(.not.instructor_view) then
@@ -1347,6 +1350,7 @@ contains
                 case(94)
                     block
                         integer :: ix,top
+                        main_pan_x=0
                         ix=layout_main_left+18
                         top=hmi_content_top(layout_main_top)+8
                         call handle_mouse_down(hwnd,ix+30,top+126)
@@ -1376,7 +1380,7 @@ contains
                     block
                         integer :: ix,iw,top,bw3
                         ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         bw3=(iw-16)/3
                         call handle_mouse_down(hwnd,ix+bw3+20,top+126)
@@ -1410,8 +1414,9 @@ contains
                 case(112)
                     block
                         integer :: ix,iw,top,bw3
-                        ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        main_pan_x=main_pan_max_x
+                        ix=layout_main_left+18-main_pan_x
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         bw3=(iw-16)/3
                         call handle_mouse_down(hwnd,ix+2*bw3+25,top+126)
