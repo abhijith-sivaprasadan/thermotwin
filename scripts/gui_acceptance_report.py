@@ -383,13 +383,15 @@ def collect(source: Path, target: Path, args):
 
     all_screens_ok = True
     for n in range(1, 17):
-        path = source / f"screen-{n:02d}-1536.png"
-        valid, desc = check_png(path) if path.is_file() else (False, "missing")
-        all_screens_ok = all_screens_ok and valid
-        add_test(results, f"capture_screen_{n:02d}", "visual",
-                 "PASS" if valid else "FAIL", desc, f"screenshots/{path.name}")
+        for viewport in (1024, 1536):
+            path = source / f"screen-{n:02d}-{viewport}.png"
+            valid, desc = check_png(path) if path.is_file() else (False, "missing")
+            all_screens_ok = all_screens_ok and valid
+            add_test(results, f"capture_screen_{n:02d}_{viewport}", "visual",
+                     "PASS" if valid else "FAIL", desc, f"screenshots/{path.name}")
     add_test(results, "full_screen_render_set", "visual",
-             "PASS" if all_screens_ok else "FAIL", "16 original 1536 px screen draws")
+             "PASS" if all_screens_ok else "FAIL",
+             "16 real 1024px window captures plus 16 virtual 1536px screen draws")
 
     defect_file = Path(args.repo) / "docs" / "GUI_VISUAL_DEFECTS.json"
     try:
