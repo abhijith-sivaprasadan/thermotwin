@@ -1,0 +1,38 @@
+{
+  "schema": "thermotwin.gui-visual-defects.v1",
+  "review_date": "2026-11-12",
+  "source_run": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43206094087",
+  "review_method": "Manual inspection of original native Windows screenshots; these are known-defect release gates, not automated pixel/OCR inferences.",
+  "known_defects": [
+    {
+      "id": "VIS-001",
+      "status": "OPEN",
+      "severity": "major",
+      "viewport": "1024x768",
+      "evidence": "01-original-overview.png",
+      "title": "Overview KPI and annunciator text crowding",
+      "observation": "Native overview KPI cards and eight-across alarm annunciator row visibly overdraw or truncate long labels, values and neighboring tiles at 1024px; text lacks adequate horizontal allocation.",
+      "acceptance": "Reflow or clip/shorten per-tile labels with nonoverlap; verify all KPI figures and alarm annunciators in screenshot at 1024x768."
+    },
+    {
+      "id": "VIS-002",
+      "status": "OPEN",
+      "severity": "major",
+      "viewport": "1536x960",
+      "evidence": "screen-16-1536.png",
+      "title": "Header status and instrumentation labels overlap",
+      "observation": "Virtual native 1536px Exergy screen shows long upper status banner overdrawn by adjacent status/module labels, plus text drawn through plot/panel annotations.",
+      "acceptance": "Separate header status row from secondary labels and ensure chart annotations occupy nonintersecting bounding boxes at 1536x960."
+    },
+    {
+      "id": "VIS-003",
+      "status": "OPEN",
+      "severity": "minor",
+      "viewport": "1536x960",
+      "evidence": "screen-16-1536.png",
+      "title": "Control sidebar help and slider headings collide",
+      "observation": "Control-sidebar help/cue text crosses first visible slider heading when the sidebar is scrolled, so an operator cannot read all labels without collisions.",
+      "acceptance": "Reserve fixed vertical space for cue/help message; confirm slider headings stay readable throughout scroll range."
+    }
+  ]
+}
