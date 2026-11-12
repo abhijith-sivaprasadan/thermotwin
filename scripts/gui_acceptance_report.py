@@ -444,7 +444,7 @@ def collect(source: Path, target: Path, args):
         shutil.copy2(p, screenshots / ("hmi-export-" + p.name))
     if logpath.exists():
         shutil.copy2(logpath, evidence / "gui_debug.log")
-    for name in ("gui-acceptance-build.log", "gui-acceptance-runner.log"):
+    for name in ("gui-acceptance-build.log", "gui-acceptance-runner.log", "gui-acceptance-operations-pdf.log"):
         p = Path(args.repo) / "build" / name
         if p.is_file():
             shutil.copy2(p, evidence / name)
