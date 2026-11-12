@@ -36,7 +36,7 @@ OBSERVED = {"T2_K":"compressor_discharge_T_K","T4_K":"exhaust_T_K",
 METRICS = ("T2_K","T4_K","net_power_MW","fuel_flow_kg_s","heat_rate_kJ_kWh")
 FIXED = ("eta_combustor","combustor_pressure_loss",
          "eta_mechanical","auxiliary_load_fraction","relative_humidity")
-EXTRA = {"compressor_discharge_T_K","split"}
+EXTRA = {"compressor_discharge_T_K","ambient_P_Pa","split"}
 PUBLIC = {
  "UCI_551":{"doi":"10.24432/C5WC95",
      "source_columns":["AT","AP","AH","AFDP","GTEP","TIT","TAT","TEY","CDP","CO","NOX"],
@@ -141,6 +141,7 @@ def load_measurements(path:Path,meta:dict)->list[dict]:
         if not (numeric(row["exhaust_T_K"],300,1500)<float(row["turbine_firing_T_K"])):
             raise ValueError("Original turbine expansion temperatures inconsistent")
         numeric(row["ambient_T_K"],200,350)
+        numeric(row["ambient_P_Pa"],50000,120000)  # absolute Pa, not gauge or mbar
         numeric(row["compressor_pressure_ratio"],1.1,40)
         numeric(row["generator_efficiency"],.85,1.)
         numeric(row["fuel_LHV_J_kg"],1e7,1e8)
