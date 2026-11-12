@@ -79,6 +79,23 @@ reports these original-source field gaps without inventing measurements.
 CI checks **mathematical fixtures only** against the real Fortran executable;
 no claim of independent field predictive accuracy has been made.
 
+## Measured industrial 5.68 MW turbine operating-data audit
+
+A new [independently source-locked real operating-turbine electrical-consistency case study](docs/ESAN_2017_REAL_TURBINE_FIELD_AUDIT.md)
+uses the original Esan/Ehiaguina 2017 **5.68 MW actual turbine** XLSX
+(DOI 10.17632/6w3vy3ybhg.3; CC BY 4.0). It preserves 317 original
+day/night worksheets, checks the pinned source SHA and original measured
+voltage, phase currents, power factor, fuel flow, compressor pressure,
+inlet/exhaust temperature and **metered real electrical power**. A
+no-fit three-phase electrical identity is independently recomputed and
+measured residuals evaluated on a separate later-source-sheet subset.
+
+**The electrical consistency case is real measured-field evidence, but
+NOT independent Brayton model validation**: fuel lower heating value, air
+mass flow, validated turbine inlet temperature/station maps and
+instrument/engine boundaries are absent or unverified. The original 30 MW
+simulation and actual 5.68 MW turbine are different machines.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
