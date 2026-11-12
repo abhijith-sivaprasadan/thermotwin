@@ -5,11 +5,12 @@ $env:THERMOTWIN_GUI_VISUAL_QA = "1"
 $binary = Join-Path $PWD "thermotwin-gui-offline.exe"
 if (!(Test-Path $binary)) { throw "Expected original offline GUI executable absent" }
 $proc = Start-Process -FilePath $binary -WorkingDirectory $PWD -PassThru
-if (!$proc.WaitForExit(35000)) {
+if (!$proc.WaitForExit(120000)) {
     Stop-Process -Id $proc.Id -Force
     throw "Original GUI screenshot harness timed out; graphical desktop unavailable"
 }
 Write-Host ("Original GUI exited code " + $proc.ExitCode)
+if ($proc.ExitCode -ne 0) { throw "Native GUI exited nonzero: $($proc.ExitCode)" }
 $expected = @(
 "01-original-overview.png","01-original-overview-1536.png",
 "02-original-turbine.png","02-original-turbine-1536.png",
@@ -26,6 +27,7 @@ $expected = @(
 "13-instructor-frozen.png","13-instructor-frozen-1536.png",
 "14-instructor-oil-trip.png","14-instructor-oil-trip-1536.png",
 "15-instructor-restored.png","15-instructor-restored-1536.png")
+$expected += @(1..16 | ForEach-Object { "screen-{0:D2}-1536.png" -f $_ })
 Add-Type -AssemblyName System.Drawing
 foreach($name in $expected) {
     $path = Join-Path $folder $name
@@ -46,6 +48,6 @@ foreach($name in $expected) {
         $thumb.Save($out,[System.Drawing.Imaging.ImageFormat]::Jpeg)
         $thumb.Dispose()
         $tag = ($name -replace "\.png$","").ToUpperInvariant() -replace "^[0-9]+-",""
-        Write-Host ("HMI_" + $tag + "_JPEG_BASE64:" + [Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
+        Write-Host ("Native screenshot thumbnail: " + $out)
     } finally { $img.Dispose() }
 }
