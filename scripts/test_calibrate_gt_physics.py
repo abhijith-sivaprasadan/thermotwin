@@ -53,6 +53,17 @@ class CalibrationEvidenceContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"flange boundaries"):
             case(row,meta,.86,.89,"MATHONLY")
 
+    def test_absolute_ambient_pressure_is_mandatory_and_finite(self):
+        from scripts.calibrate_gt_physics import EXTRA, load_measurements
+        self.assertIn("ambient_P_Pa", EXTRA)
+        with TemporaryDirectory() as tmp:
+            p=Path(tmp)/"incomplete.csv"
+            with p.open("w", newline="", encoding="utf-8") as file:
+                writer=csv.DictWriter(file, fieldnames=sorted(set(REQUIRED_MEASURED_FIELDS)|{"compressor_discharge_T_K","split"}))
+                writer.writeheader()
+            with self.assertRaisesRegex(ValueError, "ambient_P_Pa"):
+                load_measurements(p, {"unit_id": "MATH-ONLY", "hardware_and_component_map_id":"MATH-ONLY"})
+
     def test_measured_power_does_not_enter_station_temperature_fit(self):
         # Pure algebraic source-contract test: efficiency identification is
         # explicitly T2/T4 only; power/fuel are downstream heldout metrics.
@@ -93,7 +104,7 @@ class CalibrationEvidenceContracts(unittest.TestCase):
                 **{k:True for k in REQUIRED_METADATA},
             }
             raw=[]
-            keys=(*REQUIRED_MEASURED_FIELDS,"compressor_discharge_T_K","split")
+            keys=(*REQUIRED_MEASURED_FIELDS,"compressor_discharge_T_K","ambient_P_Pa","split")
             for i in range(10):
                 ambient=288.15+i*.2
                 pressure=101325.+i*10
