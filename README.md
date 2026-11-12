@@ -108,6 +108,25 @@ do **not** satisfy this gate; physical GT predictive accuracy remains
 unverified until suitable actual measurements are supplied or evaluated
 privately by their owner.
 
+## Interactive turbine performance and pass-off technical work sample (November 2026)
+
+**[Open the live gas turbine performance work sample](https://abhijith-sivaprasadan.github.io/projects/gas-turbine-performance-work-sample.html)** · [ThermoTwin-F project case with source-connected charts](https://abhijith-sivaprasadan.github.io/projects/thermotwin-f.html).
+
+This separate, publicly hosted **browser work sample** is maintained in the [portfolio source repository](https://github.com/abhijith-sivaprasadan/abhijith-sivaprasadan.github.io). It does **not run the Fortran executable** or implement an OEM-certified performance tool. It deliberately separates:
+
+1. **Illustrative four-station ISO/site physics.** A client-side constant-property calculation with fixed generic compressor/turbine hardware, pressure loss and shaft assumptions. Visitors change inlet temperature, absolute ambient pressure, intake and exhaust restrictions, then inspect independently calculated power/heat-rate correction factors and station states. These are not actual 30 MW Fortran model results or measured turbine predictions.
+2. **Authentic operating-turbine electrical readings.** The [5.68 MW Esan/Ehiaguina source audit](docs/ESAN_2017_REAL_TURBINE_FIELD_AUDIT.md) verifies the original 2017 turbine XLSX (DOI 10.17632/6w3vy3ybhg.3), 317 worksheets and 2,966 eligible electrical operating readings. A systematic every-13th subsample of 229 original records is interactively displayed with original worksheet/cell references. The no-fit three-phase electrical identity measures instrument **internal consistency**, not physical Brayton accuracy or independently verified power-meter calibration.
+3. **Illustrative production pass-off / metrology desk.** Synthetic test windows with explicit disturbances (oscillation, drift, dropout); same-educational-model reference/site correction ratios; user-adjustable hypothetical power/fuel-flow/LHV deviations; analytic correction Jacobian for [power MW, fuel mass flow kg/s, LHV J/kg]; full 3×3 illustrative short-term precision and calibration covariance, including power/fuel-flow systematic correlation; conditional corrected-power/heat-rate uncertainties and example-only threshold screening. The corresponding actual Python method is [scripts/passoff_correction.py](scripts/passoff_correction.py). **No actual production test records, calibrated OEM maps, contractual guarantees or industrial PASS/FAIL are implied; the live decision remains NOT ASSESSED.**
+
+The [main ThermoTwin-F project page](https://abhijith-sivaprasadan.github.io/projects/thermotwin-f.html) now includes selectable, source-connected **SVG analyses** of archived committed Fortran results: four-station T/P/work, degradation cases, ambient/pressure-ratio/TIT/turbine-efficiency sweeps and three lumped hot-section transients. The plotted numbers are drawn from checked-in CSV at source revision **bb8fabcba9e320c144d7981c7a2eb55a47724dac**; this is a historical model snapshot, **not a newly executed numerical run or an external plant-data validation**. Original PNGs remain as safe fallback, and native HMI screenshots are retained because browser drawings cannot substitute for actual Windows GUI evidence.
+
+Reproduce the underlying **mathematical/software** tests with:
+- `python -m unittest scripts.test_passoff_correction -v`
+- `python -m unittest scripts.test_audit_real_esan_gt2017 -v`
+- `make all tests`
+
+**Industrial evidence gate:** OEM maps, same-machine test records, fuel LHV, compressor air flow, station-matched T/P, traceable instrument certificates, full correction-factor/model-form uncertainty and approved guarantee are not available. No ISO 2314 or ASME PTC 22 acceptance or thermodynamic predictive-accuracy claim is made. The earlier immutable source-only v2.0.0-beta.1 Zenodo archive has not changed.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
