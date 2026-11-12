@@ -928,6 +928,8 @@ module thermotwin_win32_gui
     ! CI-only native screenshot capture, completely inactive in normal operation.
     logical :: visual_qa_mode = .false.
     integer :: visual_qa_ticks = 0
+    logical :: gui_qa_trace_open = .false.
+    integer :: gui_qa_trace_unit = 0
     real(dp) :: visual_qa_frozen_time_s=-1.0_dp
     real(dp) :: visual_qa_frozen_load_MW=-1.0_dp
     type(c_ptr) :: back_memdc = c_null_ptr
@@ -1130,6 +1132,17 @@ contains
                 boot_ticks = 0
                 call set_hmi_screen(SCREEN_OVERVIEW)
                 call log_debug("visual QA original GUI screenshots enabled")
+                open(newunit=gui_qa_trace_unit, file="build\gui-visual-qa\gui_telemetry.csv", &
+                    status="replace", action="write", iostat=qa_status)
+                gui_qa_trace_open = qa_status==0
+                if (gui_qa_trace_open) then
+                    write(gui_qa_trace_unit,'(A)') &
+                        'tick,elapsed_s,screen_id,demand_MW,renewable_MW,storage_request_MW,'// &
+                        'gas_dispatch_pct,ambient_C,TIT_K,frequency_Hz,gas_power_MW,'// &
+                        'supply_MW,imbalance_MW,battery_soc_pct,gt_phase,first_out'
+                else
+                    call log_debug("QA FAIL: could not open native telemetry file")
+                end if
             end if
             call refresh_model(grid)
             call append_history(grid)
@@ -1187,6 +1200,11 @@ contains
             call update_demo_tour()
             if (visual_qa_mode) then
                 visual_qa_ticks = visual_qa_ticks + 1
+                if (gui_qa_trace_open) write(gui_qa_trace_unit,'(*(g0,:,","))') &
+                    visual_qa_ticks,grid%elapsed_s,hmi_screen,grid%demand_MW,grid%renewable_MW, &
+                    grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                    grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                    grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
                 select case(visual_qa_ticks)
                 case(12)
                     call visual_qa_capture("build\gui-visual-qa\01-original-overview.png")
@@ -1403,6 +1421,8 @@ contains
                 case(114)
                     call visual_qa_capture("build\gui-visual-qa\15-instructor-restored.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\15-instructor-restored-1536.png")
+                case(118)
+                    call run_native_acceptance(hwnd)
                 case(119)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
@@ -1497,6 +1517,10 @@ contains
 
         case (WM_DESTROY)
             call log_debug("message: WM_DESTROY")
+            if (gui_qa_trace_open) then
+                close(gui_qa_trace_unit)
+                gui_qa_trace_open=.false.
+            end if
             call save_hmi_config()
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
             call opcua_stop()
@@ -3359,6 +3383,201 @@ contains
         call set_hmi_screen(demo_screen_index)
         demo_last_switch_tick = anim_tick
     end subroutine update_demo_tour
+
+
+    ! Native in-process acceptance evidence: real GUI key/control handlers, original
+    ! Fortran simulator state, all screen renderers, and original scenario sources.
+    ! These are mathematical/simulated GUI checks, not real plant validation.
+    subroutine qa_check(unit,id,category,passed,observed,expected)
+        integer, intent(in) :: unit
+        character(len=*), intent(in) :: id,category,observed,expected
+        logical, intent(in) :: passed
+        character(len=4) :: verdict
+        verdict='FAIL'
+        if(passed) verdict='PASS'
+        write(unit,'(A)') trim(id)//','//trim(category)//','//trim(verdict)//','// &
+            trim(observed)//','//trim(expected)
+        if (.not.passed) call log_debug('QA FAIL: '//trim(id))
+    end subroutine qa_check
+
+    subroutine run_native_acceptance(hwnd)
+        type(c_ptr), value :: hwnd
+        integer :: results_unit,measure_unit,ios,i,old_int
+        character(len=72) :: checkid,shot
+        character(len=60) :: actual,expected
+        real(dp) :: before,after
+        logical :: loaded,changed,done,old_bool
+        open(newunit=results_unit,file='build\gui-visual-qa\native_qa_results.csv', &
+            status='replace',action='write',iostat=ios)
+        if(ios/=0) then
+            call log_debug('QA FAIL: native assertion CSV could not be opened')
+            return
+        end if
+        write(results_unit,'(A)') 'id,category,status,observed,expected'
+        open(newunit=measure_unit,file='build\gui-visual-qa\native_qa_measurements.csv', &
+            status='replace',action='write',iostat=ios)
+        if(ios/=0) then
+            call log_debug('QA FAIL: native measurements CSV could not be opened')
+            close(results_unit)
+            return
+        end if
+        write(measure_unit,'(A)') &
+            'test_id,screen_id,simulated_s,demand_MW,renewable_MW,storage_request_MW,'// &
+            'gas_dispatch_pct,ambient_C,TIT_K,frequency_Hz,gas_power_MW,'// &
+            'supply_MW,imbalance_MW,battery_soc_pct,gt_phase,first_out'
+
+        call engine_init(grid)
+        call reset_alarm_workflow()
+        instructor=InstructorSession()
+        do i=1,SCREEN_COUNT
+            if(i<=15) then
+                call handle_key(hwnd,int(111+i,c_intptr_t))
+            else
+                ! F16 is navigated via the native rail; direct screen render only.
+                call set_hmi_screen(SCREEN_EXERGY)
+            end if
+            write(checkid,'("navigation_",I2.2)') i
+            write(actual,'(I0)') hmi_screen
+            write(expected,'(I0)') i
+            call qa_check(results_unit,trim(checkid),'navigation', &
+                hmi_screen==i,trim(actual),trim(expected))
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+            write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1536.png")') i
+            call visual_qa_capture_virtual(trim(shot))
+        end do
+
+        ! Explicitly exercise all six keyboard-adjustable controls through
+        ! the same handle_key code path used by a human user.
+        do i=1,6
+            call engine_init(grid)
+            instructor=InstructorSession()
+            select case (i)
+            case (1)
+                grid%demand_MW=(DEMAND_MIN_MW+DEMAND_MAX_MW)/2.0_dp
+                before=grid%demand_MW
+            case (2)
+                grid%renewable_MW=RENEWABLE_MAX_MW/2.0_dp
+                before=grid%renewable_MW
+            case (3)
+                grid%storage_request_MW=0.0_dp
+                before=grid%storage_request_MW
+            case (4)
+                grid%gas_dispatch_pct=(GAS_MIN_PCT+GAS_MAX_PCT)/2.0_dp
+                before=grid%gas_dispatch_pct
+            case (5)
+                grid%ambient_C=15.0_dp
+                before=grid%ambient_C
+            case (6)
+                grid%TIT_K=1400.0_dp
+                before=grid%TIT_K
+            end select
+            focus_control_id=FOCUS_IDS(i)
+            call handle_key(hwnd,int(VK_RIGHT,c_intptr_t))
+            select case (i)
+            case (1); after=grid%demand_MW
+            case (2); after=grid%renewable_MW
+            case (3); after=grid%storage_request_MW
+            case (4); after=grid%gas_dispatch_pct
+            case (5); after=grid%ambient_C
+            case (6); after=grid%TIT_K
+            end select
+            write(checkid,'("slider_",I2.2)') i
+            write(actual,'(F14.5)') after-before
+            call qa_check(results_unit,trim(checkid),'keyboard_slider', &
+                after>before .and. after==after,trim(adjustl(actual)),'positive_delta')
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+        end do
+
+        call engine_init(grid)
+        instructor=InstructorSession()
+        old_bool=grid%auto_balance
+        call handle_command(ID_AUTO)
+        call qa_check(results_unit,'toggle_auto_balance','button', &
+            old_bool.neqv.grid%auto_balance,'toggled','toggled')
+        old_bool=grid%roi_dispatch
+        call handle_command(ID_ROI_MODE)
+        call qa_check(results_unit,'toggle_roi','button', &
+            old_bool.neqv.grid%roi_dispatch,'toggled','toggled')
+        old_bool=grid%fcr_hold
+        call handle_command(ID_FCR_HOLD)
+        call qa_check(results_unit,'toggle_fcr','button', &
+            old_bool.neqv.grid%fcr_hold,'toggled','toggled')
+        old_int=hmi_theme
+        call handle_key(hwnd,int(VK_T,c_intptr_t))
+        write(actual,'(I0)') hmi_theme
+        call qa_check(results_unit,'cycle_theme','keyboard', &
+            hmi_theme/=old_int,trim(actual),'changed')
+        old_bool=color_blind_safe
+        call handle_key(hwnd,int(VK_C,c_intptr_t))
+        call qa_check(results_unit,'toggle_colour_safe','keyboard', &
+            old_bool.neqv.color_blind_safe,'toggled','toggled')
+        old_bool=nav_rail_collapsed
+        call handle_key(hwnd,int(VK_N,c_intptr_t))
+        call qa_check(results_unit,'toggle_nav_rail','keyboard', &
+            old_bool.neqv.nav_rail_collapsed,'toggled','toggled')
+        old_bool=alarm_audio_enabled
+        call handle_key(hwnd,int(VK_B,c_intptr_t))
+        call qa_check(results_unit,'toggle_alarm_audio_flag','keyboard', &
+            old_bool.neqv.alarm_audio_enabled,'toggled','toggled')
+        old_int=alarm_volume_pct
+        call handle_key(hwnd,int(VK_V,c_intptr_t))
+        write(actual,'(I0)') alarm_volume_pct
+        call qa_check(results_unit,'cycle_alarm_gain','keyboard', &
+            alarm_volume_pct/=old_int,trim(actual),'changed')
+        call set_hmi_screen(SCREEN_SCENARIO)
+        old_int=scn_selected
+        focus_control_id=ID_SCN_NEXT
+        call activate_focused_control()
+        write(actual,'(I0)') scn_selected
+        call qa_check(results_unit,'scenario_next','keyboard_control', &
+            scn_selected/=old_int,trim(actual),'changed')
+        focus_control_id=ID_SCN_PREV
+        call activate_focused_control()
+        write(actual,'(I0)') scn_selected
+        call qa_check(results_unit,'scenario_prev','keyboard_control', &
+            scn_selected==old_int,trim(actual),'restored')
+
+        ! Each original shipped scenario is parsed; execute its first model
+        ! tick and record real internal model state without claiming a full
+        ! scenario horizon or real operating measurement.
+        do i=1,N_SCENARIOS
+            call engine_init(grid)
+            instructor=InstructorSession()
+            call reset_alarm_workflow()
+            call scenario_load(trim(adjustl(SCN_PATH(i))),scn_active,loaded)
+            write(checkid,'("scenario_load_",I2.2)') i
+            if(loaded) then
+                call scenario_gui_tick(scn_active,grid,grid%elapsed_s,done)
+                call engine_step(grid,real(TIMER_MS,dp)/1000.0_dp)
+            end if
+            call qa_check(results_unit,trim(checkid),'scenario_first_tick', &
+                loaded.and.grid%frequency_Hz>0.0_dp.and.grid%frequency_Hz<100.0_dp, &
+                merge('loaded','failed',loaded),'load_and_finite_frequency')
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+        end do
+        ! Exercise the native exporter; verify the actual generated file's
+        ! schema and size in the external acceptance collector.
+        call engine_init(grid)
+        call set_hmi_screen(SCREEN_GT)
+        call export_shift_csv(grid)
+        call qa_check(results_unit,'native_export_invoked','export', &
+            .true.,'export_called','file_verified_separately')
+        call log_debug('QA ACCEPTANCE: native matrix finished')
+        close(measure_unit)
+        close(results_unit)
+    end subroutine run_native_acceptance
 
     subroutine visual_qa_capture(path)
         character(len=*), intent(in) :: path
