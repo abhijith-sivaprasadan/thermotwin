@@ -8740,11 +8740,14 @@ contains
             fill_w=int(real(bw,dp)*vals(i)/max_val)
             call fill_box(hdc,bx,row_y+7,bx+fill_w,row_y+19,colors(i))
             call stroke_box(hdc,bx,row_y+7,bx+bw,row_y+19,COL_BORDER_SOFT,1)
-            write(label,'(F6.1," MW")') vals(i)
-            call draw_text_fit(hdc,x+width-127,row_y+1,112,trim(adjustl(label)),colors(i))
             if(row_h>=37) then
+                write(label,'(F6.1," MW")') vals(i)
+                call draw_text_fit(hdc,x+width-127,row_y+1,112,trim(adjustl(label)),colors(i))
                 write(label,'(F5.1,"%")') pct
                 call draw_text_fit(hdc,x+width-127,row_y+20,112,trim(adjustl(label)),COL_MUTED)
+            else
+                write(label,'(F5.1,"MW ",F4.1,"%")') vals(i),pct
+                call draw_text_fit(hdc,x+width-127,row_y+5,112,trim(adjustl(label)),colors(i))
             end if
         end do
     end subroutine draw_exergy_waterfall
