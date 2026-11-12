@@ -190,3 +190,27 @@ The GUI also writes a short startup trace to `gui_debug.log`.
 - Add CSV export for time-series scenarios.
 - Add operator presets for stress events such as renewable drop, demand spike
   and generator trip.
+
+
+### Native 1024px analytical viewport
+
+At 1024×768 the 14 full-size analytical screens run inside a clipped,
+two-axis **live engineering viewport**, preserving their original 950×930
+process diagrams, charts, diagnostics and tables. Use the visible PAN
+**< / > / ^ / v** buttons at the lower-right of the main canvas. The
+mouse wheel over the main viewport scrolls vertically; **Shift+wheel**
+scrolls horizontally. Changing HMI screens resets the pan. Header,
+annunciator, navigation and plant-control column stay fixed and the F7
+alarms and F15 instructor actions retain functional click coordinates.
+
+Original content is genuinely re-rendered at the new pan coordinates, never
+a zoomed image. Native Windows acceptance tests click the pan controls on
+each page and verify that right/bottom screenshots are decoded and visually
+different; it also exercises F7 audio and F15 instructor pointer targets while
+panned. The F9 Day-Ahead chart legend and economics/Pareto axis headings
+are individually adjusted not to overlap. The original 1536px dashboards
+retain their full-size layout.
+
+A passed navigation/pan/screenshot assertion is not a signed human
+readability or 125/150%-DPI qualification; see the register and automated
+PDF limitations.
