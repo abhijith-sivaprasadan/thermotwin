@@ -1,0 +1,39 @@
+name: Original 5.68 MW GT field-data electrical consistency audit
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit_real_esan_gt2017.py'
+      - 'scripts/test_audit_real_esan_gt2017.py'
+      - '.github/workflows/esan-real-gt-field-audit.yml'
+      - 'docs/ESAN_2017_REAL_TURBINE_FIELD_AUDIT.md'
+  push:
+    paths:
+      - 'scripts/audit_real_esan_gt2017.py'
+      - 'scripts/test_audit_real_esan_gt2017.py'
+      - '.github/workflows/esan-real-gt-field-audit.yml'
+      - 'docs/ESAN_2017_REAL_TURBINE_FIELD_AUDIT.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  measured-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Verify numerical contracts without claiming synthetic measurements
+        run: python -m unittest scripts.test_audit_real_esan_gt2017 -v
+      - name: Download exact original licensed XLSX; audit measured generator electrical consistency
+        run: python -m scripts.audit_real_esan_gt2017 --out build/real-esan-gt2017
+      - name: Verify published source SHA, original source data integrity and no thermodynamic accuracy claim
+        run: |
+          python -c "import json,hashlib,math; from pathlib import Path; p=Path('build/real-esan-gt2017'); d=json.loads((p/'readiness_and_electrical_consistency.json').read_text()); assert d['original_xlsx_sha256']==hashlib.sha256((p/'original_2019_raw_shift_workbook.xlsx').read_bytes()).hexdigest(); assert d['source_workbook_shifts']==317 and d['nominal_source_slots']==317*12; assert d['accepted_electrical_measurement_points']>=2500 and d['accepted_electrical_measurement_points']<=3300; assert sum(d['excluded_by_first_applicable_reason'].values())+d['accepted_electrical_measurement_points']==317*12; assert not d['gas_turbine_solver_physical_accuracy_verified'] and not d['generator_meter_independent_accuracy_verified']; assert math.isfinite(d['observed_generator_power_consistency']['later_source_sheets_untouched']['rmse_kW']) and d['observed_generator_power_consistency']['later_source_sheets_untouched']['n']>=200"
+      - name: Preserve original publisher XLSX and measured source-ordered comparison artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-2017-esan-5p68MW-generator-consistency-not-Brayton-validation
+          path: build/real-esan-gt2017/
+          if-no-files-found: error
