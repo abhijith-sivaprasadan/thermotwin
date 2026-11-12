@@ -3492,6 +3492,42 @@ contains
             ios=UpdateWindow(hwnd)
             write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024.png")') i
             call visual_qa_capture(trim(shot))
+            ! Pan reachability is tested using the real pointer-hit path, not
+            ! by merely setting viewport state; each end position is saved.
+            if(i>SCREEN_OVERVIEW.and.i<SCREEN_EXERGY) then
+                write(checkid,'("pan_geometry_",I2.2)') i
+                call qa_check(results_unit,trim(checkid),'viewport', &
+                    main_pan_max_x>0.and.main_pan_max_y>0, &
+                    '2D_scrollbars_enabled','2D_scrollbars_enabled')
+                old_int=main_pan_x
+                call handle_mouse_down(hwnd,layout_main_left+layout_main_w-96, &
+                    hmi_content_top(layout_main_top)+ &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12)-16)
+                write(checkid,'("pan_mouse_right_",I2.2)') i
+                write(actual,'(I0)') main_pan_x
+                call qa_check(results_unit,trim(checkid),'viewport_mouse', &
+                    main_pan_x>old_int.and.main_pan_x<=main_pan_max_x, &
+                    trim(actual),'0 < pan_x <= max_pan_x')
+                main_pan_x=main_pan_max_x
+                call invalidate_dashboard(hwnd)
+                ios=UpdateWindow(hwnd)
+                write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024-pan-right.png")') i
+                call visual_qa_capture(trim(shot))
+                old_int=main_pan_y
+                call handle_mouse_down(hwnd,layout_main_left+layout_main_w-24, &
+                    hmi_content_top(layout_main_top)+ &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12)-16)
+                write(checkid,'("pan_mouse_down_",I2.2)') i
+                write(actual,'(I0)') main_pan_y
+                call qa_check(results_unit,trim(checkid),'viewport_mouse', &
+                    main_pan_y>old_int.and.main_pan_y<=main_pan_max_y, &
+                    trim(actual),'0 < pan_y <= max_pan_y')
+                main_pan_y=main_pan_max_y
+                call invalidate_dashboard(hwnd)
+                ios=UpdateWindow(hwnd)
+                write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024-pan-bottom.png")') i
+                call visual_qa_capture(trim(shot))
+            end if
         end do
 
         ! Explicitly exercise all six keyboard-adjustable controls through
