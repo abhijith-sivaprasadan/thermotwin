@@ -8465,6 +8465,10 @@ contains
         integer(c_int) :: closure_col
 
         call compute_exergy(grid, ex)
+        if(width<850.or.height<680) then
+            call draw_exergy_compact(hdc,x,y,width,height,ex)
+            return
+        end if
 
         ix = x + 18
         iw = width - 36
@@ -8522,7 +8526,7 @@ contains
                 100.0_dp*exergy_an_uq%eta_II_mean, 100.0_dp*exergy_an_uq%eta_II_std, &
                 100.0_dp*exergy_an_uq%eta_II_lo95, 100.0_dp*exergy_an_uq%eta_II_hi95, &
                 100.0_dp*lim%eta_carnot, nint(100.0_dp*lim%carnot_fraction), trim(drv)
-            call draw_text(hdc, ix, kpi_y + 82, trim(anlz), COL_CYAN)
+            call draw_text_fit(hdc,ix,kpi_y+82,iw-8,trim(anlz),COL_CYAN)
             ! [7.0-P4] Sobol total-effect tornado (which input drives eta_II variance)
             block
                 integer :: bi, by0, bx0, bw0, bl
@@ -8530,12 +8534,12 @@ contains
                 character(len=12) :: nm(SOBOL_NIN)
                 nm = [character(len=12) :: "ambient T", "TIT", "exhaust T", "fuel flow", "press ratio"]
                 stmax = max(maxval(exergy_an_sob%ST), 0.01_dp)
-                bx0 = ix + 120
-                bw0 = max(120, min(360, iw - 150))
-                call draw_text(hdc, ix, kpi_y + 106, "Sobol sensitivity (total-effect ST)", COL_MUTED)
+                bx0 = ix + 132
+                bw0 = max(120,min(360,iw-165))
+                call draw_text_fit(hdc,ix,kpi_y+107,iw-8,'Sobol sensitivity (total-effect ST)',COL_MUTED)
                 do bi = 1, SOBOL_NIN
-                    by0 = kpi_y + 126 + (bi - 1) * 14
-                    call draw_text(hdc, ix, by0 - 2, trim(nm(bi)), COL_MUTED)
+                    by0 = kpi_y + 130 + (bi - 1) * 20
+                    call draw_text_fit(hdc,ix,by0-2,122,trim(nm(bi)),COL_MUTED)
                     bl = nint(max(0.0_dp, exergy_an_sob%ST(bi)) / stmax * real(bw0, dp))
                     call fill_box(hdc, bx0, by0, bx0 + max(2, bl), by0 + 9, &
                         merge(COL_CYAN, COL_DIM, bi == exergy_an_sob%dominant))
@@ -8543,8 +8547,10 @@ contains
             end block
         end block
 
-        panel_y = kpi_y + 222
-        panel_h = max(330, int(0.56_dp * real(height - 170, dp)))
+        panel_y=kpi_y+236
+        ! Reserve the bottom interpretation band before sizing both plots.
+        ! The old minimum 330 px forced the bottom band under the viewport.
+        panel_h=min(330,max(180,y+height-panel_y-165))
         left_w = max(600, int(0.60_dp * real(iw, dp)))
         right_x = ix + left_w + 18
         right_w = iw - left_w - 18
@@ -8560,11 +8566,62 @@ contains
         call draw_section_title_width(hdc, right_x, panel_y - 24, "Exergy destruction waterfall", right_w)
         call draw_exergy_waterfall(hdc, right_x, panel_y, right_w, panel_h, ex)
 
-        bottom_y = panel_y + panel_h + 34
-        bottom_h = max(120, y + height - bottom_y - 8)
+        bottom_y=panel_y+panel_h+28
+        bottom_h=max(70,y+height-bottom_y-8)
         call draw_section_title_width(hdc, ix, bottom_y - 24, "Physical interpretation and V&V closure", iw)
         call draw_exergy_interpretation(hdc, ix, bottom_y, iw, bottom_h, ex)
     end subroutine draw_exergy_screen
+
+    ! At 1024x768, keep every energy balance output visible in a concise
+    ! vertical dashboard instead of allowing wide diagrams to run offscreen.
+    subroutine draw_exergy_compact(hdc,x,y,width,height,ex)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,width,height
+        type(ExergyResult), intent(in) :: ex
+        integer :: ix,iw,top_y,card_y,card_w,card_h,gap,cx,cy,i
+        integer :: chart_y,chart_h
+        character(len=32) :: val
+        integer(c_int) :: close_color
+        ix=x+PAD_PANEL_X
+        iw=width-2*PAD_PANEL_X
+        top_y=y+8
+        close_color=merge(COL_GREEN,COL_RED,abs(ex%closure)<=0.02_dp)
+        call draw_screen_caption(hdc,ix,top_y,iw,'Exergy | L3','Live second-law model')
+        card_y=top_y+68
+        card_h=69
+        gap=8
+        card_w=(iw-2*gap)/3
+        do i=1,6
+            cx=ix+mod(i-1,3)*(card_w+gap)
+            cy=card_y+(i-1)/3*(card_h+8)
+            select case(i)
+            case(1)
+                write(val,'(F6.1," MW")') ex%ex_fuel/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'FUEL EXERGY',trim(adjustl(val)),COL_AMBER)
+            case(2)
+                write(val,'(F6.1," MW")') ex%w_net/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'WORK',trim(adjustl(val)),COL_GREEN)
+            case(3)
+                write(val,'(F5.1,"%")') 100.0_dp*ex%eta_II
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'ETA II',trim(adjustl(val)),COL_GREEN)
+            case(4)
+                write(val,'(F6.1," MW")') ex%dest_total/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'DESTROYED',trim(adjustl(val)),COL_RED)
+            case(5)
+                write(val,'(F6.1," MW")') (ex%ex_stack+ex%ex_cond)/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'EXTERNAL',trim(adjustl(val)),COL_BLUE)
+            case(6)
+                write(val,'(SP,F5.2,"%")') 100.0_dp*ex%closure
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'RESIDUAL',trim(adjustl(val)),close_color)
+            end select
+        end do
+        chart_y=card_y+2*(card_h+8)+13
+        chart_h=max(185,y+height-chart_y-32)
+        call draw_section_title_width(hdc,ix,chart_y-24,'Component losses | MW and % of fuel',iw)
+        call draw_exergy_waterfall(hdc,ix,chart_y,iw,chart_h,ex)
+        call draw_text_fit(hdc,ix+8,y+height-21,iw-16, &
+            'All values: modelled. Export CSV for full uncertainty/Sobol analysis.',COL_MUTED)
+    end subroutine draw_exergy_compact
 
     subroutine draw_exergy_grassmann(hdc, x, y, width, height, ex)
         type(c_ptr), value :: hdc
@@ -8591,32 +8648,33 @@ contains
 
         call draw_exergy_flow(hdc, cx1, cy, node_x, cy, line_w, COL_AMBER)
         call draw_exergy_node(hdc, node_x, cy, "PLANT", COL_CYAN)
-        write(label, '(F7.1," MW  fuel chemical exergy")') fuel_MW
-        call draw_text(hdc, cx1, cy - 42, trim(adjustl(label)), COL_AMBER)
+        write(label, '(F6.1," MW fuel")') fuel_MW
+        call draw_text_fit(hdc,cx1,cy-46,width/3,trim(adjustl(label)),COL_AMBER)
 
         call draw_exergy_flow(hdc, node_x + 50, cy, cx2 - 24, cy, &
             max(4, min(22, nint(22.0_dp * work_MW / max_MW))), COL_GREEN)
-        write(label, '(F7.1," MW useful shaft/electric work")') work_MW
-        call draw_text(hdc, branch_x, cy - 42, trim(adjustl(label)), COL_GREEN)
+        write(label, '(F6.1," MW useful work")') work_MW
+        call draw_text_fit(hdc,x+width-208,cy-46,194,trim(adjustl(label)),COL_GREEN)
 
         call draw_exergy_flow(hdc, node_x + 18, cy + 18, branch_x, y + height - 58, &
             max(3, min(18, nint(20.0_dp * dest_MW / max_MW))), COL_RED)
-        write(label, '(F7.1," MW destroyed by irreversibility")') dest_MW
-        call draw_text(hdc, branch_x - 12, y + height - 42, trim(adjustl(label)), COL_RED)
+        write(label, '(F6.1," MW destroyed")') dest_MW
+        call draw_text_fit(hdc,x+width-208,y+height-42,194,trim(adjustl(label)),COL_RED)
 
         call draw_exergy_flow(hdc, node_x + 18, cy - 18, branch_x, y + 58, &
             max(3, min(16, nint(18.0_dp * stack_MW / max_MW))), COL_BLUE)
-        write(label, '(F7.1," MW stack/exhaust availability")') stack_MW
-        call draw_text(hdc, branch_x - 12, y + 42, trim(adjustl(label)), COL_BLUE)
+        write(label, '(F6.1," MW stack/exhaust")') stack_MW
+        call draw_text_fit(hdc,x+width-208,y+42,194,trim(adjustl(label)),COL_BLUE)
 
         if (cond_MW > 0.05_dp) then
             call draw_exergy_flow(hdc, node_x + 10, cy + 4, cx2 - 90, y + height - 96, &
                 max(2, min(12, nint(15.0_dp * cond_MW / max_MW))), COL_CYAN)
             write(label, '(F6.1," MW condenser loss")') cond_MW
-            call draw_text(hdc, cx2 - 190, y + height - 118, trim(adjustl(label)), COL_CYAN)
+            call draw_text_fit(hdc,x+width-208,y+height-108,194,trim(adjustl(label)),COL_CYAN)
         end if
 
-        call draw_text(hdc, x + 16, y + 14, "Ex_fuel = W_net + D_components + Ex_stack + Ex_condenser + residual", COL_MUTED)
+        call draw_text_fit(hdc,x+16,y+14,width-28, &
+            'Ex_fuel = W_net + D_components + Ex_stack + Ex_condenser + residual',COL_MUTED)
         write(label, '("closure residual ",SP,F6.2,"%")') 100.0_dp * ex%closure
         call draw_mono(hdc, x + 16, y + height - 26, trim(adjustl(label)), &
             merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp))
@@ -8661,20 +8719,24 @@ contains
         vals = [ex%dest_comp, ex%dest_comb, ex%dest_turb, ex%dest_hrsg, ex%ex_stack, ex%ex_cond] / 1000.0_dp
         colors = [COL_CYAN, COL_RED, COL_AMBER, COL_BLUE, COL_MUTED, COL_LIME]
         max_val = max(1.0_dp, maxval(vals))
-        row_h = max(31, (height - 42) / 6)
-        bx = x + max(116, width / 3)
-        bw = max(70, width - (bx - x) - 78)
+        row_h=max(28,(height-18)/6)
+        bx=x+max(114,width/4)
+        bw=max(60,width-(bx-x)-148)
 
-        do i = 1, 6
-            row_y = y + 28 + (i - 1) * row_h
-            pct = 100.0_dp * vals(i) / max(ex%ex_fuel / 1000.0_dp, 1.0_dp)
-            call draw_text(hdc, x + 14, row_y + 7, trim(names(i)), COL_INK)
-            call fill_box(hdc, bx, row_y + 8, bx + bw, row_y + 24, COL_PANEL_ALT)
-            fill_w = int(real(bw, dp) * vals(i) / max_val)
-            call fill_box(hdc, bx, row_y + 8, bx + fill_w, row_y + 24, colors(i))
-            call stroke_box(hdc, bx, row_y + 8, bx + bw, row_y + 24, COL_BORDER_SOFT, 1)
-            write(label, '(F6.1," MW  ",F5.1,"%")') vals(i), pct
-            call draw_mono(hdc, bx + bw + 10, row_y + 5, trim(adjustl(label)), colors(i))
+        do i=1,6
+            row_y=y+10+(i-1)*row_h
+            pct=100.0_dp*vals(i)/max(ex%ex_fuel/1000.0_dp,1.0_dp)
+            call draw_text_fit(hdc,x+12,row_y+3,bx-x-20,trim(names(i)),COL_INK)
+            call fill_box(hdc,bx,row_y+7,bx+bw,row_y+19,COL_PANEL_ALT)
+            fill_w=int(real(bw,dp)*vals(i)/max_val)
+            call fill_box(hdc,bx,row_y+7,bx+fill_w,row_y+19,colors(i))
+            call stroke_box(hdc,bx,row_y+7,bx+bw,row_y+19,COL_BORDER_SOFT,1)
+            write(label,'(F6.1," MW")') vals(i)
+            call draw_text_fit(hdc,x+width-127,row_y+1,112,trim(adjustl(label)),colors(i))
+            if(row_h>=37) then
+                write(label,'(F5.1,"% of fuel")') pct
+                call draw_text_fit(hdc,x+width-127,row_y+20,112,trim(adjustl(label)),COL_MUTED)
+            end if
         end do
     end subroutine draw_exergy_waterfall
 
@@ -8692,17 +8754,17 @@ contains
         row_y = y + 18
         closure_col = merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp)
 
-        line = "Dominant irreversibility: "//trim(exergy_dominant_component(ex))// &
-               " - chemical reaction and finite-temperature heat transfer consume useful work potential."
-        call draw_text(hdc, x + 16, row_y, trim(line), COL_INK)
+        line='Dominant loss: '//trim(exergy_dominant_component(ex))// &
+            ' | finite-temperature / reaction effects'
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_INK)
         row_y = row_y + 24
         write(line, '("Rational efficiency eta_II = useful net work / fuel chemical exergy = ",F5.1,"%")') &
             100.0_dp * ex%eta_II
-        call draw_text(hdc, x + 16, row_y, trim(line), COL_MUTED)
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_MUTED)
         row_y = row_y + 24
         write(line, '("Balance check residual = ",SP,F6.2,"%  (target < +/-2.0% for P1 live estimate)")') &
             100.0_dp * ex%closure
-        call draw_text(hdc, x + 16, row_y, trim(line), closure_col)
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),closure_col)
 
         row_y = y + 18
         call draw_value_pair(hdc, rx, row_y, "Air mass flow", trim(real_unit(ex%m_air, "kg/s")), COL_MUTED)
@@ -12550,7 +12612,7 @@ contains
             if(i<4) call draw_line(hdc,cx+node_w,node_y+30,cx+node_w+9,node_y+30,COL_CYAN,2)
         end do
         write(textval,'("RES ",F5.1," MW | BESS ",SP,F5.1," MW")') &
-            effective_renewable_MW(grid),grid%storage_actual_MW
+            effective_renewable_MW(grid),grid%storage_MW
         call draw_text_fit(hdc,ix+12,node_y+78,iw-24,trim(adjustl(textval)),COL_MUTED)
         write(textval,'("NET imbalance ",SP,F6.2," MW")') grid%imbalance_MW
         call draw_text_fit(hdc,ix+12,node_y+101,iw-24,trim(adjustl(textval)), &
