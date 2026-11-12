@@ -295,6 +295,16 @@ def collect(source: Path, target: Path, args):
              f"{len(loglines)} native log lines; QA FAIL occurrences="
              f"{sum('QA FAIL:' in s for s in loglines)}; completed marker={debug_ok}")
 
+    for required_log in ("gui-acceptance-build.log", "gui-acceptance-runner.log",
+                         "gui-acceptance-operations-pdf.log"):
+        logfile = Path(args.repo) / "build" / required_log
+        present = logfile.is_file() and logfile.stat().st_size > 20
+        add_test(results, "log_" + required_log.replace(".log", "").replace("-", "_"),
+                 "logs", "PASS" if present else "FAIL",
+                 f"Full run log {required_log}; bytes="
+                 f"{logfile.stat().st_size if logfile.is_file() else 0}",
+                 f"evidence/{required_log}")
+
     telemetry_rows = []
     field_stats = {}
     try:
