@@ -45,8 +45,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install report/PDF image dependencies
-        run: python -m pip install "reportlab>=4.2,<5" "pillow>=10,<13"
+      - name: Install report/PDF and original operations generator dependencies
+        run: python -m pip install "reportlab>=4.2,<5" "pillow>=10,<13" "pypdf>=5,<7" "numpy>=2.0,<3" "matplotlib>=3.9,<4"
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -90,6 +90,21 @@ jobs:
           "exit_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit $code
 
+      - name: Generate original HMI operations PDF from its real exported shift CSV
+        id: operations_pdf
+        if: steps.native.outputs.exit_code == '0'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $inputCsv = Get-ChildItem -File -Filter 'shift_data_t*.csv' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($null -eq $inputCsv) { Write-Error 'No native shift export exists'; exit 1 }
+          python generate_report.py $inputCsv.Name 2>&1 | Tee-Object -FilePath build/gui-acceptance-operations-pdf.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $outputPdf = [System.IO.Path]::ChangeExtension($inputCsv.FullName, '.pdf')
+          if (!(Test-Path $outputPdf) -or (Get-Item $outputPdf).Length -lt 3000) {
+            Write-Error 'Original HMI operations PDF missing or empty'; exit 1
+          }
+
       - name: Generate PDF, CSV ledger, hashes and full evidence ZIP even after failure
         if: always()
         id: report
@@ -104,7 +119,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/gui-acceptance | Out-Null
-          foreach ($p in @('build/gui-acceptance-build.log','build/gui-acceptance-runner.log')) {
+          foreach ($p in @('build/gui-acceptance-build.log','build/gui-acceptance-runner.log','build/gui-acceptance-operations-pdf.log')) {
             if (Test-Path $p) {
               Copy-Item $p -Destination build/gui-acceptance/ -Force
             }
