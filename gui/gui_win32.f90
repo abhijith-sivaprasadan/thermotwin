@@ -928,6 +928,8 @@ module thermotwin_win32_gui
     ! CI-only native screenshot capture, completely inactive in normal operation.
     logical :: visual_qa_mode = .false.
     integer :: visual_qa_ticks = 0
+    logical :: gui_qa_trace_open = .false.
+    integer :: gui_qa_trace_unit = 0
     real(dp) :: visual_qa_frozen_time_s=-1.0_dp
     real(dp) :: visual_qa_frozen_load_MW=-1.0_dp
     type(c_ptr) :: back_memdc = c_null_ptr
@@ -960,6 +962,10 @@ module thermotwin_win32_gui
     integer :: mouse_hover_x = -1
     integer :: mouse_hover_y = -1
     logical :: mouse_hover_valid = .false.
+    ! An actual, clipped 2-D viewport for dense analytical screens. Native
+    ! chart coordinates and physics remain unchanged; only the view pans.
+    integer :: main_pan_x=0,main_pan_y=0,main_pan_max_x=0,main_pan_max_y=0
+    integer :: main_pan_virtual_w=0,main_pan_virtual_h=0
     character(len=160) :: operator_notice = ""
     integer :: notice_ticks = 0
 
@@ -1130,6 +1136,17 @@ contains
                 boot_ticks = 0
                 call set_hmi_screen(SCREEN_OVERVIEW)
                 call log_debug("visual QA original GUI screenshots enabled")
+                open(newunit=gui_qa_trace_unit, file="build\gui-visual-qa\gui_telemetry.csv", &
+                    status="replace", action="write", iostat=qa_status)
+                gui_qa_trace_open = qa_status==0
+                if (gui_qa_trace_open) then
+                    write(gui_qa_trace_unit,'(A)') &
+                        'tick,elapsed_s,screen_id,demand_MW,renewable_MW,storage_request_MW,'// &
+                        'gas_dispatch_pct,ambient_C,TIT_K,frequency_Hz,gas_power_MW,'// &
+                        'supply_MW,imbalance_MW,battery_soc_pct,gt_phase,first_out'
+                else
+                    call log_debug("QA FAIL: could not open native telemetry file")
+                end if
             end if
             call refresh_model(grid)
             call append_history(grid)
@@ -1187,6 +1204,11 @@ contains
             call update_demo_tour()
             if (visual_qa_mode) then
                 visual_qa_ticks = visual_qa_ticks + 1
+                if (gui_qa_trace_open) write(gui_qa_trace_unit,'(*(g0,:,","))') &
+                    visual_qa_ticks,grid%elapsed_s,hmi_screen,grid%demand_MW,grid%renewable_MW, &
+                    grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                    grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                    grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
                 select case(visual_qa_ticks)
                 case(12)
                     call visual_qa_capture("build\gui-visual-qa\01-original-overview.png")
@@ -1309,8 +1331,11 @@ contains
                 case(91)
                     block
                         integer :: ix,iw,top
-                        ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        call update_main_pan_geometry(layout_main_w, &
+                            max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
+                        main_pan_x=main_pan_max_x
+                        ix=layout_main_left+18-main_pan_x
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         call handle_mouse_down(hwnd,ix+iw-90,top+26)
                         if(.not.instructor_view) then
@@ -1325,6 +1350,7 @@ contains
                 case(94)
                     block
                         integer :: ix,top
+                        main_pan_x=0
                         ix=layout_main_left+18
                         top=hmi_content_top(layout_main_top)+8
                         call handle_mouse_down(hwnd,ix+30,top+126)
@@ -1354,7 +1380,7 @@ contains
                     block
                         integer :: ix,iw,top,bw3
                         ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         bw3=(iw-16)/3
                         call handle_mouse_down(hwnd,ix+bw3+20,top+126)
@@ -1388,8 +1414,9 @@ contains
                 case(112)
                     block
                         integer :: ix,iw,top,bw3
-                        ix=layout_main_left+18
-                        iw=layout_main_w-36
+                        main_pan_x=main_pan_max_x
+                        ix=layout_main_left+18-main_pan_x
+                        iw=main_pan_virtual_w-36
                         top=hmi_content_top(layout_main_top)+8
                         bw3=(iw-16)/3
                         call handle_mouse_down(hwnd,ix+2*bw3+25,top+126)
@@ -1403,6 +1430,8 @@ contains
                 case(114)
                     call visual_qa_capture("build\gui-visual-qa\15-instructor-restored.png")
                     call visual_qa_capture_virtual("build\gui-visual-qa\15-instructor-restored-1536.png")
+                case(118)
+                    call run_native_acceptance(hwnd)
                 case(119)
                     ok=DestroyWindow(hwnd)
                     lres=0_c_intptr_t
@@ -1431,6 +1460,22 @@ contains
                     call invalidate_dashboard(hwnd)
                     lres=0_c_intptr_t
                     return
+                end if
+            end if
+            if(mouse_hover_valid.and.mouse_hover_x>=layout_main_left.and. &
+                mouse_hover_x<=layout_main_left+layout_main_w.and. &
+                mouse_hover_y>=hmi_content_top(layout_main_top)) then
+                call update_main_pan_geometry(layout_main_w, &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
+                if(main_pan_max_x>0.or.main_pan_max_y>0) then
+                    wheel_delta=int(ibits(wParam,16,16),c_int)
+                    if(wheel_delta>=32768_c_int) wheel_delta=wheel_delta-65536_c_int
+                    if(wheel_delta/=0_c_int) then
+                        call main_pan_wheel(btest(wParam,2),wheel_delta>0_c_int)
+                        call invalidate_dashboard(hwnd)
+                        lres=0_c_intptr_t
+                        return
+                    end if
                 end if
             end if
             lres=DefWindowProcA(hwnd,msg,wParam,lParam)
@@ -1497,6 +1542,10 @@ contains
 
         case (WM_DESTROY)
             call log_debug("message: WM_DESTROY")
+            if (gui_qa_trace_open) then
+                close(gui_qa_trace_unit)
+                gui_qa_trace_open=.false.
+            end if
             call save_hmi_config()
             ok = KillTimer(hwnd, int(TIMER_ID, c_intptr_t))
             call opcua_stop()
@@ -1579,14 +1628,16 @@ contains
         layout_nav_left = layout_control_left + layout_control_w + layout_gap
         layout_nav_top = layout_control_top
         layout_nav_bottom = layout_control_bottom
-        if (nav_rail_collapsed) then
-            layout_nav_w = 58
+        ! Fit all three structural columns within the actual client bounds.
+        ! The old min-620 main canvas overran the right edge at 1024px.
+        if (nav_rail_collapsed.or.layout_canvas_w<1200) then
+            layout_nav_w=58
         else
-            layout_nav_w = min(220, max(178, layout_canvas_w / 9))
+            layout_nav_w=min(220,max(178,layout_canvas_w/9))
         end if
-        layout_main_left = layout_nav_left + layout_nav_w + max(10, layout_gap / 2)
-        layout_main_top = layout_margin
-        layout_main_w = max(620, layout_canvas_w - layout_margin - layout_main_left)
+        layout_main_left=layout_nav_left+layout_nav_w+max(10,layout_gap/2)
+        layout_main_top=layout_margin
+        layout_main_w=max(1,layout_canvas_w-layout_margin-layout_main_left)
         layout_main_h = layout_canvas_h - 2 * layout_margin
     end subroutine compute_layout
 
@@ -1680,6 +1731,8 @@ contains
         logical :: handled
 
         call compute_layout_from_window(hwnd)
+        call update_main_pan_geometry(layout_main_w, &
+            max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
         mouse_hover_x = x
         mouse_hover_y = y
         mouse_hover_valid = .true.
@@ -1701,6 +1754,11 @@ contains
                 return
             end if
         end block
+
+        if(main_pan_click(x,y)) then
+            active_control=ID_NONE
+            return
+        end if
 
         if (command_palette_active) then
             nav_target = hit_test_command_palette(x, y)
@@ -1795,11 +1853,15 @@ contains
             return
         end if
         ! F15 includes read-only measured replay, instructor and A/B scenario tabs.
-        if (hmi_screen==SCREEN_SCENARIO) then
+        if (hmi_screen==SCREEN_SCENARIO.and.main_pan_max_x==0) then
             if (handle_instructor_mouse(x,y)) then
                 active_control=ID_NONE
                 return
             end if
+        end if
+        if(main_pan_content_click(x,y)) then
+            active_control=ID_NONE
+            return
         end if
         handled = handle_alarm_mouse(x, y)
         if (handled) then
@@ -2466,6 +2528,10 @@ contains
         integer :: new_screen
 
         new_screen = min(max(screen_id, SCREEN_OVERVIEW), SCREEN_COUNT)
+        if(new_screen/=hmi_screen) then
+            main_pan_x=0
+            main_pan_y=0
+        end if
         hmi_screen = new_screen
         faceplate_id = FP_NONE
     end subroutine set_hmi_screen
@@ -3360,6 +3426,274 @@ contains
         demo_last_switch_tick = anim_tick
     end subroutine update_demo_tour
 
+
+    ! Native in-process acceptance evidence: real GUI key/control handlers, original
+    ! Fortran simulator state, all screen renderers, and original scenario sources.
+    ! These are mathematical/simulated GUI checks, not real plant validation.
+    subroutine qa_check(unit,id,category,passed,observed,expected)
+        integer, intent(in) :: unit
+        character(len=*), intent(in) :: id,category,observed,expected
+        logical, intent(in) :: passed
+        character(len=4) :: verdict
+        verdict='FAIL'
+        if(passed) verdict='PASS'
+        write(unit,'(A)') trim(id)//','//trim(category)//','//trim(verdict)//','// &
+            trim(observed)//','//trim(expected)
+        if (.not.passed) call log_debug('QA FAIL: '//trim(id))
+    end subroutine qa_check
+
+    subroutine run_native_acceptance(hwnd)
+        type(c_ptr), value :: hwnd
+        integer :: results_unit,measure_unit,ios,i,old_int
+        character(len=72) :: checkid,shot
+        character(len=60) :: actual,expected
+        real(dp) :: before,after
+        logical :: loaded,changed,done,old_bool
+        open(newunit=results_unit,file='build\gui-visual-qa\native_qa_results.csv', &
+            status='replace',action='write',iostat=ios)
+        if(ios/=0) then
+            call log_debug('QA FAIL: native assertion CSV could not be opened')
+            return
+        end if
+        write(results_unit,'(A)') 'id,category,status,observed,expected'
+        open(newunit=measure_unit,file='build\gui-visual-qa\native_qa_measurements.csv', &
+            status='replace',action='write',iostat=ios)
+        if(ios/=0) then
+            call log_debug('QA FAIL: native measurements CSV could not be opened')
+            close(results_unit)
+            return
+        end if
+        write(measure_unit,'(A)') &
+            'test_id,screen_id,simulated_s,demand_MW,renewable_MW,storage_request_MW,'// &
+            'gas_dispatch_pct,ambient_C,TIT_K,frequency_Hz,gas_power_MW,'// &
+            'supply_MW,imbalance_MW,battery_soc_pct,gt_phase,first_out'
+
+        call engine_init(grid)
+        call reset_alarm_workflow()
+        instructor=InstructorSession()
+        do i=1,SCREEN_COUNT
+            if(i<=15) then
+                call handle_key(hwnd,int(111+i,c_intptr_t))
+            else
+                ! F16 is navigated via the native rail; direct screen render only.
+                call set_hmi_screen(SCREEN_EXERGY)
+            end if
+            write(checkid,'("navigation_",I2.2)') i
+            write(actual,'(I0)') hmi_screen
+            write(expected,'(I0)') i
+            call qa_check(results_unit,trim(checkid),'navigation', &
+                hmi_screen==i,trim(actual),trim(expected))
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+            write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1536.png")') i
+            call visual_qa_capture_virtual(trim(shot))
+            ! Independently capture each screen from the real 1024px window.
+            ! Offscreen 1536 rendering alone cannot qualify narrow layouts.
+            call compute_layout_from_window(hwnd)
+            call invalidate_dashboard(hwnd)
+            ios=UpdateWindow(hwnd)
+            write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024.png")') i
+            call visual_qa_capture(trim(shot))
+            ! Pan reachability is tested using the real pointer-hit path, not
+            ! by merely setting viewport state; each end position is saved.
+            if(i>SCREEN_OVERVIEW.and.i<SCREEN_EXERGY) then
+                write(checkid,'("pan_geometry_",I2.2)') i
+                call qa_check(results_unit,trim(checkid),'viewport', &
+                    main_pan_max_x>0.and.main_pan_max_y>0, &
+                    '2D_scrollbars_enabled','2D_scrollbars_enabled')
+                old_int=main_pan_x
+                call handle_mouse_down(hwnd,layout_main_left+layout_main_w-96, &
+                    hmi_content_top(layout_main_top)+ &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12)-16)
+                write(checkid,'("pan_mouse_right_",I2.2)') i
+                write(actual,'(I0)') main_pan_x
+                call qa_check(results_unit,trim(checkid),'viewport_mouse', &
+                    main_pan_x>old_int.and.main_pan_x<=main_pan_max_x, &
+                    trim(actual),'0 < pan_x <= max_pan_x')
+                main_pan_x=main_pan_max_x
+                call invalidate_dashboard(hwnd)
+                ios=UpdateWindow(hwnd)
+                write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024-pan-right.png")') i
+                call visual_qa_capture(trim(shot))
+                old_int=main_pan_y
+                call handle_mouse_down(hwnd,layout_main_left+layout_main_w-24, &
+                    hmi_content_top(layout_main_top)+ &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12)-16)
+                write(checkid,'("pan_mouse_down_",I2.2)') i
+                write(actual,'(I0)') main_pan_y
+                call qa_check(results_unit,trim(checkid),'viewport_mouse', &
+                    main_pan_y>old_int.and.main_pan_y<=main_pan_max_y, &
+                    trim(actual),'0 < pan_y <= max_pan_y')
+                main_pan_y=main_pan_max_y
+                call invalidate_dashboard(hwnd)
+                ios=UpdateWindow(hwnd)
+                write(shot,'("build\gui-visual-qa\screen-",I2.2,"-1024-pan-bottom.png")') i
+                call visual_qa_capture(trim(shot))
+                ! Verify real on-screen control hit targets after panning,
+                ! not just screenshot existence and in-memory pan offsets.
+                main_pan_y=0
+                if(i==SCREEN_ALARMS) then
+                    old_bool=alarm_audio_enabled
+                    call handle_mouse_down(hwnd, &
+                        layout_main_left-main_pan_x+18+570, &
+                        hmi_content_top(layout_main_top)+8+76+16)
+                    call qa_check(results_unit,'panned_alarm_audio_click','viewport_mouse', &
+                        old_bool.neqv.alarm_audio_enabled, &
+                        'audio_toggle_changed','audio_toggle_changed')
+                    if(old_bool.neqv.alarm_audio_enabled) call toggle_alarm_audio()
+                end if
+                if(i==SCREEN_SCENARIO) then
+                    instructor_view=.false.
+                    measured_view=.false.
+                    call handle_mouse_down(hwnd, &
+                        layout_main_left-main_pan_x+18+main_pan_virtual_w-36-90, &
+                        hmi_content_top(layout_main_top)+8+22)
+                    call qa_check(results_unit,'panned_instructor_tab_click','viewport_mouse', &
+                        instructor_view.and..not.measured_view, &
+                        'instructor_view_enabled','instructor_view_enabled')
+                    instructor_view=.false.
+                    measured_view=.false.
+                end if
+            end if
+        end do
+
+        ! Explicitly exercise all six keyboard-adjustable controls through
+        ! the same handle_key code path used by a human user.
+        do i=1,6
+            call engine_init(grid)
+            instructor=InstructorSession()
+            select case (i)
+            case (1)
+                grid%demand_MW=(DEMAND_MIN_MW+DEMAND_MAX_MW)/2.0_dp
+                before=grid%demand_MW
+            case (2)
+                grid%renewable_MW=RENEWABLE_MAX_MW/2.0_dp
+                before=grid%renewable_MW
+            case (3)
+                grid%storage_request_MW=0.0_dp
+                before=grid%storage_request_MW
+            case (4)
+                grid%gas_dispatch_pct=(GAS_MIN_PCT+GAS_MAX_PCT)/2.0_dp
+                before=grid%gas_dispatch_pct
+            case (5)
+                grid%ambient_C=15.0_dp
+                before=grid%ambient_C
+            case (6)
+                grid%TIT_K=1400.0_dp
+                before=grid%TIT_K
+            end select
+            focus_control_id=FOCUS_IDS(i)
+            call handle_key(hwnd,int(VK_RIGHT,c_intptr_t))
+            select case (i)
+            case (1); after=grid%demand_MW
+            case (2); after=grid%renewable_MW
+            case (3); after=grid%storage_request_MW
+            case (4); after=grid%gas_dispatch_pct
+            case (5); after=grid%ambient_C
+            case (6); after=grid%TIT_K
+            end select
+            write(checkid,'("slider_",I2.2)') i
+            write(actual,'(F14.5)') after-before
+            call qa_check(results_unit,trim(checkid),'keyboard_slider', &
+                after>before .and. after==after,trim(adjustl(actual)),'positive_delta')
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+        end do
+
+        call engine_init(grid)
+        instructor=InstructorSession()
+        old_bool=grid%auto_balance
+        call handle_command(ID_AUTO)
+        call qa_check(results_unit,'toggle_auto_balance','button', &
+            old_bool.neqv.grid%auto_balance,'toggled','toggled')
+        old_bool=grid%roi_dispatch
+        call handle_command(ID_ROI_MODE)
+        call qa_check(results_unit,'toggle_roi','button', &
+            old_bool.neqv.grid%roi_dispatch,'toggled','toggled')
+        old_bool=grid%fcr_hold
+        call handle_command(ID_FCR_HOLD)
+        call qa_check(results_unit,'toggle_fcr','button', &
+            old_bool.neqv.grid%fcr_hold,'toggled','toggled')
+        old_int=hmi_theme
+        call handle_key(hwnd,int(VK_T,c_intptr_t))
+        write(actual,'(I0)') hmi_theme
+        call qa_check(results_unit,'cycle_theme','keyboard', &
+            hmi_theme/=old_int,trim(actual),'changed')
+        old_bool=color_blind_safe
+        call handle_key(hwnd,int(VK_C,c_intptr_t))
+        call qa_check(results_unit,'toggle_colour_safe','keyboard', &
+            old_bool.neqv.color_blind_safe,'toggled','toggled')
+        old_bool=nav_rail_collapsed
+        call handle_key(hwnd,int(VK_N,c_intptr_t))
+        call qa_check(results_unit,'toggle_nav_rail','keyboard', &
+            old_bool.neqv.nav_rail_collapsed,'toggled','toggled')
+        old_bool=alarm_audio_enabled
+        call handle_key(hwnd,int(VK_B,c_intptr_t))
+        call qa_check(results_unit,'toggle_alarm_audio_flag','keyboard', &
+            old_bool.neqv.alarm_audio_enabled,'toggled','toggled')
+        old_int=alarm_volume_pct
+        call handle_key(hwnd,int(VK_V,c_intptr_t))
+        write(actual,'(I0)') alarm_volume_pct
+        call qa_check(results_unit,'cycle_alarm_gain','keyboard', &
+            alarm_volume_pct/=old_int,trim(actual),'changed')
+        call set_hmi_screen(SCREEN_SCENARIO)
+        old_int=scn_selected
+        focus_control_id=ID_SCN_NEXT
+        call activate_focused_control()
+        write(actual,'(I0)') scn_selected
+        call qa_check(results_unit,'scenario_next','keyboard_control', &
+            scn_selected/=old_int,trim(actual),'changed')
+        focus_control_id=ID_SCN_PREV
+        call activate_focused_control()
+        write(actual,'(I0)') scn_selected
+        call qa_check(results_unit,'scenario_prev','keyboard_control', &
+            scn_selected==old_int,trim(actual),'restored')
+
+        ! Each original shipped scenario is parsed; execute its first model
+        ! tick and record real internal model state without claiming a full
+        ! scenario horizon or real operating measurement.
+        do i=1,N_SCENARIOS
+            call engine_init(grid)
+            instructor=InstructorSession()
+            call reset_alarm_workflow()
+            call scenario_load(trim(adjustl(SCN_PATH(i))),scn_active,loaded)
+            write(checkid,'("scenario_load_",I2.2)') i
+            if(loaded) then
+                call scenario_gui_tick(scn_active,grid,grid%elapsed_s,done)
+                call engine_step(grid,real(TIMER_MS,dp)/1000.0_dp)
+            end if
+            call qa_check(results_unit,trim(checkid),'scenario_first_tick', &
+                loaded.and.grid%frequency_Hz>0.0_dp.and.grid%frequency_Hz<100.0_dp, &
+                merge('loaded','failed',loaded),'load_and_finite_frequency')
+            write(measure_unit,'(A,",",*(g0,:,","))') &
+                trim(checkid),hmi_screen,grid%elapsed_s,grid%demand_MW,grid%renewable_MW, &
+                grid%storage_request_MW,grid%gas_dispatch_pct,grid%ambient_C,grid%TIT_K, &
+                grid%frequency_Hz,grid%gas_power_MW,grid%supply_MW,grid%imbalance_MW, &
+                grid%battery_soc_pct,grid%gt_phase,grid%gt_first_out
+        end do
+        ! Exercise the native exporter; verify the actual generated file's
+        ! schema and size in the external acceptance collector.
+        call engine_init(grid)
+        call set_hmi_screen(SCREEN_GT)
+        call export_shift_csv(grid)
+        call qa_check(results_unit,'native_export_invoked','export', &
+            .true.,'export_called','file_verified_separately')
+        call invalidate_dashboard(hwnd)
+        ios=UpdateWindow(hwnd)
+        call export_screen_png()
+        call qa_check(results_unit,'native_png_export_invoked','export', &
+            .true.,'export_called','file_verified_separately')
+        call log_debug('QA ACCEPTANCE: native matrix finished')
+        close(measure_unit)
+        close(results_unit)
+    end subroutine run_native_acceptance
+
     subroutine visual_qa_capture(path)
         character(len=*), intent(in) :: path
         character(kind=c_char), allocatable, target :: cpath(:)
@@ -3643,6 +3977,119 @@ contains
         inside = (x >= left .and. x <= right .and. y >= top .and. y <= bottom)
     end function point_in_rect
 
+    ! Horizontal + vertical scrolling is enabled only when the native main
+    ! viewport cannot accommodate the minimum useful engineering layout.
+    ! Full content is rendered, clipped to the visible viewport and reachable
+    ! by mouse wheel and the always-visible four-way pan bar.
+    subroutine update_main_pan_geometry(view_w,view_h)
+        integer, intent(in) :: view_w,view_h
+        if(view_w<850.and.hmi_screen/=SCREEN_OVERVIEW.and.hmi_screen/=SCREEN_EXERGY) then
+            main_pan_virtual_w=max(950,view_w)
+            main_pan_virtual_h=max(930,view_h)
+            main_pan_max_x=max(0,main_pan_virtual_w-view_w)
+            main_pan_max_y=max(0,main_pan_virtual_h-(view_h-29))
+        else
+            main_pan_virtual_w=view_w
+            main_pan_virtual_h=view_h
+            main_pan_max_x=0
+            main_pan_max_y=0
+        end if
+        main_pan_x=max(0,min(main_pan_max_x,main_pan_x))
+        main_pan_y=max(0,min(main_pan_max_y,main_pan_y))
+    end subroutine update_main_pan_geometry
+
+    subroutine draw_main_pan_footer(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: foot_y,bx,i
+        character(len=56) :: state_text
+        character(len=1) :: control_name(4)
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        foot_y=y+h-28
+        call fill_box(hdc,x,foot_y,x+w,foot_y+28,COL_PANEL_DEEP)
+        call draw_line(hdc,x,foot_y,x+w,foot_y,COL_BORDER,1)
+        write(state_text,'("PAN  X ",I0,"/",I0,"  Y ",I0,"/",I0)') &
+            main_pan_x,main_pan_max_x,main_pan_y,main_pan_max_y
+        call draw_text_fit(hdc,x+9,foot_y+6,w-170,trim(state_text),COL_CYAN)
+        control_name=[character(len=1):: '<','>','^','v']
+        bx=x+w-148
+        do i=1,4
+            call draw_industrial_button(hdc,bx+(i-1)*36,foot_y+2, &
+                bx+(i-1)*36+32,foot_y+26,control_name(i),COL_PANEL_ALT,.false.)
+        end do
+    end subroutine draw_main_pan_footer
+
+    subroutine main_pan_wheel(horizontal,up)
+        logical,intent(in) :: horizontal,up
+        if(horizontal) then
+            main_pan_x=max(0,min(main_pan_max_x,main_pan_x+merge(-112,112,up)))
+        else
+            main_pan_y=max(0,min(main_pan_max_y,main_pan_y+merge(-112,112,up)))
+        end if
+    end subroutine main_pan_wheel
+
+    logical function main_pan_click(x,y) result(handled)
+        integer,intent(in) :: x,y
+        integer :: first_x,bar_y,slot,view_h
+        handled=.false.
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        view_h=max(260,layout_main_top+layout_main_h- &
+            hmi_content_top(layout_main_top)-12)
+        bar_y=hmi_content_top(layout_main_top)+view_h-28
+        if(.not.point_in_rect(x,y,layout_main_left,bar_y, &
+            layout_main_left+layout_main_w,bar_y+28)) return
+        handled=.true.  ! the footer must not pass clicks through to HMI buttons
+        first_x=layout_main_left+layout_main_w-148
+        if(x<first_x.or.x>=first_x+144) return
+        slot=(x-first_x)/36
+        select case(slot)
+        case(0)
+            main_pan_x=max(0,main_pan_x-160)
+        case(1)
+            main_pan_x=min(main_pan_max_x,main_pan_x+160)
+        case(2)
+            main_pan_y=max(0,main_pan_y-160)
+        case(3)
+            main_pan_y=min(main_pan_max_y,main_pan_y+160)
+        end select
+    end function main_pan_click
+
+    ! Preserve real alarm / scenario mouse hit-testing on the shifted
+    ! engineering canvas. Header, annunciator, left sidebar and overlays
+    ! retain physical (unshifted) coordinates.
+    logical function main_pan_content_click(x,y) result(handled)
+        integer,intent(in)::x,y
+        integer::old_left,old_top,old_w,old_h,view_h
+        logical::ignored
+        handled=.false.
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        view_h=max(260,layout_main_top+layout_main_h- &
+            hmi_content_top(layout_main_top)-12)
+        if(.not.point_in_rect(x,y,layout_main_left, &
+            hmi_content_top(layout_main_top), &
+            layout_main_left+layout_main_w, &
+            hmi_content_top(layout_main_top)+view_h-29)) return
+        handled=.true.
+        old_left=layout_main_left
+        old_top=layout_main_top
+        old_w=layout_main_w
+        old_h=layout_main_h
+        layout_main_left=old_left-main_pan_x
+        layout_main_top=old_top-main_pan_y
+        layout_main_w=main_pan_virtual_w
+        layout_main_h=main_pan_virtual_h+166
+        select case(hmi_screen)
+        case(SCREEN_ALARMS)
+            ignored=handle_alarm_mouse(x,y)
+        case(SCREEN_SCENARIO)
+            ignored=handle_instructor_mouse(x,y)
+        end select
+        layout_main_left=old_left
+        layout_main_top=old_top
+        layout_main_w=old_w
+        layout_main_h=old_h
+    end function main_pan_content_click
+
     subroutine draw_dashboard_buffered(hwnd, hdc)
         type(c_ptr), value :: hwnd
         type(c_ptr), value :: hdc
@@ -3768,13 +4215,13 @@ contains
             plant_text = "GT ONLY"
         end if
         if(w>=850) then
-            write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
-                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(dispatch_text),trim(reserve_text)
-            call draw_text(hdc,x0+w-445,y0+14,trim(subtitle), &
+            write(subtitle, '("t=",F5.1,"s | ",A," | ",A," | ",A)') &
+                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(reserve_text)
+            call draw_text_fit(hdc,x0+w-445,y0+14,360,trim(subtitle), &
                 merge(COL_LIME,COL_AMBER,grid%auto_balance))
         else
-            write(subtitle,'("t=",F5.1,"s | ",A)') grid%elapsed_s,trim(auto_text)
-            call draw_text(hdc,x0+w-198,y0+14,trim(subtitle),COL_MUTED)
+            write(subtitle,'(F5.1,"s ",A)') grid%elapsed_s,trim(auto_text)
+            call draw_text_fit(hdc,x0+w-198,y0+14,125,trim(adjustl(subtitle)),COL_MUTED)
         end if
         ! [?] shortcuts button — top-right of header
         block
@@ -3798,21 +4245,20 @@ contains
         call fill_box(hdc, x0, y0 + 44, x0 + w, y0 + 68, COL_PANEL_ALT)
         call fill_box(hdc, x0, y0 + 44, x0 + 6, y0 + 68, status_color)
         call draw_line(hdc, x0, y0 + 68, x0 + w, y0 + 68, COL_BORDER_SOFT, 1)
-        ! At 1024px the main canvas is narrower than the six module chips
-        ! plus alert cluster. Keep the first-out/status unobscured on that view.
-        if(w < 850) then
+        ! Reserve the whole banner for a single priority message on normal
+        ! desktop widths. Previously status, notice, alert badges and six chips
+        ! all painted into the same 24-pixel strip at 1024/1536.
+        if(w < 1200) then
             if(grid%gt_phase/=GT_ONLINE.or.instructor%frozen.or. &
-               notice_ticks<=0.or.len_trim(operator_notice)==0) then
-                call draw_text(hdc,inner_x+10,y0+50,trim(status(1:min(len_trim(status),62))),status_color)
+                notice_ticks<=0.or.len_trim(operator_notice)==0) then
+                call draw_text_fit(hdc,inner_x+10,y0+49,w-2*PAD_PANEL_X-26, &
+                    trim(status),status_color)
             else
-                call draw_text(hdc,inner_x+10,y0+50, &
-                    trim(operator_notice(1:min(len_trim(operator_notice),62))),COL_CYAN)
+                call draw_text_fit(hdc,inner_x+10,y0+49,w-2*PAD_PANEL_X-26, &
+                    trim(operator_notice),COL_CYAN)
             end if
         else
-        call draw_text(hdc, inner_x + 10, y0 + 50, trim(status), status_color)
-        if (notice_ticks > 0 .and. len_trim(operator_notice) > 0) then
-            call draw_text(hdc, inner_x + min(520, w / 2), y0 + 50, trim(operator_notice), COL_CYAN)
-        end if
+        call draw_text_fit(hdc, inner_x+10, y0+49, max(180,w-650),trim(status),status_color)
         ! --- Right-aligned status cluster: subsystem chips + transient alerts ---
         ! [5.0-P1] One shared right-to-left cursor keeps the two groups from ever
         ! overlapping (they previously both anchored at x0+w and collided).
@@ -3862,7 +4308,7 @@ contains
             end if
         end block
 
-        end if  ! wide header chips only; narrow status stays readable
+        end if  ! status/badges never overlap at 1024 or 1536
 
         ! --- Screen navigation ---
         call draw_nav_bar(hdc, x0, y0 + 72, w, 32)
@@ -3874,44 +4320,67 @@ contains
         content_h = max(260, y0 + h - content_y - 12)
 
         if (hmi_screen /= SCREEN_OVERVIEW) then
+            call update_main_pan_geometry(w,content_h)
+            block
+                integer :: draw_x,draw_y,draw_w,draw_h
+                logical :: viewport_pan
+                viewport_pan=main_pan_max_x>0.or.main_pan_max_y>0
+                draw_x=x0
+                draw_y=content_y
+                draw_w=w
+                draw_h=content_h
+                if(viewport_pan) then
+                    draw_x=x0-main_pan_x
+                    draw_y=content_y-main_pan_y
+                    draw_w=main_pan_virtual_w
+                    draw_h=main_pan_virtual_h
+                    if(native_renderer_ready) call hmi_push_clip(hdc,int(x0,c_int), &
+                        int(content_y,c_int),int(x0+w,c_int), &
+                        int(content_y+content_h-29,c_int))
+                end if
             select case (hmi_screen)
             case (SCREEN_GRID)
-                call draw_grid_dispatch_screen(hdc, x0, content_y, w, content_h)
+                call draw_grid_dispatch_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_GT)
-                call draw_gas_turbine_screen(hdc, x0, content_y, w, content_h)
+                call draw_gas_turbine_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_CC)
-                call draw_combined_cycle_screen(hdc, x0, content_y, w, content_h)
+                call draw_combined_cycle_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_MARKET)
-                call draw_market_screen(hdc, x0, content_y, w, content_h)
+                call draw_market_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_TRENDS)
-                call draw_trends_screen(hdc, x0, content_y, w, content_h)
+                call draw_trends_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_ALARMS)
-                call draw_alarms_screen(hdc, x0, content_y, w, content_h)
+                call draw_alarms_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DIAG)
-                call draw_diagnostics_screen(hdc, x0, content_y, w, content_h)
+                call draw_diagnostics_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DAYAHEAD)
-                call draw_dayahead_screen(hdc, x0, content_y, w, content_h)
+                call draw_dayahead_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_FLEET_UC)
-                call draw_fleet_uc_screen(hdc, x0, content_y, w, content_h)
+                call draw_fleet_uc_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DNN)
-                call draw_dnn_screen(hdc, x0, content_y, w, content_h)
+                call draw_dnn_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_CARBON)
-                call draw_carbon_screen(hdc, x0, content_y, w, content_h)
+                call draw_carbon_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_FORECAST)
-                call draw_forecast_screen(hdc, x0, content_y, w, content_h)
+                call draw_forecast_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_ADVISORY)
-                call draw_advisory_screen(hdc, x0, content_y, w, content_h)
+                call draw_advisory_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_SCENARIO)
                 if(measured_view) then
-                    call draw_measured_replay_screen(hdc,x0,content_y,w,content_h)
+                    call draw_measured_replay_screen(hdc,draw_x,draw_y,draw_w,draw_h)
                 else if(instructor_view) then
-                    call draw_instructor_screen(hdc,x0,content_y,w,content_h)
+                    call draw_instructor_screen(hdc,draw_x,draw_y,draw_w,draw_h)
                 else
-                    call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                    call draw_scenario_screen(hdc, draw_x, draw_y, draw_w, draw_h)
                 end if
             case (SCREEN_EXERGY)
-                call draw_exergy_screen(hdc, x0, content_y, w, content_h)
+                call draw_exergy_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             end select
+                if(viewport_pan) then
+                    if(native_renderer_ready) call hmi_pop_clip(hdc)
+                    call draw_main_pan_footer(hdc,x0,content_y,w,content_h)
+                end if
+            end block
             if (faceplate_id /= FP_NONE) call draw_kpi_faceplate_popup(hdc, x0, y0, w, h)
             if (help_overlay_active) call draw_help_overlay(hdc, x0, y0, w, h)
             if (shortcuts_popup_active) call draw_shortcuts_popup(hdc, x0, y0, w)
@@ -4109,9 +4578,8 @@ contains
         call draw_line(hdc, left, top + 62, right, top + 62, COL_BORDER, 1)
         call draw_title_text(hdc, title_x, top + 12, "Plant Controls", COL_INK)
         call draw_text(hdc, title_x, top + 40, "Dispatch console", COL_MUTED)
-        call draw_text(hdc, title_x, top + 68, "WHEEL / PGDN  :  MORE CONTROLS", COL_DIM)
         if (native_renderer_ready) call hmi_push_clip(hdc,int(left+4,c_int), &
-            int(top+70,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
+            int(top+98,c_int),int(right-3,c_int),int(layout_footer_y-20,c_int))
 
         write(value, '(F5.1," MW")') grid%demand_MW
         call draw_custom_slider(hdc, ID_DEMAND, layout_slider_x, layout_slider_y(1), layout_slider_w, &
@@ -4120,7 +4588,7 @@ contains
 
         write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(grid), grid%renewable_MW
         call draw_custom_slider(hdc, ID_RENEWABLE, layout_slider_x, layout_slider_y(2), layout_slider_w, &
-            "Renewable dispatch", trim(adjustl(value)), &
+            "Renewables", trim(adjustl(value)), &
             effective_renewable_MW(grid), 0.0_dp, RENEWABLE_MAX_MW, &
             merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
@@ -4141,7 +4609,7 @@ contains
 
         write(value, '(I4," K")') nint(grid%TIT_K)
         call draw_custom_slider(hdc, ID_TIT, layout_slider_x, layout_slider_y(6), layout_slider_w, &
-            "Turbine inlet temp", trim(adjustl(value)), &
+            "Turbine TIT", trim(adjustl(value)), &
             grid%TIT_K, 1200.0_dp, 1600.0_dp, COL_RED)
 
         btn_gap = 12
@@ -4326,10 +4794,15 @@ contains
         end if
 
         if (native_renderer_ready) call hmi_pop_clip(hdc)
+        ! Paint the fixed scroll hint ABOVE clipped content, never in the
+        ! same rectangle as the first scrolling slider heading.
+        call fill_box(hdc,left+7,top+64,right-4,top+96,COL_PANEL_DEEP)
+        call draw_text_fit(hdc,title_x,top+72,right-title_x-22, &
+            "Scroll / PgDn for controls",COL_MUTED)
         if (control_scroll_max>0) then
             block
                 integer :: scroll_top,scroll_bot,track_h,thumb_y
-                scroll_top=top+78
+                scroll_top=top+98
                 scroll_bot=layout_footer_y-28
                 track_h=max(1,scroll_bot-scroll_top-34)
                 thumb_y=scroll_top+int(real(track_h)* &
@@ -4340,11 +4813,11 @@ contains
             end block
         end if
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
-        write(line, '("Scan ",I0," ms | trends 250 ms | ",A)') int(TIMER_MS), trim(grid%market_profile_name)
-        call draw_text(hdc, title_x, layout_footer_y, trim(line), COL_MUTED)
-        write(line, '("Price $",I3,"/MWh | Gas $",F4.1,"/GJ | CO2 $",I3,"/t")') &
-            nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj, nint(grid%carbon_price_usd_t)
-        call draw_text(hdc, title_x, layout_footer_y + 20, trim(adjustl(line)), COL_DIM)
+        write(line, '("Scan ",I0,"ms | Trace 250ms")') int(TIMER_MS)
+        call draw_text_fit(hdc,title_x,layout_footer_y,right-title_x-20,trim(line),COL_MUTED)
+        write(line, '("P $",I0,"/MWh | Gas $",F4.1,"/GJ")') &
+            nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj
+        call draw_text_fit(hdc,title_x,layout_footer_y+20,right-title_x-20,trim(adjustl(line)),COL_DIM)
     end subroutine draw_control_panel
 
     subroutine draw_nav_rail(hdc)
@@ -4675,6 +5148,39 @@ contains
         call fill_box(hdc, x + SP_1, y, min(x + width, x + 120), y + 2, accent)
     end subroutine draw_accent_card
 
+    ! Conservative width-aware text: never allow variable strings to occupy
+    ! the following card, chip, control label or window region.
+    subroutine draw_text_fit(hdc, x, y, width, label, color, headline)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x, y, width
+        character(len=*), intent(in) :: label
+        integer(c_int), intent(in) :: color
+        logical, intent(in), optional :: headline
+        integer :: maxchars, n, cell_px
+        logical :: big
+        character(len=:), allocatable :: shown
+
+        big=.false.
+        if(present(headline)) big=headline
+        cell_px=9
+        if(big) cell_px=14
+        maxchars=max(0,(width-6)/cell_px)
+        if(maxchars==0) return
+        n=len_trim(label)
+        if(n<=maxchars) then
+            shown=trim(label)
+        else if(maxchars>3) then
+            shown=label(1:maxchars-3)//'...'
+        else
+            shown=label(1:maxchars)
+        end if
+        if(big) then
+            call draw_title_text(hdc,x,y,shown,color)
+        else
+            call draw_text(hdc,x,y,shown,color)
+        end if
+    end subroutine draw_text_fit
+
     subroutine draw_kpi_card(hdc, x, y, width, height, label, value_text, value_color)
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, width, height
@@ -4684,9 +5190,15 @@ contains
 
         call draw_accent_card(hdc, x, y, width, height, value_color)
         sep_y = y + max(28, height - 38)
-        call draw_text(hdc, x + PAD_CARD_X, y + PAD_CARD_Y, label, COL_MUTED)
+        call draw_text_fit(hdc, x + PAD_CARD_X, y + PAD_CARD_Y, width - 2*PAD_CARD_X, label, COL_MUTED)
         call draw_line(hdc, x + PAD_CARD_X, sep_y, x + width - PAD_CARD_X, sep_y, COL_BORDER_SOFT, 1)
-        call draw_mono_title(hdc, x + PAD_CARD_X, sep_y + SP_1, value_text, value_color)
+        if(width<170) then
+            call draw_text_fit(hdc, x + PAD_CARD_X, sep_y + SP_1, width - 2*PAD_CARD_X, &
+                value_text, value_color)
+        else
+            call draw_text_fit(hdc, x + PAD_CARD_X, sep_y + SP_1, width - 2*PAD_CARD_X, &
+                value_text, value_color, .true.)
+        end if
     end subroutine draw_kpi_card
 
     subroutine draw_screen_caption(hdc, x, y, width, title, subtitle)
@@ -8199,6 +8711,10 @@ contains
         integer(c_int) :: closure_col
 
         call compute_exergy(grid, ex)
+        if(width<850.or.height<680) then
+            call draw_exergy_compact(hdc,x,y,width,height,ex)
+            return
+        end if
 
         ix = x + 18
         iw = width - 36
@@ -8252,11 +8768,11 @@ contains
             case (4);     drv = "fuel flow"
             case default; drv = "press ratio"
             end select
-            write(anlz, '("UQ  eta_II ",F4.1,"% +/- ",F3.1,"%  (95% CI ",F4.1,"-",F4.1,"%)     |     Carnot ",F4.1,"% (",I0,"% achieved)     |     top sensitivity: ",A)') &
+            write(anlz, '("eta_II ",F4.1,"% +/-",F3.1,"% | 95% CI ",F4.1,"-",F4.1,"% | Carnot ",F4.1,"% | driver ",A)') &
                 100.0_dp*exergy_an_uq%eta_II_mean, 100.0_dp*exergy_an_uq%eta_II_std, &
                 100.0_dp*exergy_an_uq%eta_II_lo95, 100.0_dp*exergy_an_uq%eta_II_hi95, &
-                100.0_dp*lim%eta_carnot, nint(100.0_dp*lim%carnot_fraction), trim(drv)
-            call draw_text(hdc, ix, kpi_y + 82, trim(anlz), COL_CYAN)
+                100.0_dp*lim%eta_carnot, trim(drv)
+            call draw_text_fit(hdc,ix,kpi_y+82,iw-8,trim(anlz),COL_CYAN)
             ! [7.0-P4] Sobol total-effect tornado (which input drives eta_II variance)
             block
                 integer :: bi, by0, bx0, bw0, bl
@@ -8264,12 +8780,12 @@ contains
                 character(len=12) :: nm(SOBOL_NIN)
                 nm = [character(len=12) :: "ambient T", "TIT", "exhaust T", "fuel flow", "press ratio"]
                 stmax = max(maxval(exergy_an_sob%ST), 0.01_dp)
-                bx0 = ix + 120
-                bw0 = max(120, min(360, iw - 150))
-                call draw_text(hdc, ix, kpi_y + 106, "Sobol sensitivity (total-effect ST)", COL_MUTED)
+                bx0 = ix + 132
+                bw0 = max(120,min(360,iw-165))
+                call draw_text_fit(hdc,ix,kpi_y+107,iw-8,'Sobol sensitivity (total-effect ST)',COL_MUTED)
                 do bi = 1, SOBOL_NIN
-                    by0 = kpi_y + 126 + (bi - 1) * 14
-                    call draw_text(hdc, ix, by0 - 2, trim(nm(bi)), COL_MUTED)
+                    by0 = kpi_y + 130 + (bi - 1) * 20
+                    call draw_text_fit(hdc,ix,by0-2,122,trim(nm(bi)),COL_MUTED)
                     bl = nint(max(0.0_dp, exergy_an_sob%ST(bi)) / stmax * real(bw0, dp))
                     call fill_box(hdc, bx0, by0, bx0 + max(2, bl), by0 + 9, &
                         merge(COL_CYAN, COL_DIM, bi == exergy_an_sob%dominant))
@@ -8277,8 +8793,10 @@ contains
             end block
         end block
 
-        panel_y = kpi_y + 222
-        panel_h = max(330, int(0.56_dp * real(height - 170, dp)))
+        panel_y=kpi_y+266
+        ! Reserve the bottom interpretation band before sizing both plots.
+        ! The old minimum 330 px forced the bottom band under the viewport.
+        panel_h=min(330,max(180,y+height-panel_y-165))
         left_w = max(600, int(0.60_dp * real(iw, dp)))
         right_x = ix + left_w + 18
         right_w = iw - left_w - 18
@@ -8291,14 +8809,65 @@ contains
         call draw_section_title_width(hdc, ix, panel_y - 24, "Grassmann availability flow", left_w)
         call draw_exergy_grassmann(hdc, ix, panel_y, left_w, panel_h, ex)
 
-        call draw_section_title_width(hdc, right_x, panel_y - 24, "Exergy destruction waterfall", right_w)
+        call draw_section_title_width(hdc, right_x, panel_y - 24, "Exergy destruction | MW / % fuel", right_w)
         call draw_exergy_waterfall(hdc, right_x, panel_y, right_w, panel_h, ex)
 
-        bottom_y = panel_y + panel_h + 34
-        bottom_h = max(120, y + height - bottom_y - 8)
+        bottom_y=panel_y+panel_h+28
+        bottom_h=max(70,y+height-bottom_y-8)
         call draw_section_title_width(hdc, ix, bottom_y - 24, "Physical interpretation and V&V closure", iw)
         call draw_exergy_interpretation(hdc, ix, bottom_y, iw, bottom_h, ex)
     end subroutine draw_exergy_screen
+
+    ! At 1024x768, keep every energy balance output visible in a concise
+    ! vertical dashboard instead of allowing wide diagrams to run offscreen.
+    subroutine draw_exergy_compact(hdc,x,y,width,height,ex)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,width,height
+        type(ExergyResult), intent(in) :: ex
+        integer :: ix,iw,top_y,card_y,card_w,card_h,gap,cx,cy,i
+        integer :: chart_y,chart_h
+        character(len=32) :: val
+        integer(c_int) :: close_color
+        ix=x+PAD_PANEL_X
+        iw=width-2*PAD_PANEL_X
+        top_y=y+8
+        close_color=merge(COL_GREEN,COL_RED,abs(ex%closure)<=0.02_dp)
+        call draw_screen_caption(hdc,ix,top_y,iw,'Exergy | L3','Live second-law model')
+        card_y=top_y+68
+        card_h=69
+        gap=8
+        card_w=(iw-2*gap)/3
+        do i=1,6
+            cx=ix+mod(i-1,3)*(card_w+gap)
+            cy=card_y+(i-1)/3*(card_h+8)
+            select case(i)
+            case(1)
+                write(val,'(F6.1," MW")') ex%ex_fuel/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'FUEL EXERGY',trim(adjustl(val)),COL_AMBER)
+            case(2)
+                write(val,'(F6.1," MW")') ex%w_net/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'WORK',trim(adjustl(val)),COL_GREEN)
+            case(3)
+                write(val,'(F5.1,"%")') 100.0_dp*ex%eta_II
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'ETA II',trim(adjustl(val)),COL_GREEN)
+            case(4)
+                write(val,'(F6.1," MW")') ex%dest_total/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'DESTROYED',trim(adjustl(val)),COL_RED)
+            case(5)
+                write(val,'(F6.1," MW")') (ex%ex_stack+ex%ex_cond)/1000.0_dp
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'EXTERNAL',trim(adjustl(val)),COL_BLUE)
+            case(6)
+                write(val,'(SP,F5.2,"%")') 100.0_dp*ex%closure
+                call draw_kpi_card(hdc,cx,cy,card_w,card_h,'RESIDUAL',trim(adjustl(val)),close_color)
+            end select
+        end do
+        chart_y=card_y+2*(card_h+8)+13
+        chart_h=max(185,y+height-chart_y-32)
+        call draw_section_title_width(hdc,ix,chart_y-24,'Component losses | MW and % of fuel',iw)
+        call draw_exergy_waterfall(hdc,ix,chart_y,iw,chart_h,ex)
+        call draw_text_fit(hdc,ix+8,y+height-21,iw-16, &
+            'All values: modelled. Export CSV for full uncertainty/Sobol analysis.',COL_MUTED)
+    end subroutine draw_exergy_compact
 
     subroutine draw_exergy_grassmann(hdc, x, y, width, height, ex)
         type(c_ptr), value :: hdc
@@ -8325,32 +8894,33 @@ contains
 
         call draw_exergy_flow(hdc, cx1, cy, node_x, cy, line_w, COL_AMBER)
         call draw_exergy_node(hdc, node_x, cy, "PLANT", COL_CYAN)
-        write(label, '(F7.1," MW  fuel chemical exergy")') fuel_MW
-        call draw_text(hdc, cx1, cy - 42, trim(adjustl(label)), COL_AMBER)
+        write(label, '(F6.1," MW fuel")') fuel_MW
+        call draw_text_fit(hdc,cx1,cy-46,width/3,trim(adjustl(label)),COL_AMBER)
 
         call draw_exergy_flow(hdc, node_x + 50, cy, cx2 - 24, cy, &
             max(4, min(22, nint(22.0_dp * work_MW / max_MW))), COL_GREEN)
-        write(label, '(F7.1," MW useful shaft/electric work")') work_MW
-        call draw_text(hdc, branch_x, cy - 42, trim(adjustl(label)), COL_GREEN)
+        write(label, '(F6.1," MW work")') work_MW
+        call draw_text_fit(hdc,x+width-208,cy-46,194,trim(adjustl(label)),COL_GREEN)
 
         call draw_exergy_flow(hdc, node_x + 18, cy + 18, branch_x, y + height - 58, &
             max(3, min(18, nint(20.0_dp * dest_MW / max_MW))), COL_RED)
-        write(label, '(F7.1," MW destroyed by irreversibility")') dest_MW
-        call draw_text(hdc, branch_x - 12, y + height - 42, trim(adjustl(label)), COL_RED)
+        write(label, '(F6.1," MW destroyed")') dest_MW
+        call draw_text_fit(hdc,x+width-208,y+height-42,194,trim(adjustl(label)),COL_RED)
 
         call draw_exergy_flow(hdc, node_x + 18, cy - 18, branch_x, y + 58, &
             max(3, min(16, nint(18.0_dp * stack_MW / max_MW))), COL_BLUE)
-        write(label, '(F7.1," MW stack/exhaust availability")') stack_MW
-        call draw_text(hdc, branch_x - 12, y + 42, trim(adjustl(label)), COL_BLUE)
+        write(label, '(F6.1," MW exhaust")') stack_MW
+        call draw_text_fit(hdc,x+width-208,y+42,194,trim(adjustl(label)),COL_BLUE)
 
         if (cond_MW > 0.05_dp) then
             call draw_exergy_flow(hdc, node_x + 10, cy + 4, cx2 - 90, y + height - 96, &
                 max(2, min(12, nint(15.0_dp * cond_MW / max_MW))), COL_CYAN)
             write(label, '(F6.1," MW condenser loss")') cond_MW
-            call draw_text(hdc, cx2 - 190, y + height - 118, trim(adjustl(label)), COL_CYAN)
+            call draw_text_fit(hdc,x+width-208,y+height-108,194,trim(adjustl(label)),COL_CYAN)
         end if
 
-        call draw_text(hdc, x + 16, y + 14, "Ex_fuel = W_net + D_components + Ex_stack + Ex_condenser + residual", COL_MUTED)
+        call draw_text_fit(hdc,x+16,y+14,width-28, &
+            'Ex_fuel = W_net + D + Ex_out + residual',COL_MUTED)
         write(label, '("closure residual ",SP,F6.2,"%")') 100.0_dp * ex%closure
         call draw_mono(hdc, x + 16, y + height - 26, trim(adjustl(label)), &
             merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp))
@@ -8395,20 +8965,27 @@ contains
         vals = [ex%dest_comp, ex%dest_comb, ex%dest_turb, ex%dest_hrsg, ex%ex_stack, ex%ex_cond] / 1000.0_dp
         colors = [COL_CYAN, COL_RED, COL_AMBER, COL_BLUE, COL_MUTED, COL_LIME]
         max_val = max(1.0_dp, maxval(vals))
-        row_h = max(31, (height - 42) / 6)
-        bx = x + max(116, width / 3)
-        bw = max(70, width - (bx - x) - 78)
+        row_h=max(28,(height-18)/6)
+        bx=x+max(134,width/3)
+        bw=max(60,width-(bx-x)-148)
 
-        do i = 1, 6
-            row_y = y + 28 + (i - 1) * row_h
-            pct = 100.0_dp * vals(i) / max(ex%ex_fuel / 1000.0_dp, 1.0_dp)
-            call draw_text(hdc, x + 14, row_y + 7, trim(names(i)), COL_INK)
-            call fill_box(hdc, bx, row_y + 8, bx + bw, row_y + 24, COL_PANEL_ALT)
-            fill_w = int(real(bw, dp) * vals(i) / max_val)
-            call fill_box(hdc, bx, row_y + 8, bx + fill_w, row_y + 24, colors(i))
-            call stroke_box(hdc, bx, row_y + 8, bx + bw, row_y + 24, COL_BORDER_SOFT, 1)
-            write(label, '(F6.1," MW  ",F5.1,"%")') vals(i), pct
-            call draw_mono(hdc, bx + bw + 10, row_y + 5, trim(adjustl(label)), colors(i))
+        do i=1,6
+            row_y=y+10+(i-1)*row_h
+            pct=100.0_dp*vals(i)/max(ex%ex_fuel/1000.0_dp,1.0_dp)
+            call draw_text_fit(hdc,x+12,row_y+3,bx-x-20,trim(names(i)),COL_INK)
+            call fill_box(hdc,bx,row_y+7,bx+bw,row_y+19,COL_PANEL_ALT)
+            fill_w=int(real(bw,dp)*vals(i)/max_val)
+            call fill_box(hdc,bx,row_y+7,bx+fill_w,row_y+19,colors(i))
+            call stroke_box(hdc,bx,row_y+7,bx+bw,row_y+19,COL_BORDER_SOFT,1)
+            if(row_h>=37) then
+                write(label,'(F6.1," MW")') vals(i)
+                call draw_text_fit(hdc,x+width-127,row_y+1,112,trim(adjustl(label)),colors(i))
+                write(label,'(F5.1,"%")') pct
+                call draw_text_fit(hdc,x+width-127,row_y+20,112,trim(adjustl(label)),COL_MUTED)
+            else
+                write(label,'(F5.1," ",I0,"%")') vals(i),nint(pct)
+                call draw_text_fit(hdc,x+width-127,row_y+5,112,trim(adjustl(label)),colors(i))
+            end if
         end do
     end subroutine draw_exergy_waterfall
 
@@ -8426,17 +9003,16 @@ contains
         row_y = y + 18
         closure_col = merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp)
 
-        line = "Dominant irreversibility: "//trim(exergy_dominant_component(ex))// &
-               " - chemical reaction and finite-temperature heat transfer consume useful work potential."
-        call draw_text(hdc, x + 16, row_y, trim(line), COL_INK)
+        line='Dominant loss: '//trim(exergy_dominant_component(ex))
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_INK)
         row_y = row_y + 24
-        write(line, '("Rational efficiency eta_II = useful net work / fuel chemical exergy = ",F5.1,"%")') &
+        write(line, '("Rational eta_II = W_net / Ex_fuel = ",F5.1,"%")') &
             100.0_dp * ex%eta_II
-        call draw_text(hdc, x + 16, row_y, trim(line), COL_MUTED)
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_MUTED)
         row_y = row_y + 24
-        write(line, '("Balance check residual = ",SP,F6.2,"%  (target < +/-2.0% for P1 live estimate)")') &
+        write(line, '("Balance residual = ",SP,F6.2,"%  (target +/-2%)")') &
             100.0_dp * ex%closure
-        call draw_text(hdc, x + 16, row_y, trim(line), closure_col)
+        call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),closure_col)
 
         row_y = y + 18
         call draw_value_pair(hdc, rx, row_y, "Air mass flow", trim(real_unit(ex%m_air, "kg/s")), COL_MUTED)
@@ -9191,20 +9767,22 @@ contains
         right_x = ix + left_w + 16
         right_w = max(280, iw - left_w - 16)
 
-        call draw_section_title_width(hdc, ix, tile_y + 78, "24-hour commitment & dispatch schedule", left_w)
-        ! Legend inline in the section title row (right-aligned)
-        call fill_box(hdc, ix + left_w - 196, tile_y + 83, ix + left_w - 186, tile_y + 93, COL_LIME)
-        call draw_text(hdc, ix + left_w - 182, tile_y + 81, "GT/disp", COL_MUTED)
-        call fill_box(hdc, ix + left_w - 118, tile_y + 83, ix + left_w - 108, tile_y + 93, COL_LIME)
-        call draw_text(hdc, ix + left_w - 104, tile_y + 81, "BESS +/-", COL_MUTED)
-        call draw_text(hdc, ix + left_w - 36, tile_y + 81, "SoC--", COL_CYAN)
-        ! Intraday re-dispatch alert: show when P2 optimizer sees >$50 improvement vs DA plan
+        ! Section heading and chart legend must occupy DIFFERENT rows.
+        ! The former 24px band painted a 3-item legend over the adjacent
+        ! hourly-economics heading, particularly at narrow viewport edges.
+        call draw_section_title_width(hdc, ix, tile_y + 78, "24h commitment / dispatch", left_w)
+        call fill_box(hdc, ix+8, tile_y+106, ix+18, tile_y+116, COL_LIME)
+        call draw_text(hdc, ix+23, tile_y+102, "GT / dispatch", COL_MUTED)
+        call fill_box(hdc, ix+150, tile_y+106, ix+160, tile_y+116, COL_BLUE)
+        call draw_text(hdc, ix+165, tile_y+102, "BESS +/-", COL_MUTED)
+        call draw_text(hdc, ix+272, tile_y+102, "SoC", COL_CYAN)
         if (grid%da_solved .and. grid%da_redispatch_saving_usd > 50.0_dp) then
-            write(lbl, '(">> Hour ",I2," re-dispatch  +$",I0," vs DA plan")') &
+            write(lbl, '("Hour ",I2," redispatch +$",I0," vs day-ahead")') &
                 grid%da_current_hour, nint(grid%da_redispatch_saving_usd)
-            call draw_text(hdc, ix + left_w - 340, tile_y + 99, trim(adjustl(lbl)), COL_AMBER)
+            call draw_text_fit(hdc, ix+8, tile_y+124, left_w-16, &
+                trim(adjustl(lbl)), COL_AMBER)
         end if
-        call draw_dayahead_gantt(hdc, ix, tile_y + 118, left_w, max(200, height - 248))
+        call draw_dayahead_gantt(hdc, ix, tile_y+148, left_w, max(200,height-278))
 
         ! Trigger Pareto front computation if dirty (lazy, runs in engine tick)
         if (grid%pareto_dirty) call compute_pareto_front(grid)
@@ -9402,7 +9980,7 @@ contains
         gx = x + 12; gy = y + 28
         gw = width - 24; gh = max(80, height / 2 - 16)
 
-        call draw_text(hdc, gx, y + 10, "Net margin $/h (revenue - fuel - carbon)", COL_MUTED)
+        call draw_text_fit(hdc,gx,y+10,gw,"Net margin ($/h)",COL_MUTED)
         call fill_box(hdc, gx, gy, gx + gw, gy + gh, COL_BG)
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
 
@@ -9464,9 +10042,12 @@ contains
         write(lbl, '("Net margin:    $",SP,I0)') nint(net)
         call draw_text(hdc, x + 12, row_y, trim(lbl), merge(COL_GREEN, COL_RED, net >= 0.0_dp))
         row_y = row_y + 22
-        write(lbl, '("MUT=2 MDT=1  N_SOC=50  N_PGT=20  LP-gap ",F5.1,"%")') grid%da_gap_pct
-        call draw_text(hdc, x + 12, row_y, trim(adjustl(lbl)), COL_DIM)
-        row_y = row_y + 18
+        call draw_text_fit(hdc,x+12,row_y,width-24, &
+            "Min up/down 2/1h | SOC50 GT20",COL_DIM)
+        row_y=row_y+18
+        write(lbl,'("LP relaxation gap ",F5.1,"%")') grid%da_gap_pct
+        call draw_text_fit(hdc,x+12,row_y,width-24,trim(adjustl(lbl)),COL_DIM)
+        row_y=row_y+18
         if (grid%dnn_active) then
             write(lbl, '("DNN+DP  HR surrogate MAE ",F5.1," kJ/kWh")') grid%dnn_hr_mae
             call draw_text(hdc, x + 12, row_y, trim(adjustl(lbl)), COL_CYAN)
@@ -10062,7 +10643,7 @@ contains
         character(len=*), intent(in) :: label, value_text
         real(dp), intent(in) :: value, lo, hi
         integer(c_int), intent(in) :: color
-        integer :: knob_x
+        integer :: knob_x, value_reserve
         real(dp) :: f
         integer(c_int) :: slider_color
         logical :: trip_locked
@@ -10070,12 +10651,13 @@ contains
 
         trip_locked=control_id==ID_GAS.and.grid%gt_phase/=GT_ONLINE
         slider_color=merge(COL_DIM,color,trip_locked)
-            call draw_text(hdc, x, y - 34, label, merge(COL_DIM,COL_INK,trip_locked))
-            if(trip_locked) then
-                call draw_text(hdc,x+width-86,y-34,'TRIP LOCK',COL_AMBER)
-            else
-                call draw_text(hdc,x+width-78,y-34,value_text,color)
-            end if
+        value_reserve=min(154,max(86,10*len_trim(value_text)+4))
+        call draw_text_fit(hdc,x,y-34,width-value_reserve-4,label,merge(COL_DIM,COL_INK,trip_locked))
+        if(trip_locked) then
+            call draw_text_fit(hdc,x+width-value_reserve,y-34,value_reserve-3,'TRIP LOCK',COL_AMBER)
+        else
+            call draw_text_fit(hdc,x+width-value_reserve,y-34,value_reserve-3,value_text,color)
+        end if
         f = clamp_real((value - lo) / max(hi - lo, 1.0e-9_dp), 0.0_dp, 1.0_dp)
         knob_x = x + int(f * real(width, dp))
         ! Flat pill track
@@ -10418,7 +11000,7 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, w, h
         integer :: tile_w, gap, tx, i
-        character(len=20) :: labels(ALARM_COUNT)
+        character(len=20) :: labels(ALARM_COUNT),display_labels(ALARM_COUNT)
         logical :: states(ALARM_COUNT)
         integer(c_int) :: colors(ALARM_COUNT)
 
@@ -10428,6 +11010,11 @@ contains
 
         gap = 4
         tile_w = (w - 9 * gap) / 8
+        display_labels=labels
+        if(tile_w<145) then
+            display_labels(1:8)=[character(len=20) :: &
+                'UF', 'OF', 'RS', 'BS', 'LS', 'TT', 'SG', 'HP']
+        end if
 
         call fill_soft_box(hdc, x, y, x + w, y + h, COL_PANEL_DEEP)
         call stroke_soft_box(hdc, x, y, x + w, y + h, COL_BORDER, 1)
@@ -10441,7 +11028,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_DIM)
             else if (states(i)) then
                 ! Active alarm tile: colored with dark body
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL)
@@ -10453,7 +11041,8 @@ contains
                     6_c_int, 0.0_c_float, 360.0_c_float, merge(COL_MUTED, colors(i), alarm_ack(i)))
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), &
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
             else if (alarm_seen(i)) then
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10462,7 +11051,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_CYAN)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_CYAN)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_CYAN)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_CYAN)
             else
                 ! Inactive: dim tile
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10472,7 +11062,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_DIM)
             end if
         end do
     end subroutine draw_annunciator_panel
@@ -12032,6 +12623,10 @@ contains
         ix = x + PAD_PANEL_X
         iw = width - 2 * PAD_PANEL_X
         y1 = y + 8
+        if(iw < 820) then
+            call draw_flagship_compact(hdc,x,y,width,height)
+            return
+        end if
 
         ! --- Caption + mode subtitle + FLAGSHIP/DETAIL toggle ---
         if (grid%auto_balance) then; auto_text = "AUTO balancing"
@@ -12117,9 +12712,11 @@ contains
             adv_col = COL_INK
         end if
         if (len_trim(advline) > 88) advline = advline(1:86) // ".."
-        call draw_title_text(hdc, kpi_x + PAD_CARD_X, adv_y + 34, trim(advline), adv_col)
-        call draw_text(hdc, kpi_x + PAD_CARD_X, adv_y + adv_h - 24, &
-            "F14 -> full advisory   ·   click any tile to drill down", COL_DIM)
+        call draw_text_fit(hdc,kpi_x+PAD_CARD_X,adv_y+34, &
+            kpi_total_w-2*PAD_CARD_X,trim(advline),adv_col,.true.)
+        call draw_text_fit(hdc,kpi_x+PAD_CARD_X,adv_y+adv_h-24, &
+            kpi_total_w-2*PAD_CARD_X, &
+            "F14 -> full advisory   |   click any tile to drill down",COL_DIM)
 
         ! --- Hero: single-line plant schematic (B1) ---
         strip_h     = 92
@@ -12175,6 +12772,137 @@ contains
         end block
     end subroutine draw_flagship_screen
 
+    ! Compact flagship for the 1024x768 main viewport. Its live measured-
+    ! model values, cards, navigation and drill-down geometry are preserved;
+    ! the detailed P&ID is available on F3 instead of cramming tiny glyphs.
+    subroutine draw_flagship_compact(hdc,x,y,width,height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,width,height
+        integer :: ix,iw,top_y,row_y,gap,card_w,card_h,card_x
+        integer :: adv_y,hero_y,hero_h,strip_y,strip_h,tile_w,tile_h,tx
+        integer :: i, cx, node_y, node_w, score
+        real(dp) :: rmw,rpct
+        character(len=48) :: textval, smallsubtitle
+        character(len=200) :: advline
+        integer(c_int) :: accent
+
+        ix=x+PAD_PANEL_X
+        iw=width-2*PAD_PANEL_X
+        top_y=y+8
+        if(grid%auto_balance) then
+            smallsubtitle='AUTO | live simulation'
+        else
+            smallsubtitle='MANUAL | live simulation'
+        end if
+        call draw_screen_caption(hdc,ix,top_y,iw, &
+            'Plant Health | Economics',trim(smallsubtitle))
+        call draw_overview_toggle(hdc,ix,iw,top_y)
+
+        gap=7
+        row_y=top_y+67
+        card_h=82
+        card_w=(iw-3*gap)/4
+        score=plant_health_score()
+        write(textval,'(I0,"/100")') score
+        call draw_kpi_card(hdc,ix,row_y,card_w,card_h, &
+            'HEALTH',trim(textval),health_color(score))
+        fl_ring=[ix,row_y,ix+card_w,row_y+card_h]
+        write(textval,'("$",I0,"/h")') nint(grid%margin_usd_h)
+        card_x=ix+card_w+gap
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'NET MARGIN',trim(textval),merge(COL_GREEN,COL_AMBER,grid%margin_usd_h>=0.0_dp))
+        fl_card(:,1)=[card_x,row_y,card_x+card_w,row_y+card_h]
+        write(textval,'(I0," g/kWh")') nint(grid%CO2_intensity_g_kWh)
+        card_x=ix+2*(card_w+gap)
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'CO2 / kWh',trim(textval),COL_AMBER)
+        fl_card(:,2)=[card_x,row_y,card_x+card_w,row_y+card_h]
+        rmw=merge(grid%fleet_reserve_MW,grid%reserve_MW,grid%fleet_mode)
+        rpct=100.0_dp*rmw/max(1.0_dp,grid%demand_MW)
+        write(textval,'(F4.1,"%")') rpct
+        card_x=ix+3*(card_w+gap)
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'RESERVE',trim(textval),merge(COL_GREEN,COL_RED,rpct>=5.0_dp))
+        fl_card(:,3)=[card_x,row_y,card_x+card_w,row_y+card_h]
+
+        adv_y=row_y+card_h+8
+        call draw_accent_card(hdc,ix,adv_y,iw,60,COL_CYAN)
+        call draw_text(hdc,ix+12,adv_y+7,'OPERATOR ADVISORY | F14 for full text',COL_MUTED)
+        advline=grid%advisory_text
+        i=index(advline,char(10))
+        if(i>1) advline=advline(:i-1)
+        if(len_trim(advline)==0) advline='STATUS OK - all systems nominal'
+        accent=COL_CYAN
+        if(index(advline,'ALERT')==1) accent=COL_RED
+        if(index(advline,'DIAGNOSIS')==1) accent=COL_AMBER
+        call draw_text_fit(hdc,ix+12,adv_y+33,iw-24,trim(advline),accent)
+
+        hero_y=adv_y+70
+        strip_h=70
+        strip_y=y+height-strip_h
+        hero_h=max(120,strip_y-hero_y-12)
+        call draw_section_title_width(hdc,ix,hero_y,'Live GT to grid | compact flow',iw)
+        call draw_panel_box_deep(hdc,ix,hero_y+24,iw,hero_h-24)
+        node_y=hero_y+48
+        node_w=max(78,(iw-52)/4)
+        do i=1,4
+            cx=ix+12+(i-1)*(node_w+9)
+            call draw_panel_box(hdc,cx,node_y,node_w,59)
+            select case(i)
+            case(1)
+                write(textval,'(I0," C")') nint(grid%ambient_C)
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'INLET',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(textval),COL_CYAN)
+            case(2)
+                write(textval,'(F5.1," MW")') grid%gas_power_MW
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'TURBINE',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),COL_GREEN)
+            case(3)
+                write(textval,'(F6.2," Hz")') grid%frequency_Hz
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'GRID',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),frequency_color())
+            case(4)
+                write(textval,'(F5.1," MW")') grid%demand_MW
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'LOAD',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),COL_RED)
+            end select
+            if(i<4) call draw_line(hdc,cx+node_w,node_y+30,cx+node_w+9,node_y+30,COL_CYAN,2)
+        end do
+        write(textval,'("RES ",F5.1," MW | BESS ",SP,F5.1," MW")') &
+            effective_renewable_MW(grid),grid%storage_MW
+        call draw_text_fit(hdc,ix+12,node_y+78,iw-24,trim(adjustl(textval)),COL_MUTED)
+        write(textval,'("NET imbalance ",SP,F6.2," MW")') grid%imbalance_MW
+        call draw_text_fit(hdc,ix+12,node_y+101,iw-24,trim(adjustl(textval)), &
+            merge(COL_GREEN,COL_AMBER,abs(grid%imbalance_MW)<=0.5_dp))
+
+        tile_w=(iw-5*gap)/6
+        tile_h=strip_h-4
+        do i=1,6
+            tx=ix+(i-1)*(tile_w+gap)
+            select case(i)
+            case(1)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'P2X',grid%p2x_active, &
+                    COL_GREEN,'ELECTROLYSER','H2')
+            case(2)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'CCS',grid%ccs_active, &
+                    COL_GREEN,'CO2 CAPTURE','CO2')
+            case(3)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'GFM',grid%gfm_mode, &
+                    COL_LIME,'INERTIA','BESS')
+            case(4)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'TIE',grid%tie_active, &
+                    COL_BLUE,'TIE FLOW','MW')
+            case(5)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'MPC',grid%mpc_active, &
+                    COL_CYAN,'AGC','MPC')
+            case(6)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'OU',grid%ou_active, &
+                    COL_AMBER,'MONITOR','OU')
+            end select
+            fl_tile(:,i)=[tx,strip_y,tx+tile_w,strip_y+tile_h]
+        end do
+    end subroutine draw_flagship_compact
+
     !> FLAGSHIP | DETAIL segmented toggle, top-right of the F1 caption row.
     !> Geometry must match the hit-test in handle_mouse_down.
     subroutine draw_overview_toggle(hdc, ix, iw, y1)
@@ -12216,6 +12944,16 @@ contains
         case ("OU");  icid = ICON_OU
         case default; icid = 0
         end select
+        if(w<134) then
+            call draw_text_fit(hdc,x+8,y+6,w-16,trim(label),merge(accent,COL_MUTED,active))
+            if(active) then
+                call draw_text_fit(hdc,x+8,y+27,w-16,'ON',accent)
+            else
+                call draw_text_fit(hdc,x+8,y+27,w-16,'OFF',COL_MUTED)
+            end if
+            call draw_text_fit(hdc,x+8,y+47,w-16,trim(line1),COL_MUTED)
+            return
+        end if
         if (icid > 0) call draw_subsystem_icon(hdc, x + 22, y + 19, 11, icid, merge(accent, COL_MUTED, active))
         call draw_title_text(hdc, x + 42, y + 8, trim(label), merge(accent, COL_MUTED, active))
         pill_x = x + w - 44
@@ -13055,7 +13793,7 @@ contains
         real(dp) :: cost_lo, cost_hi, co2_lo, co2_hi, cost_rng, co2_rng
         character(len=14) :: lbl_ax
 
-        lm = 56;  rm = 12;  tm = 10;  bm = 28
+        lm=56; rm=12; tm=18; bm=28
         gx = x + lm;  gy = y + tm;  gw = width - lm - rm;  gh = height - tm - bm
 
         call fill_soft_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
@@ -13077,9 +13815,9 @@ contains
         co2_rng  = max(co2_hi  - co2_lo,  1.0_dp)
 
         ! Axis labels
-        call draw_text(hdc, x + 2, gy,                "CO2", COL_DIM)
-        call draw_text(hdc, x + 2, gy + 10,           "t/h", COL_DIM)
-        call draw_text(hdc, gx,              y + height - bm + 8, "$cost", COL_DIM)
+        call draw_text(hdc,x+2,gy,"CO2",COL_DIM)
+        call draw_text(hdc,x+2,gy+20,"t/h",COL_DIM)
+        call draw_text(hdc,x+width/2-19,y+height-bm+8,"$cost",COL_DIM)
         write(lbl_ax, '(I0)') nint(cost_lo)
         call draw_text(hdc, gx,              y + height - bm + 8, trim(adjustl(lbl_ax)), COL_DIM)
         write(lbl_ax, '(I0)') nint(cost_hi)

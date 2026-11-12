@@ -1,0 +1,164 @@
+name: Native Windows GUI acceptance PDF and evidence ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gui/**'
+      - 'src/**'
+      - 'app/**'
+      - 'cases/**'
+      - 'Makefile'
+      - 'scripts/gui_visual_qa.ps1'
+      - 'scripts/gui_acceptance_report.py'
+      - '.github/workflows/gui-acceptance-report.yml'
+  pull_request:
+    paths:
+      - 'gui/**'
+      - 'src/**'
+      - 'app/**'
+      - 'cases/**'
+      - 'Makefile'
+      - 'scripts/gui_visual_qa.ps1'
+      - 'scripts/gui_acceptance_report.py'
+      - '.github/workflows/gui-acceptance-report.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-gui-acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  native-gui-acceptance:
+    name: Real Win32 GUI exercised; PDF + all CSV/log/image evidence
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install report/PDF and original operations generator dependencies
+        run: python -m pip install "reportlab>=4.2,<5" "pillow>=10,<13" "pypdf>=5,<7" "numpy>=2.0,<3" "matplotlib>=3.9,<4"
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-gcc
+
+      - name: Expose native UCRT64 compiler
+        shell: pwsh
+        run: |
+          'C:\msys64\ucrt64\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\msys64\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Compile real offline Windows GUI and preserve full build log
+        id: build
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          & make -j4 gui-offline 2>&1 | Tee-Object -FilePath build/gui-acceptance-build.log
+          $code = $LASTEXITCODE
+          if ($null -eq $code) { $code=1 }
+          "exit_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit $code
+
+      - name: Exercise native visual, alarm, instructor, 16-screen and 15-scenario paths
+        id: native
+        if: steps.build.outputs.exit_code == '0'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $trace = Join-Path (Get-Location) 'build/gui-acceptance-runner.log'
+          $code = 1
+          $transcript = $false
+          try {
+            Start-Transcript -Path $trace -Force | Out-Null
+            $transcript = $true
+            & ./scripts/gui_visual_qa.ps1
+            $code = $LASTEXITCODE
+            if ($null -eq $code) { $code = [int](!$?) }
+          }
+          catch {
+            $_ | Out-String | Write-Host
+            $code = 1
+          }
+          finally {
+            if ($transcript) { Stop-Transcript | Out-Null }
+            if (!(Test-Path $trace)) {
+              'FAIL: No PowerShell transcript captured' | Set-Content -Path $trace
+              $code = 1
+            }
+          }
+          "exit_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit $code
+
+      - name: Generate original HMI operations PDF from its real exported shift CSV
+        id: operations_pdf
+        if: steps.native.outputs.exit_code == '0'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $inputCsv = Get-ChildItem -File -Filter 'shift_data_t*.csv' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($null -eq $inputCsv) { Write-Error 'No native shift export exists'; exit 1 }
+          python generate_report.py $inputCsv.Name 2>&1 | Tee-Object -FilePath build/gui-acceptance-operations-pdf.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $outputPdf = [System.IO.Path]::ChangeExtension($inputCsv.FullName, '.pdf')
+          if (!(Test-Path $outputPdf) -or (Get-Item $outputPdf).Length -lt 3000) {
+            Write-Error 'Original HMI operations PDF missing or empty'; exit 1
+          }
+
+      - name: Generate PDF, CSV ledger, hashes and full evidence ZIP even after failure
+        if: always()
+        id: report
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          python scripts/gui_acceptance_report.py --source build/gui-visual-qa --out build/gui-acceptance --repo . --debug-log gui_debug.log --sha "${{ github.sha }}" --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" --qa-exit-code "${{ steps.native.outputs.exit_code || '1' }}" --build-exit-code "${{ steps.build.outputs.exit_code || '1' }}"
+          exit $LASTEXITCODE
+
+      - name: Include original compiler and process logs alongside evidence
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/gui-acceptance | Out-Null
+          foreach ($p in @('build/gui-acceptance-build.log','build/gui-acceptance-runner.log','build/gui-acceptance-operations-pdf.log')) {
+            if (Test-Path $p) {
+              Copy-Item $p -Destination build/gui-acceptance/ -Force
+            }
+          }
+
+      - name: Upload machine-readable evidence and PDF/ZIP for download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-gui-acceptance-pdf-and-evidence-${{ github.run_id }}
+          path: |
+            build/gui-acceptance/report.pdf
+            build/gui-acceptance/thermotwin-gui-acceptance.zip
+            build/gui-acceptance/test_results.csv
+            build/gui-acceptance/test_results.json
+            build/gui-acceptance/evidence_sha256.csv
+            build/gui-acceptance/collector_failure.txt
+            build/gui-acceptance/gui-acceptance-build.log
+            build/gui-acceptance/gui-acceptance-runner.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail acceptance only after preserving all available evidence
+        if: always()
+        shell: pwsh
+        run: |
+          if ('${{ steps.report.outcome }}' -ne 'success') {
+            Write-Error 'GUI acceptance is not a PASS. Download PDF and evidence ZIP for failures and NOT_TESTED gates.'
+            exit 1
+          }
