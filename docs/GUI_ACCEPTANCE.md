@@ -96,3 +96,20 @@ sound. The offline executable cannot validate a real OPC UA endpoint.
 DPI 125/150%, the existing HMI PDF button, full distribution and independently
 metered industrial plant performance remain NOT_TESTED. This evidence is not
 a certified protection system, production pass-off, or OEM/ASME/ISO qualification.
+
+### Open visual defects and export coverage
+
+The known-defect ledger at [GUI_VISUAL_DEFECTS.json](GUI_VISUAL_DEFECTS.json)
+records actual screenshot-confirmed text collisions in the 1024x768 overview
+and 1536x960 instrument/status layouts. The report collector marks each
+unresolved issue as **FAIL**, even when screenshot encoding and automated
+navigation tests pass. This is a reviewed release gate, not a claim that
+all visual collisions can be detected algorithmically.
+
+The acceptance runner also triggers the native screen-PNG export and
+validates its output. It runs the original operations PDF generator against
+the actual native shift-export CSV using NumPy/Matplotlib; that operations
+PDF is placed in the raw ZIP. The existing in-GUI asynchronous PDF-button
+process itself remains **NOT_TESTED** and requires a separate GUI action
+verification. Neither operations PDF nor acceptance PDF is evidence of
+actual plant instrumentation.
