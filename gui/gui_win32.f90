@@ -8572,7 +8572,7 @@ contains
         call draw_section_title_width(hdc, ix, panel_y - 24, "Grassmann availability flow", left_w)
         call draw_exergy_grassmann(hdc, ix, panel_y, left_w, panel_h, ex)
 
-        call draw_section_title_width(hdc, right_x, panel_y - 24, "Exergy destruction waterfall", right_w)
+        call draw_section_title_width(hdc, right_x, panel_y - 24, "Exergy destruction | MW / % fuel", right_w)
         call draw_exergy_waterfall(hdc, right_x, panel_y, right_w, panel_h, ex)
 
         bottom_y=panel_y+panel_h+28
@@ -8746,7 +8746,7 @@ contains
                 write(label,'(F5.1,"%")') pct
                 call draw_text_fit(hdc,x+width-127,row_y+20,112,trim(adjustl(label)),COL_MUTED)
             else
-                write(label,'(F5.1,"MW ",F4.1,"%")') vals(i),pct
+                write(label,'(F5.1," ",I0,"%")') vals(i),nint(pct)
                 call draw_text_fit(hdc,x+width-127,row_y+5,112,trim(adjustl(label)),colors(i))
             end if
         end do
