@@ -9762,20 +9762,22 @@ contains
         right_x = ix + left_w + 16
         right_w = max(280, iw - left_w - 16)
 
-        call draw_section_title_width(hdc, ix, tile_y + 78, "24-hour commitment & dispatch schedule", left_w)
-        ! Legend inline in the section title row (right-aligned)
-        call fill_box(hdc, ix + left_w - 196, tile_y + 83, ix + left_w - 186, tile_y + 93, COL_LIME)
-        call draw_text(hdc, ix + left_w - 182, tile_y + 81, "GT/disp", COL_MUTED)
-        call fill_box(hdc, ix + left_w - 118, tile_y + 83, ix + left_w - 108, tile_y + 93, COL_LIME)
-        call draw_text(hdc, ix + left_w - 104, tile_y + 81, "BESS +/-", COL_MUTED)
-        call draw_text(hdc, ix + left_w - 36, tile_y + 81, "SoC--", COL_CYAN)
-        ! Intraday re-dispatch alert: show when P2 optimizer sees >$50 improvement vs DA plan
+        ! Section heading and chart legend must occupy DIFFERENT rows.
+        ! The former 24px band painted a 3-item legend over the adjacent
+        ! hourly-economics heading, particularly at narrow viewport edges.
+        call draw_section_title_width(hdc, ix, tile_y + 78, "24h commitment / dispatch", left_w)
+        call fill_box(hdc, ix+8, tile_y+106, ix+18, tile_y+116, COL_LIME)
+        call draw_text(hdc, ix+23, tile_y+102, "GT / dispatch", COL_MUTED)
+        call fill_box(hdc, ix+150, tile_y+106, ix+160, tile_y+116, COL_BLUE)
+        call draw_text(hdc, ix+165, tile_y+102, "BESS +/-", COL_MUTED)
+        call draw_text(hdc, ix+272, tile_y+102, "SoC", COL_CYAN)
         if (grid%da_solved .and. grid%da_redispatch_saving_usd > 50.0_dp) then
-            write(lbl, '(">> Hour ",I2," re-dispatch  +$",I0," vs DA plan")') &
+            write(lbl, '("Hour ",I2," redispatch +$",I0," vs day-ahead")') &
                 grid%da_current_hour, nint(grid%da_redispatch_saving_usd)
-            call draw_text(hdc, ix + left_w - 340, tile_y + 99, trim(adjustl(lbl)), COL_AMBER)
+            call draw_text_fit(hdc, ix+8, tile_y+124, left_w-16, &
+                trim(adjustl(lbl)), COL_AMBER)
         end if
-        call draw_dayahead_gantt(hdc, ix, tile_y + 118, left_w, max(200, height - 248))
+        call draw_dayahead_gantt(hdc, ix, tile_y+148, left_w, max(200,height-278))
 
         ! Trigger Pareto front computation if dirty (lazy, runs in engine tick)
         if (grid%pareto_dirty) call compute_pareto_front(grid)
@@ -9973,7 +9975,7 @@ contains
         gx = x + 12; gy = y + 28
         gw = width - 24; gh = max(80, height / 2 - 16)
 
-        call draw_text(hdc, gx, y + 10, "Net margin $/h (revenue - fuel - carbon)", COL_MUTED)
+        call draw_text_fit(hdc,gx,y+10,gw,"Net margin $/h | revenue less fuel and CO2",COL_MUTED)
         call fill_box(hdc, gx, gy, gx + gw, gy + gh, COL_BG)
         call stroke_box(hdc, gx, gy, gx + gw, gy + gh, COL_BORDER_SOFT, 1)
 
@@ -10035,9 +10037,12 @@ contains
         write(lbl, '("Net margin:    $",SP,I0)') nint(net)
         call draw_text(hdc, x + 12, row_y, trim(lbl), merge(COL_GREEN, COL_RED, net >= 0.0_dp))
         row_y = row_y + 22
-        write(lbl, '("MUT=2 MDT=1  N_SOC=50  N_PGT=20  LP-gap ",F5.1,"%")') grid%da_gap_pct
-        call draw_text(hdc, x + 12, row_y, trim(adjustl(lbl)), COL_DIM)
-        row_y = row_y + 18
+        call draw_text_fit(hdc,x+12,row_y,width-24, &
+            "Min up/down 2/1h | SOC=50, GT=20 states",COL_DIM)
+        row_y=row_y+18
+        write(lbl,'("LP relaxation gap ",F5.1,"%")') grid%da_gap_pct
+        call draw_text_fit(hdc,x+12,row_y,width-24,trim(adjustl(lbl)),COL_DIM)
+        row_y=row_y+18
         if (grid%dnn_active) then
             write(lbl, '("DNN+DP  HR surrogate MAE ",F5.1," kJ/kWh")') grid%dnn_hr_mae
             call draw_text(hdc, x + 12, row_y, trim(adjustl(lbl)), COL_CYAN)
@@ -13783,7 +13788,7 @@ contains
         real(dp) :: cost_lo, cost_hi, co2_lo, co2_hi, cost_rng, co2_rng
         character(len=14) :: lbl_ax
 
-        lm = 56;  rm = 12;  tm = 10;  bm = 28
+        lm=56; rm=12; tm=18; bm=28
         gx = x + lm;  gy = y + tm;  gw = width - lm - rm;  gh = height - tm - bm
 
         call fill_soft_box(hdc, x, y, x + width, y + height, COL_PANEL_ALT)
@@ -13805,9 +13810,9 @@ contains
         co2_rng  = max(co2_hi  - co2_lo,  1.0_dp)
 
         ! Axis labels
-        call draw_text(hdc, x + 2, gy,                "CO2", COL_DIM)
-        call draw_text(hdc, x + 2, gy + 10,           "t/h", COL_DIM)
-        call draw_text(hdc, gx,              y + height - bm + 8, "$cost", COL_DIM)
+        call draw_text(hdc,x+2,gy,"CO2",COL_DIM)
+        call draw_text(hdc,x+2,gy+20,"t/h",COL_DIM)
+        call draw_text(hdc,x+width/2-19,y+height-bm+8,"$cost",COL_DIM)
         write(lbl_ax, '(I0)') nint(cost_lo)
         call draw_text(hdc, gx,              y + height - bm + 8, trim(adjustl(lbl_ax)), COL_DIM)
         write(lbl_ax, '(I0)') nint(cost_hi)
