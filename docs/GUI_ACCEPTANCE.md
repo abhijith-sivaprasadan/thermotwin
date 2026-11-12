@@ -113,3 +113,30 @@ PDF is placed in the raw ZIP. The existing in-GUI asynchronous PDF-button
 process itself remains **NOT_TESTED** and requires a separate GUI action
 verification. Neither operations PDF nor acceptance PDF is evidence of
 actual plant instrumentation.
+
+
+### 1024px native engineering viewport regression (VIS-004)
+
+On 1024×768, the native 16-screen GUI keeps the 14 dense engineering screens
+at their readable **950×930 internal drawing geometry** inside a clipped main
+viewport rather than shrinking multi-column process/optimization charts until
+their legends become illegible. The control strip, alarm annunciator, navigation
+and fixed header remain in place. Use the four visible **PAN** buttons to move
+left/right/up/down, or move the mouse over the engineering panel and use the
+wheel vertically (**Shift+wheel** horizontally). Screen changes reset the
+viewport to the origin. Both scroll directions and actual pointer mapping
+to the F7 alarm-audio and F15 instructor-tab controls are regression tested.
+
+The Windows runner captures original / far-right / bottom-of-canvas views
+of every one of those 14 pages, plus baseline 1024 native and 1536 native
+screens for all 16 views. The collector fails missing PNGs, invalid geometry,
+missing native pointer assertions or unchanged pixels across pan captures.
+Day-Ahead F9 separates the schedule legend from headings and bounds the
+economics and Pareto axis labels. Full engineering details remain in the
+natively scrollable canvas; they are **not** replaced with static images.
+
+Automated results certify executed operations and changed native pixels,
+not readability at every zoom/display scaling or independent human-factors
+sign-off. The resolved visual defect register is explicitly **NOT_TESTED**
+in the PDF until that independent review. The remaining offline vs OPC-UA,
+speaker, full replay and industrial hardware qualification exclusions still apply.
