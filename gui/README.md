@@ -2,11 +2,16 @@
 
 This folder contains the optional native Windows grid-balancing GUI.
 
-> **Release qualification:** The GitHub CI now verifies a clean Windows
-> **compilation** of this GUI after downloading the pinned open62541 source.
-> This is not evidence that all interactive screens, exports, or OPC UA tags
-> function correctly. Complete the manual [GUI acceptance checklist](../docs/GUI_ACCEPTANCE.md)
-> before distributing a new Windows binary. The current source-only research
+> **Release qualification:** The new [Windows GUI evidence workflow](../.github/workflows/gui-acceptance-report.yml)
+> runs the actual **offline native Win32 GUI** and publishes an acceptance PDF
+> and full raw-data ZIP with screen captures, scenario/control assertion CSVs,
+> telemetry, exported operations CSV/PDF, event/build logs and SHA-256 digests.
+> [The acceptance checklist](../docs/GUI_ACCEPTANCE.md) describes the executed
+> tests and explicit NOT_TESTED items. The separate real-OPC-UA GUI still has
+> build-only CI. A native software PASS is **not** an OEM, safety, real plant,
+> external OPC UA, or human-interface release qualification. Known overlap
+> defects in [the visual defect register](../docs/GUI_VISUAL_DEFECTS.json) keep
+> a full acceptance decision blocked. The current source-only research
 > beta should label the GUI experimental until then.
 
 The GUI is a single native Windows executable. The application lifecycle and
