@@ -219,6 +219,7 @@ def make_pdf(output: Path, results, context, field_stats, evidence, debug_lines)
                         ("gui-acceptance-*.log", "Complete compiler and Windows harness output"),
                         ("shift_data_t*.csv", "Original native full multi-section shift export"),
                         ("screenshots/*.png", "Original per-screen native and virtual HMI captures"),
+                        ("GUI_VISUAL_DEFECTS.json", "Reviewed known visual defects blocking acceptance"),
                         ("test_results.csv / json", "Normalized status ledger and metadata"),
                         ("evidence_sha256.csv", "Cryptographic digest and byte size of every evidence file"),
                         ("report.pdf", "This summarized technical report")],
@@ -359,6 +360,28 @@ def collect(source: Path, target: Path, args):
     add_test(results, "full_screen_render_set", "visual",
              "PASS" if all_screens_ok else "FAIL", "16 original 1536 px screen draws")
 
+    defect_file = Path(args.repo) / "docs" / "GUI_VISUAL_DEFECTS.json"
+    try:
+        defects = json.loads(defect_file.read_text(encoding="utf-8"))
+        if defects.get("schema") != "thermotwin.gui-visual-defects.v1":
+            raise ValueError("Visual defect register schema mismatch")
+        for defect in defects["known_defects"]:
+            evidence_path = source / str(defect["evidence"])
+            issue_status = defect.get("status")
+            if issue_status == "OPEN":
+                state = "FAIL"
+            elif issue_status == "RESOLVED":
+                state = "NOT_TESTED"  # closing a register does not prove current render
+            else:
+                raise ValueError("Invalid known defect status")
+            add_test(results, defect["id"], "visual_review",
+                     state, f"{issue_status} {defect['viewport']}: "
+                     f"{defect['observation']} | screenshot_file_exists={evidence_path.is_file()}",
+                     f"screenshots/{defect['evidence']}")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        add_test(results, "visual_defect_register_integrity", "visual_review",
+                 "FAIL", f"Visual defect register not verified: {exc}")
+
     for ident, cat, why in UNTESTED:
         add_test(results, ident, cat, "NOT_TESTED", why)
 
@@ -390,6 +413,8 @@ def collect(source: Path, target: Path, args):
     screenshots.mkdir(exist_ok=True)
     for p in sorted(source.glob("*.csv")):
         shutil.copy2(p, evidence / p.name)
+    if defect_file.is_file():
+        shutil.copy2(defect_file, evidence / "GUI_VISUAL_DEFECTS.json")
     for p in sorted(source.glob("*.png")):
         shutil.copy2(p, screenshots / p.name)
     for p in shift_files:
@@ -408,6 +433,7 @@ def collect(source: Path, target: Path, args):
         "test_results.csv/json: complete declared PASS/FAIL/NOT_TESTED ledger.\n"
         "evidence/: original native CSV, compiler/GUI logs, raw trace and screenshots.\n"
         "evidence_sha256.csv: checksum of each archived input/output.\n"
+        "Known unresolved visually reviewed defects are recorded as FAIL until fixed.\n"
         "A missing item is a failure or NOT_TESTED, never a silent PASS.\n",
         encoding="utf-8")
 
