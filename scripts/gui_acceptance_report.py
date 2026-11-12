@@ -35,7 +35,7 @@ NATIVE_IDS = (
        "toggle_colour_safe", "toggle_nav_rail", "toggle_alarm_audio_flag",
        "cycle_alarm_gain", "scenario_next", "scenario_prev"]
     + [f"scenario_load_{n:02d}" for n in range(1, 16)]
-    + ["native_export_invoked"]
+    + ["native_export_invoked", "native_png_export_invoked"]
 )
 ADDITIONAL_GATES = [
     ("process_clean_exit", "process"),
@@ -44,6 +44,8 @@ ADDITIONAL_GATES = [
     ("telemetry_integrity", "measurements"),
     ("native_measurements_integrity", "measurements"),
     ("hmi_shift_csv_export", "export"),
+    ("hmi_native_png_export", "export"),
+    ("hmi_operations_pdf_generator", "export"),
     ("original_screenshot_set", "visual"),
     ("full_screen_render_set", "visual"),
 ]
@@ -218,7 +220,8 @@ def make_pdf(output: Path, results, context, field_stats, evidence, debug_lines)
                         ("gui_debug.log", "Complete native startup, action and shutdown trace"),
                         ("gui-acceptance-*.log", "Complete compiler and Windows harness output"),
                         ("shift_data_t*.csv", "Original native full multi-section shift export"),
-                        ("screenshots/*.png", "Original per-screen native and virtual HMI captures"),
+                        ("shift_data_t*.pdf", "Original HMI operations PDF generator output"),
+                        ("screenshots/*.png", "Native GUI captured and exported image files"),
                         ("GUI_VISUAL_DEFECTS.json", "Reviewed known visual defects blocking acceptance"),
                         ("test_results.csv / json", "Normalized status ledger and metadata"),
                         ("evidence_sha256.csv", "Cryptographic digest and byte size of every evidence file"),
@@ -338,6 +341,24 @@ def collect(source: Path, target: Path, args):
              "PASS" if valid_exports else "FAIL",
              f"{len(valid_exports)} original structured shift export(s) verified")
 
+    native_png_files = sorted((Path(args.repo) / "output").glob("screen_f*.png"))
+    good_native_png = [p for p in native_png_files if check_png(p)[0]]
+    add_test(results, "hmi_native_png_export", "export",
+             "PASS" if good_native_png else "FAIL",
+             f"{len(good_native_png)} actual HMI screen PNG export(s) decoded")
+    pdf_exports = sorted(Path(args.repo).glob("shift_data_t*.pdf"))
+    good_pdf_exports = []
+    try:
+        from pypdf import PdfReader
+        for p in pdf_exports:
+            if p.stat().st_size > 3000 and len(PdfReader(str(p)).pages) >= 5:
+                good_pdf_exports.append(p)
+    except (ImportError, OSError, ValueError) as exc:
+        add_test(results, "pdf_generator_parser_error", "export", "FAIL", str(exc))
+    add_test(results, "hmi_operations_pdf_generator", "export",
+             "PASS" if good_pdf_exports else "FAIL",
+             f"{len(good_pdf_exports)} original HMI operations PDF(s) with >=5 pages")
+
     original_ok = True
     for label in PRIMARY:
         for ending in (".png", "-1536.png"):
@@ -417,8 +438,10 @@ def collect(source: Path, target: Path, args):
         shutil.copy2(defect_file, evidence / "GUI_VISUAL_DEFECTS.json")
     for p in sorted(source.glob("*.png")):
         shutil.copy2(p, screenshots / p.name)
-    for p in shift_files:
+    for p in shift_files + pdf_exports:
         shutil.copy2(p, evidence / p.name)
+    for p in native_png_files:
+        shutil.copy2(p, screenshots / ("hmi-export-" + p.name))
     if logpath.exists():
         shutil.copy2(logpath, evidence / "gui_debug.log")
     for name in ("gui-acceptance-build.log", "gui-acceptance-runner.log"):
