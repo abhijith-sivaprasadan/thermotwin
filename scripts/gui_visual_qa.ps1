@@ -29,6 +29,8 @@ $expected = @(
 "15-instructor-restored.png","15-instructor-restored-1536.png")
 $expected += @(1..16 | ForEach-Object { "screen-{0:D2}-1536.png" -f $_ })
 $expected += @(1..16 | ForEach-Object { "screen-{0:D2}-1024.png" -f $_ })
+$expected += @(2..15 | ForEach-Object { "screen-{0:D2}-1024-pan-right.png" -f $_ })
+$expected += @(2..15 | ForEach-Object { "screen-{0:D2}-1024-pan-bottom.png" -f $_ })
 Add-Type -AssemblyName System.Drawing
 foreach($name in $expected) {
     $path = Join-Path $folder $name
