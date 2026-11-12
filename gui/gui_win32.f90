@@ -3994,13 +3994,13 @@ contains
             plant_text = "GT ONLY"
         end if
         if(w>=850) then
-            write(subtitle, '("t=",F6.1,"s  ",A," | ",A," | ",A," | ",A)') &
-                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(dispatch_text),trim(reserve_text)
+            write(subtitle, '("t=",F5.1,"s | ",A," | ",A," | ",A)') &
+                grid%elapsed_s,trim(plant_text),trim(auto_text),trim(reserve_text)
             call draw_text_fit(hdc,x0+w-445,y0+14,360,trim(subtitle), &
                 merge(COL_LIME,COL_AMBER,grid%auto_balance))
         else
-            write(subtitle,'("t=",F5.1,"s | ",A)') grid%elapsed_s,trim(auto_text)
-            call draw_text_fit(hdc,x0+w-198,y0+14,125,trim(subtitle),COL_MUTED)
+            write(subtitle,'(F5.1,"s ",A)') grid%elapsed_s,trim(auto_text)
+            call draw_text_fit(hdc,x0+w-198,y0+14,125,trim(adjustl(subtitle)),COL_MUTED)
         end if
         ! [?] shortcuts button — top-right of header
         block
@@ -4344,7 +4344,7 @@ contains
 
         write(value, '(F4.1,"/",F4.1," MW")') effective_renewable_MW(grid), grid%renewable_MW
         call draw_custom_slider(hdc, ID_RENEWABLE, layout_slider_x, layout_slider_y(2), layout_slider_w, &
-            "Renewable dispatch", trim(adjustl(value)), &
+            "Renewables", trim(adjustl(value)), &
             effective_renewable_MW(grid), 0.0_dp, RENEWABLE_MAX_MW, &
             merge(COL_AMBER, COL_GREEN, grid%renewable_curtail_MW > 0.05_dp))
 
@@ -4365,7 +4365,7 @@ contains
 
         write(value, '(I4," K")') nint(grid%TIT_K)
         call draw_custom_slider(hdc, ID_TIT, layout_slider_x, layout_slider_y(6), layout_slider_w, &
-            "Turbine inlet temp", trim(adjustl(value)), &
+            "Turbine TIT", trim(adjustl(value)), &
             grid%TIT_K, 1200.0_dp, 1600.0_dp, COL_RED)
 
         btn_gap = 12
@@ -4554,7 +4554,7 @@ contains
         ! same rectangle as the first scrolling slider heading.
         call fill_box(hdc,left+7,top+64,right-4,top+96,COL_PANEL_DEEP)
         call draw_text_fit(hdc,title_x,top+72,right-title_x-22, &
-            "WHEEL / PGDN : MORE CONTROLS",COL_MUTED)
+            "Scroll / PgDn for controls",COL_MUTED)
         if (control_scroll_max>0) then
             block
                 integer :: scroll_top,scroll_bot,track_h,thumb_y
@@ -4569,9 +4569,9 @@ contains
             end block
         end if
         call fill_box(hdc, title_x, layout_footer_y - 12, right - 24, layout_footer_y - 11, COL_BORDER_SOFT)
-        write(line, '("SCAN ",I0," ms  |  TREND 250 ms")') int(TIMER_MS)
+        write(line, '("Scan ",I0,"ms | Trace 250ms")') int(TIMER_MS)
         call draw_text_fit(hdc,title_x,layout_footer_y,right-title_x-20,trim(line),COL_MUTED)
-        write(line, '("Price $",I0,"/MWh  |  Gas $",F4.1,"/GJ")') &
+        write(line, '("P $",I0,"/MWh | Gas $",F4.1,"/GJ")') &
             nint(grid%power_price_usd_mwh), grid%fuel_price_usd_gj
         call draw_text_fit(hdc,title_x,layout_footer_y+20,right-title_x-20,trim(adjustl(line)),COL_DIM)
     end subroutine draw_control_panel
@@ -4918,8 +4918,8 @@ contains
 
         big=.false.
         if(present(headline)) big=headline
-        cell_px=10
-        if(big) cell_px=16
+        cell_px=9
+        if(big) cell_px=14
         maxchars=max(0,(width-6)/cell_px)
         if(maxchars==0) return
         n=len_trim(label)
@@ -8524,7 +8524,7 @@ contains
             case (4);     drv = "fuel flow"
             case default; drv = "press ratio"
             end select
-            write(anlz, '("UQ  eta_II ",F4.1,"% +/- ",F3.1,"%  (95% CI ",F4.1,"-",F4.1,"%)     |     Carnot ",F4.1,"% (",I0,"% achieved)     |     top sensitivity: ",A)') &
+            write(anlz, '("eta_II ",F4.1,"% +/-",F3.1,"% | 95% CI ",F4.1,"-",F4.1,"% | Carnot ",F4.1,"% | driver ",A)') &
                 100.0_dp*exergy_an_uq%eta_II_mean, 100.0_dp*exergy_an_uq%eta_II_std, &
                 100.0_dp*exergy_an_uq%eta_II_lo95, 100.0_dp*exergy_an_uq%eta_II_hi95, &
                 100.0_dp*lim%eta_carnot, nint(100.0_dp*lim%carnot_fraction), trim(drv)
@@ -8549,7 +8549,7 @@ contains
             end block
         end block
 
-        panel_y=kpi_y+236
+        panel_y=kpi_y+266
         ! Reserve the bottom interpretation band before sizing both plots.
         ! The old minimum 330 px forced the bottom band under the viewport.
         panel_h=min(330,max(180,y+height-panel_y-165))
@@ -8655,7 +8655,7 @@ contains
 
         call draw_exergy_flow(hdc, node_x + 50, cy, cx2 - 24, cy, &
             max(4, min(22, nint(22.0_dp * work_MW / max_MW))), COL_GREEN)
-        write(label, '(F6.1," MW useful work")') work_MW
+        write(label, '(F6.1," MW work")') work_MW
         call draw_text_fit(hdc,x+width-208,cy-46,194,trim(adjustl(label)),COL_GREEN)
 
         call draw_exergy_flow(hdc, node_x + 18, cy + 18, branch_x, y + height - 58, &
@@ -8665,7 +8665,7 @@ contains
 
         call draw_exergy_flow(hdc, node_x + 18, cy - 18, branch_x, y + 58, &
             max(3, min(16, nint(18.0_dp * stack_MW / max_MW))), COL_BLUE)
-        write(label, '(F6.1," MW stack/exhaust")') stack_MW
+        write(label, '(F6.1," MW exhaust")') stack_MW
         call draw_text_fit(hdc,x+width-208,y+42,194,trim(adjustl(label)),COL_BLUE)
 
         if (cond_MW > 0.05_dp) then
@@ -8676,7 +8676,7 @@ contains
         end if
 
         call draw_text_fit(hdc,x+16,y+14,width-28, &
-            'Ex_fuel = W_net + D_components + Ex_stack + Ex_condenser + residual',COL_MUTED)
+            'Ex_fuel = W_net + D + Ex_out + residual',COL_MUTED)
         write(label, '("closure residual ",SP,F6.2,"%")') 100.0_dp * ex%closure
         call draw_mono(hdc, x + 16, y + height - 26, trim(adjustl(label)), &
             merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp))
@@ -8722,7 +8722,7 @@ contains
         colors = [COL_CYAN, COL_RED, COL_AMBER, COL_BLUE, COL_MUTED, COL_LIME]
         max_val = max(1.0_dp, maxval(vals))
         row_h=max(28,(height-18)/6)
-        bx=x+max(114,width/4)
+        bx=x+max(134,width/3)
         bw=max(60,width-(bx-x)-148)
 
         do i=1,6
@@ -8736,7 +8736,7 @@ contains
             write(label,'(F6.1," MW")') vals(i)
             call draw_text_fit(hdc,x+width-127,row_y+1,112,trim(adjustl(label)),colors(i))
             if(row_h>=37) then
-                write(label,'(F5.1,"% of fuel")') pct
+                write(label,'(F5.1,"%")') pct
                 call draw_text_fit(hdc,x+width-127,row_y+20,112,trim(adjustl(label)),COL_MUTED)
             end if
         end do
@@ -8756,15 +8756,14 @@ contains
         row_y = y + 18
         closure_col = merge(COL_GREEN, COL_RED, abs(ex%closure) <= 0.02_dp)
 
-        line='Dominant loss: '//trim(exergy_dominant_component(ex))// &
-            ' | finite-temperature / reaction effects'
+        line='Dominant loss: '//trim(exergy_dominant_component(ex))
         call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_INK)
         row_y = row_y + 24
-        write(line, '("Rational efficiency eta_II = useful net work / fuel chemical exergy = ",F5.1,"%")') &
+        write(line, '("Rational eta_II = W_net / Ex_fuel = ",F5.1,"%")') &
             100.0_dp * ex%eta_II
         call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),COL_MUTED)
         row_y = row_y + 24
-        write(line, '("Balance check residual = ",SP,F6.2,"%  (target < +/-2.0% for P1 live estimate)")') &
+        write(line, '("Balance residual = ",SP,F6.2,"%  (target +/-2%)")') &
             100.0_dp * ex%closure
         call draw_text_fit(hdc,x+16,row_y,col_w-22,trim(line),closure_col)
 
@@ -10762,7 +10761,7 @@ contains
         display_labels=labels
         if(tile_w<145) then
             display_labels(1:8)=[character(len=20) :: &
-                'UF', 'OF', 'RES', 'SOC', 'UFLS', 'TIT', 'SRG', 'HRSG']
+                'UF', 'OF', 'RS', 'BS', 'LS', 'TT', 'SG', 'HP']
         end if
 
         call fill_soft_box(hdc, x, y, x + w, y + h, COL_PANEL_DEEP)
@@ -10777,7 +10776,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_DIM)
             else if (states(i)) then
                 ! Active alarm tile: colored with dark body
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL)
@@ -10789,7 +10789,8 @@ contains
                     6_c_int, 0.0_c_float, 360.0_c_float, merge(COL_MUTED, colors(i), alarm_ack(i)))
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
-                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), &
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
             else if (alarm_seen(i)) then
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10798,7 +10799,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_CYAN)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_CYAN)
-                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_CYAN)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_CYAN)
             else
                 ! Inactive: dim tile
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10808,7 +10810,8 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + merge(28,32,tile_w<145), y + (h - 17) / 2, &
+                    tile_w-merge(38,48,tile_w<145), trim(display_labels(i)), COL_DIM)
             end if
         end do
     end subroutine draw_annunciator_panel
