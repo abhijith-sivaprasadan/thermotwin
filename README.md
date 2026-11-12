@@ -59,6 +59,26 @@ an explicitly declared starting state, never a scored prediction.
 Reproduce with `python scripts/fetch_uci994_microgt.py --output-dir build/uci994`
 then `python -m scripts.forecast_uci994_microgt --data-dir build/uci994 --out build/uci994/forecast`.
 
+## Turbine-specific physical calibration and independent validation readiness
+
+The [machine-specific Brayton calibration protocol](docs/GT_PHYSICAL_CALIBRATION_PROTOCOL.md)
+now offers a **source-locked measured-engine calibration workflow**: fit
+compressor and turbine efficiencies exclusively to development-measured
+station T2/T4, then evaluate fuel flow, independently metered MW and heat
+rate on a **later, untouched** measured dataset. The actual Fortran
+cycle solver runs the parameter grid, with frozen hardware-station boundaries
+and unmodified engine measurement requirements. Model-form and instrument
+uncertainty are disclosed; no pass-off or manufacturer guarantee is asserted.
+
+**Current public-data result: BLOCKED.** Neither UCI #551, SMART-GTPP nor
+the 3-kW UCI #994 microturbine supplies the full matched, independently
+documented thermodynamic station + fuel + OEM-map measurements required to
+identify and validate the generic 30-MW reference against an actual turbine.
+The [reproducible readiness tool](scripts/calibrate_gt_physics.py)
+reports these original-source field gaps without inventing measurements.
+CI checks **mathematical fixtures only** against the real Fortran executable;
+no claim of independent field predictive accuracy has been made.
+
 ## Performance-engineering research workflows (November 2026)
 
 The [live, same-run source-backed engineering dossier](docs/REPRODUCIBLE_ENGINEERING_DOSSIER.md), [Lincoln master plan](docs/TTF_PE_MASTER_PLAN_v1.0.md), [evidence-maturity audit](docs/ENGINEERING_EVIDENCE_AUDIT_2026-11-10.md), and [role-specific evidence brief](docs/LINCOLN_304533_APPLICATION_EVIDENCE.md) distinguish **equation-based models**, external weather-model inputs, **real turbine measurements**, and mathematical regression fixtures. These data types are not interchangeable. The frozen v2 beta/DOI remains unchanged; features below are later `main` development.
