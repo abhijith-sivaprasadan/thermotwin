@@ -962,6 +962,10 @@ module thermotwin_win32_gui
     integer :: mouse_hover_x = -1
     integer :: mouse_hover_y = -1
     logical :: mouse_hover_valid = .false.
+    ! An actual, clipped 2-D viewport for dense analytical screens. Native
+    ! chart coordinates and physics remain unchanged; only the view pans.
+    integer :: main_pan_x=0,main_pan_y=0,main_pan_max_x=0,main_pan_max_y=0
+    integer :: main_pan_virtual_w=0,main_pan_virtual_h=0
     character(len=160) :: operator_notice = ""
     integer :: notice_ticks = 0
 
@@ -1453,6 +1457,22 @@ contains
                     return
                 end if
             end if
+            if(mouse_hover_valid.and.mouse_hover_x>=layout_main_left.and. &
+                mouse_hover_x<=layout_main_left+layout_main_w.and. &
+                mouse_hover_y>=hmi_content_top(layout_main_top)) then
+                call update_main_pan_geometry(layout_main_w, &
+                    max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
+                if(main_pan_max_x>0.or.main_pan_max_y>0) then
+                    wheel_delta=int(ibits(wParam,16,16),c_int)
+                    if(wheel_delta>=32768_c_int) wheel_delta=wheel_delta-65536_c_int
+                    if(wheel_delta/=0_c_int) then
+                        call main_pan_wheel(btest(wParam,2),wheel_delta>0_c_int)
+                        call invalidate_dashboard(hwnd)
+                        lres=0_c_intptr_t
+                        return
+                    end if
+                end if
+            end if
             lres=DefWindowProcA(hwnd,msg,wParam,lParam)
             return
 
@@ -1706,6 +1726,8 @@ contains
         logical :: handled
 
         call compute_layout_from_window(hwnd)
+        call update_main_pan_geometry(layout_main_w, &
+            max(260,layout_main_top+layout_main_h-hmi_content_top(layout_main_top)-12))
         mouse_hover_x = x
         mouse_hover_y = y
         mouse_hover_valid = .true.
@@ -1727,6 +1749,11 @@ contains
                 return
             end if
         end block
+
+        if(main_pan_click(x,y)) then
+            active_control=ID_NONE
+            return
+        end if
 
         if (command_palette_active) then
             nav_target = hit_test_command_palette(x, y)
@@ -1826,6 +1853,10 @@ contains
                 active_control=ID_NONE
                 return
             end if
+        end if
+        if(main_pan_content_click(x,y)) then
+            active_control=ID_NONE
+            return
         end if
         handled = handle_alarm_mouse(x, y)
         if (handled) then
@@ -2492,6 +2523,10 @@ contains
         integer :: new_screen
 
         new_screen = min(max(screen_id, SCREEN_OVERVIEW), SCREEN_COUNT)
+        if(new_screen/=hmi_screen) then
+            main_pan_x=0
+            main_pan_y=0
+        end if
         hmi_screen = new_screen
         faceplate_id = FP_NONE
     end subroutine set_hmi_screen
@@ -3876,6 +3911,116 @@ contains
         inside = (x >= left .and. x <= right .and. y >= top .and. y <= bottom)
     end function point_in_rect
 
+    ! Horizontal + vertical scrolling is enabled only when the native main
+    ! viewport cannot accommodate the minimum useful engineering layout.
+    ! Full content is rendered, clipped to the visible viewport and reachable
+    ! by mouse wheel and the always-visible four-way pan bar.
+    subroutine update_main_pan_geometry(view_w,view_h)
+        integer, intent(in) :: view_w,view_h
+        if(view_w<850.and.hmi_screen/=SCREEN_OVERVIEW.and.hmi_screen/=SCREEN_EXERGY) then
+            main_pan_virtual_w=max(950,view_w)
+            main_pan_virtual_h=max(930,view_h)
+            main_pan_max_x=max(0,main_pan_virtual_w-view_w)
+            main_pan_max_y=max(0,main_pan_virtual_h-(view_h-29))
+        else
+            main_pan_virtual_w=view_w
+            main_pan_virtual_h=view_h
+            main_pan_max_x=0
+            main_pan_max_y=0
+        end if
+        main_pan_x=max(0,min(main_pan_max_x,main_pan_x))
+        main_pan_y=max(0,min(main_pan_max_y,main_pan_y))
+    end subroutine update_main_pan_geometry
+
+    subroutine draw_main_pan_footer(hdc,x,y,w,h)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,w,h
+        integer :: foot_y,bx,i
+        character(len=56) :: state_text
+        character(len=1) :: control_name(4)
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        foot_y=y+h-28
+        call fill_box(hdc,x,foot_y,x+w,foot_y+28,COL_PANEL_DEEP)
+        call draw_line(hdc,x,foot_y,x+w,foot_y,COL_BORDER,1)
+        write(state_text,'("PAN  X ",I0,"/",I0,"  Y ",I0,"/",I0)') &
+            main_pan_x,main_pan_max_x,main_pan_y,main_pan_max_y
+        call draw_text_fit(hdc,x+9,foot_y+6,w-170,trim(state_text),COL_CYAN)
+        control_name=[character(len=1):: '<','>','^','v']
+        bx=x+w-148
+        do i=1,4
+            call draw_industrial_button(hdc,bx+(i-1)*36,foot_y+2, &
+                bx+(i-1)*36+32,foot_y+26,control_name(i),COL_PANEL_ALT,.false.)
+        end do
+    end subroutine draw_main_pan_footer
+
+    subroutine main_pan_wheel(horizontal,up)
+        logical,intent(in) :: horizontal,up
+        if(horizontal) then
+            main_pan_x=max(0,min(main_pan_max_x,main_pan_x+merge(-112,112,up)))
+        else
+            main_pan_y=max(0,min(main_pan_max_y,main_pan_y+merge(-112,112,up)))
+        end if
+    end subroutine main_pan_wheel
+
+    logical function main_pan_click(x,y) result(handled)
+        integer,intent(in) :: x,y
+        integer :: first_x,bar_y,slot,view_h
+        handled=.false.
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        view_h=max(260,layout_main_top+layout_main_h- &
+            hmi_content_top(layout_main_top)-12)
+        bar_y=hmi_content_top(layout_main_top)+view_h-28
+        if(.not.point_in_rect(x,y,layout_main_left,bar_y, &
+            layout_main_left+layout_main_w,bar_y+28)) return
+        handled=.true.  ! the footer must not pass clicks through to HMI buttons
+        first_x=layout_main_left+layout_main_w-148
+        if(x<first_x.or.x>=first_x+144) return
+        slot=(x-first_x)/36
+        select case(slot)
+        case(0)
+            main_pan_x=max(0,main_pan_x-160)
+        case(1)
+            main_pan_x=min(main_pan_max_x,main_pan_x+160)
+        case(2)
+            main_pan_y=max(0,main_pan_y-160)
+        case(3)
+            main_pan_y=min(main_pan_max_y,main_pan_y+160)
+        end select
+    end function main_pan_click
+
+    ! Preserve real alarm / scenario mouse hit-testing on the shifted
+    ! engineering canvas. Header, annunciator, left sidebar and overlays
+    ! retain physical (unshifted) coordinates.
+    logical function main_pan_content_click(x,y) result(handled)
+        integer,intent(in)::x,y
+        integer::old_left,old_top,old_w,view_h
+        logical::ignored
+        handled=.false.
+        if(main_pan_max_x==0.and.main_pan_max_y==0) return
+        view_h=max(260,layout_main_top+layout_main_h- &
+            hmi_content_top(layout_main_top)-12)
+        if(.not.point_in_rect(x,y,layout_main_left, &
+            hmi_content_top(layout_main_top), &
+            layout_main_left+layout_main_w, &
+            hmi_content_top(layout_main_top)+view_h-29)) return
+        handled=.true.
+        old_left=layout_main_left
+        old_top=layout_main_top
+        old_w=layout_main_w
+        layout_main_left=old_left-main_pan_x
+        layout_main_top=old_top-main_pan_y
+        layout_main_w=main_pan_virtual_w
+        select case(hmi_screen)
+        case(SCREEN_ALARMS)
+            ignored=handle_alarm_mouse(x,y)
+        case(SCREEN_SCENARIO)
+            ignored=handle_instructor_mouse(x,y)
+        end select
+        layout_main_left=old_left
+        layout_main_top=old_top
+        layout_main_w=old_w
+    end function main_pan_content_click
+
     subroutine draw_dashboard_buffered(hwnd, hdc)
         type(c_ptr), value :: hwnd
         type(c_ptr), value :: hdc
@@ -4106,44 +4251,67 @@ contains
         content_h = max(260, y0 + h - content_y - 12)
 
         if (hmi_screen /= SCREEN_OVERVIEW) then
+            call update_main_pan_geometry(w,content_h)
+            block
+                integer :: draw_x,draw_y,draw_w,draw_h
+                logical :: viewport_pan
+                viewport_pan=main_pan_max_x>0.or.main_pan_max_y>0
+                draw_x=x0
+                draw_y=content_y
+                draw_w=w
+                draw_h=content_h
+                if(viewport_pan) then
+                    draw_x=x0-main_pan_x
+                    draw_y=content_y-main_pan_y
+                    draw_w=main_pan_virtual_w
+                    draw_h=main_pan_virtual_h
+                    if(native_renderer_ready) call hmi_push_clip(hdc,int(x0,c_int), &
+                        int(content_y,c_int),int(x0+w,c_int), &
+                        int(content_y+content_h-29,c_int))
+                end if
             select case (hmi_screen)
             case (SCREEN_GRID)
-                call draw_grid_dispatch_screen(hdc, x0, content_y, w, content_h)
+                call draw_grid_dispatch_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_GT)
-                call draw_gas_turbine_screen(hdc, x0, content_y, w, content_h)
+                call draw_gas_turbine_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_CC)
-                call draw_combined_cycle_screen(hdc, x0, content_y, w, content_h)
+                call draw_combined_cycle_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_MARKET)
-                call draw_market_screen(hdc, x0, content_y, w, content_h)
+                call draw_market_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_TRENDS)
-                call draw_trends_screen(hdc, x0, content_y, w, content_h)
+                call draw_trends_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_ALARMS)
-                call draw_alarms_screen(hdc, x0, content_y, w, content_h)
+                call draw_alarms_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DIAG)
-                call draw_diagnostics_screen(hdc, x0, content_y, w, content_h)
+                call draw_diagnostics_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DAYAHEAD)
-                call draw_dayahead_screen(hdc, x0, content_y, w, content_h)
+                call draw_dayahead_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_FLEET_UC)
-                call draw_fleet_uc_screen(hdc, x0, content_y, w, content_h)
+                call draw_fleet_uc_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_DNN)
-                call draw_dnn_screen(hdc, x0, content_y, w, content_h)
+                call draw_dnn_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_CARBON)
-                call draw_carbon_screen(hdc, x0, content_y, w, content_h)
+                call draw_carbon_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_FORECAST)
-                call draw_forecast_screen(hdc, x0, content_y, w, content_h)
+                call draw_forecast_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_ADVISORY)
-                call draw_advisory_screen(hdc, x0, content_y, w, content_h)
+                call draw_advisory_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             case (SCREEN_SCENARIO)
                 if(measured_view) then
-                    call draw_measured_replay_screen(hdc,x0,content_y,w,content_h)
+                    call draw_measured_replay_screen(hdc,draw_x,draw_y,draw_w,draw_h)
                 else if(instructor_view) then
-                    call draw_instructor_screen(hdc,x0,content_y,w,content_h)
+                    call draw_instructor_screen(hdc,draw_x,draw_y,draw_w,draw_h)
                 else
-                    call draw_scenario_screen(hdc, x0, content_y, w, content_h)
+                    call draw_scenario_screen(hdc, draw_x, draw_y, draw_w, draw_h)
                 end if
             case (SCREEN_EXERGY)
-                call draw_exergy_screen(hdc, x0, content_y, w, content_h)
+                call draw_exergy_screen(hdc, draw_x, draw_y, draw_w, draw_h)
             end select
+                if(viewport_pan) then
+                    if(native_renderer_ready) call hmi_pop_clip(hdc)
+                    call draw_main_pan_footer(hdc,x0,content_y,w,content_h)
+                end if
+            end block
             if (faceplate_id /= FP_NONE) call draw_kpi_faceplate_popup(hdc, x0, y0, w, h)
             if (help_overlay_active) call draw_help_overlay(hdc, x0, y0, w, h)
             if (shortcuts_popup_active) call draw_shortcuts_popup(hdc, x0, y0, w)
