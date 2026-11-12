@@ -10685,7 +10685,7 @@ contains
         type(c_ptr), value :: hdc
         integer, intent(in) :: x, y, w, h
         integer :: tile_w, gap, tx, i
-        character(len=20) :: labels(ALARM_COUNT)
+        character(len=20) :: labels(ALARM_COUNT),display_labels(ALARM_COUNT)
         logical :: states(ALARM_COUNT)
         integer(c_int) :: colors(ALARM_COUNT)
 
@@ -10695,6 +10695,11 @@ contains
 
         gap = 4
         tile_w = (w - 9 * gap) / 8
+        display_labels=labels
+        if(tile_w<145) then
+            display_labels(1:8)=[character(len=20) :: &
+                'UF', 'OF', 'RES', 'SOC', 'UFLS', 'TIT', 'SRG', 'HRSG']
+        end if
 
         call fill_soft_box(hdc, x, y, x + w, y + h, COL_PANEL_DEEP)
         call stroke_soft_box(hdc, x, y, x + w, y + h, COL_BORDER, 1)
@@ -10708,7 +10713,7 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_DIM)
             else if (states(i)) then
                 ! Active alarm tile: colored with dark body
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL)
@@ -10720,7 +10725,7 @@ contains
                     6_c_int, 0.0_c_float, 360.0_c_float, merge(COL_MUTED, colors(i), alarm_ack(i)))
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), &
+                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), &
                     merge(COL_MUTED, colors(i), alarm_ack(i)))
             else if (alarm_seen(i)) then
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10729,7 +10734,7 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_CYAN)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_CYAN)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_CYAN)
+                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_CYAN)
             else
                 ! Inactive: dim tile
                 call fill_soft_box(hdc, tx, y + 4, tx + tile_w, y + h - 4, COL_PANEL_DEEP)
@@ -10739,7 +10744,7 @@ contains
                 call hmi_fill_pie(hdc, int(tx + tile_w - 14, c_int), int(y + h/2, c_int), &
                     5_c_int, 0.0_c_float, 360.0_c_float, COL_DIM)
                 call draw_alarm_icon(hdc, tx + 17, y + h / 2, i, COL_DIM)
-                call draw_text(hdc, tx + 32, y + (h - 17) / 2, trim(labels(i)), COL_DIM)
+                call draw_text_fit(hdc, tx + 32, y + (h - 17) / 2, tile_w-48, trim(display_labels(i)), COL_DIM)
             end if
         end do
     end subroutine draw_annunciator_panel
@@ -12299,6 +12304,10 @@ contains
         ix = x + PAD_PANEL_X
         iw = width - 2 * PAD_PANEL_X
         y1 = y + 8
+        if(iw < 820) then
+            call draw_flagship_compact(hdc,x,y,width,height)
+            return
+        end if
 
         ! --- Caption + mode subtitle + FLAGSHIP/DETAIL toggle ---
         if (grid%auto_balance) then; auto_text = "AUTO balancing"
@@ -12384,9 +12393,11 @@ contains
             adv_col = COL_INK
         end if
         if (len_trim(advline) > 88) advline = advline(1:86) // ".."
-        call draw_title_text(hdc, kpi_x + PAD_CARD_X, adv_y + 34, trim(advline), adv_col)
-        call draw_text(hdc, kpi_x + PAD_CARD_X, adv_y + adv_h - 24, &
-            "F14 -> full advisory   ·   click any tile to drill down", COL_DIM)
+        call draw_text_fit(hdc,kpi_x+PAD_CARD_X,adv_y+34, &
+            kpi_total_w-2*PAD_CARD_X,trim(advline),adv_col,.true.)
+        call draw_text_fit(hdc,kpi_x+PAD_CARD_X,adv_y+adv_h-24, &
+            kpi_total_w-2*PAD_CARD_X, &
+            "F14 -> full advisory   |   click any tile to drill down",COL_DIM)
 
         ! --- Hero: single-line plant schematic (B1) ---
         strip_h     = 92
@@ -12442,6 +12453,137 @@ contains
         end block
     end subroutine draw_flagship_screen
 
+    ! Compact flagship for the 1024x768 main viewport. Its live measured-
+    ! model values, cards, navigation and drill-down geometry are preserved;
+    ! the detailed P&ID is available on F3 instead of cramming tiny glyphs.
+    subroutine draw_flagship_compact(hdc,x,y,width,height)
+        type(c_ptr), value :: hdc
+        integer, intent(in) :: x,y,width,height
+        integer :: ix,iw,top_y,row_y,gap,card_w,card_h,card_x
+        integer :: adv_y,hero_y,hero_h,strip_y,strip_h,tile_w,tile_h,tx
+        integer :: i, cx, node_y, node_w, score
+        real(dp) :: rmw,rpct
+        character(len=48) :: textval, smallsubtitle
+        character(len=200) :: advline
+        integer(c_int) :: accent
+
+        ix=x+PAD_PANEL_X
+        iw=width-2*PAD_PANEL_X
+        top_y=y+8
+        if(grid%auto_balance) then
+            smallsubtitle='AUTO | live simulation'
+        else
+            smallsubtitle='MANUAL | live simulation'
+        end if
+        call draw_screen_caption(hdc,ix,top_y,iw, &
+            'Plant Health | Economics',trim(smallsubtitle))
+        call draw_overview_toggle(hdc,ix,iw,top_y)
+
+        gap=7
+        row_y=top_y+67
+        card_h=82
+        card_w=(iw-3*gap)/4
+        score=plant_health_score()
+        write(textval,'(I0,"/100")') score
+        call draw_kpi_card(hdc,ix,row_y,card_w,card_h, &
+            'HEALTH',trim(textval),health_color(score))
+        fl_ring=[ix,row_y,ix+card_w,row_y+card_h]
+        write(textval,'("$",I0,"/h")') nint(grid%margin_usd_h)
+        card_x=ix+card_w+gap
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'NET MARGIN',trim(textval),merge(COL_GREEN,COL_AMBER,grid%margin_usd_h>=0.0_dp))
+        fl_card(:,1)=[card_x,row_y,card_x+card_w,row_y+card_h]
+        write(textval,'(I0," g/kWh")') nint(grid%CO2_intensity_g_kWh)
+        card_x=ix+2*(card_w+gap)
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'CO2 / kWh',trim(textval),COL_AMBER)
+        fl_card(:,2)=[card_x,row_y,card_x+card_w,row_y+card_h]
+        rmw=merge(grid%fleet_reserve_MW,grid%reserve_MW,grid%fleet_mode)
+        rpct=100.0_dp*rmw/max(1.0_dp,grid%demand_MW)
+        write(textval,'(F4.1,"%")') rpct
+        card_x=ix+3*(card_w+gap)
+        call draw_kpi_card(hdc,card_x,row_y,card_w,card_h, &
+            'RESERVE',trim(textval),merge(COL_GREEN,COL_RED,rpct>=5.0_dp))
+        fl_card(:,3)=[card_x,row_y,card_x+card_w,row_y+card_h]
+
+        adv_y=row_y+card_h+8
+        call draw_accent_card(hdc,ix,adv_y,iw,60,COL_CYAN)
+        call draw_text(hdc,ix+12,adv_y+7,'OPERATOR ADVISORY | F14 for full text',COL_MUTED)
+        advline=grid%advisory_text
+        i=index(advline,char(10))
+        if(i>1) advline=advline(:i-1)
+        if(len_trim(advline)==0) advline='STATUS OK - all systems nominal'
+        accent=COL_CYAN
+        if(index(advline,'ALERT')==1) accent=COL_RED
+        if(index(advline,'DIAGNOSIS')==1) accent=COL_AMBER
+        call draw_text_fit(hdc,ix+12,adv_y+33,iw-24,trim(advline),accent)
+
+        hero_y=adv_y+70
+        strip_h=70
+        strip_y=y+height-strip_h
+        hero_h=max(120,strip_y-hero_y-12)
+        call draw_section_title_width(hdc,ix,hero_y,'Live GT to grid | compact flow',iw)
+        call draw_panel_box_deep(hdc,ix,hero_y+24,iw,hero_h-24)
+        node_y=hero_y+48
+        node_w=max(78,(iw-52)/4)
+        do i=1,4
+            cx=ix+12+(i-1)*(node_w+9)
+            call draw_panel_box(hdc,cx,node_y,node_w,59)
+            select case(i)
+            case(1)
+                write(textval,'(I0," C")') nint(grid%ambient_C)
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'INLET',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(textval),COL_CYAN)
+            case(2)
+                write(textval,'(F5.1," MW")') grid%gas_power_MW
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'TURBINE',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),COL_GREEN)
+            case(3)
+                write(textval,'(F6.2," Hz")') grid%frequency_Hz
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'GRID',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),frequency_color())
+            case(4)
+                write(textval,'(F5.1," MW")') grid%demand_MW
+                call draw_text_fit(hdc,cx+7,node_y+7,node_w-14,'LOAD',COL_MUTED)
+                call draw_text_fit(hdc,cx+7,node_y+32,node_w-14,trim(adjustl(textval)),COL_RED)
+            end select
+            if(i<4) call draw_line(hdc,cx+node_w,node_y+30,cx+node_w+9,node_y+30,COL_CYAN,2)
+        end do
+        write(textval,'("RES ",F5.1," MW | BESS ",SP,F5.1," MW")') &
+            effective_renewable_MW(grid),grid%storage_actual_MW
+        call draw_text_fit(hdc,ix+12,node_y+78,iw-24,trim(adjustl(textval)),COL_MUTED)
+        write(textval,'("NET imbalance ",SP,F6.2," MW")') grid%imbalance_MW
+        call draw_text_fit(hdc,ix+12,node_y+101,iw-24,trim(adjustl(textval)), &
+            merge(COL_GREEN,COL_AMBER,abs(grid%imbalance_MW)<=0.5_dp))
+
+        tile_w=(iw-5*gap)/6
+        tile_h=strip_h-4
+        do i=1,6
+            tx=ix+(i-1)*(tile_w+gap)
+            select case(i)
+            case(1)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'P2X',grid%p2x_active, &
+                    COL_GREEN,'ELECTROLYSER','H2')
+            case(2)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'CCS',grid%ccs_active, &
+                    COL_GREEN,'CO2 CAPTURE','CO2')
+            case(3)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'GFM',grid%gfm_mode, &
+                    COL_LIME,'INERTIA','BESS')
+            case(4)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'TIE',grid%tie_active, &
+                    COL_BLUE,'TIE FLOW','MW')
+            case(5)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'MPC',grid%mpc_active, &
+                    COL_CYAN,'AGC','MPC')
+            case(6)
+                call draw_subsystem_tile(hdc,tx,strip_y,tile_w,tile_h,'OU',grid%ou_active, &
+                    COL_AMBER,'MONITOR','OU')
+            end select
+            fl_tile(:,i)=[tx,strip_y,tx+tile_w,strip_y+tile_h]
+        end do
+    end subroutine draw_flagship_compact
+
     !> FLAGSHIP | DETAIL segmented toggle, top-right of the F1 caption row.
     !> Geometry must match the hit-test in handle_mouse_down.
     subroutine draw_overview_toggle(hdc, ix, iw, y1)
@@ -12483,6 +12625,16 @@ contains
         case ("OU");  icid = ICON_OU
         case default; icid = 0
         end select
+        if(w<134) then
+            call draw_text_fit(hdc,x+8,y+6,w-16,trim(label),merge(accent,COL_MUTED,active))
+            if(active) then
+                call draw_text_fit(hdc,x+8,y+27,w-16,'ON',accent)
+            else
+                call draw_text_fit(hdc,x+8,y+27,w-16,'OFF',COL_MUTED)
+            end if
+            call draw_text_fit(hdc,x+8,y+47,w-16,trim(line1),COL_MUTED)
+            return
+        end if
         if (icid > 0) call draw_subsystem_icon(hdc, x + 22, y + 19, 11, icid, merge(accent, COL_MUTED, active))
         call draw_title_text(hdc, x + 42, y + 8, trim(label), merge(accent, COL_MUTED, active))
         pill_x = x + w - 44
