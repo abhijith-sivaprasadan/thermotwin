@@ -78,14 +78,26 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
+          $trace = Join-Path (Get-Location) 'build/gui-acceptance-runner.log'
+          $code = 1
+          $transcript = $false
           try {
-            & ./scripts/gui_visual_qa.ps1 2>&1 | Tee-Object -FilePath build/gui-acceptance-runner.log
+            Start-Transcript -Path $trace -Force | Out-Null
+            $transcript = $true
+            & ./scripts/gui_visual_qa.ps1
             $code = $LASTEXITCODE
             if ($null -eq $code) { $code = [int](!$?) }
           }
           catch {
-            $_ | Out-String | Tee-Object -FilePath build/gui-acceptance-runner.log -Append
-            $code=1
+            $_ | Out-String | Write-Host
+            $code = 1
+          }
+          finally {
+            if ($transcript) { Stop-Transcript | Out-Null }
+            if (!(Test-Path $trace)) {
+              'FAIL: No PowerShell transcript captured' | Set-Content -Path $trace
+              $code = 1
+            }
           }
           "exit_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit $code
