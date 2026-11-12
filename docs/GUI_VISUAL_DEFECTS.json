@@ -2,7 +2,7 @@
   "schema": "thermotwin.gui-visual-defects.v1",
   "review_date": "2026-11-12",
   "source_run": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43206094087",
-  "review_method": "Human inspection of actual Win32 screenshots at 1024x768 and 1536x960; RESOLVED denotes visually reviewed repair, not automatic verification or industrial qualification.",
+  "review_method": "Visually reviewed live 1024x768 native and 1536x960 native offscreen screenshots; native panning and click-through acceptance gates separately executed. RESOLVED in the defect register remains NOT_TESTED in automated PDF until independent final operator sign-off.",
   "known_defects": [
     {
       "id": "VIS-001",
@@ -66,14 +66,29 @@
     },
     {
       "id": "VIS-004",
-      "status": "OPEN",
+      "status": "RESOLVED",
       "severity": "major",
       "viewport": "1024x768",
       "evidence": "screen-09-1024.png",
       "title": "Dense 1024px analytics pages exceed right panel viewport",
       "observation": "The new every-screen native 1024px acceptance capture reveals layout clipping/overflow in the Day-Ahead MINLP view and other dense analytical screens (notably diagnostics, fleet and carbon), despite correct screen navigation and screenshot generation.",
       "acceptance": "Provide viewport-specific layouts or genuine navigable scrolling for dense analytical panels, and verify text, plots and control hotspots on all 16 native 1024x768 captures. Do not count a screenshot's existence as readability proof.",
-      "discovered_from": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43213916716"
+      "discovered_from": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43213916716",
+      "resolution": "Preserved full 950x930 native engineering canvas for all 14 narrow analytical screens in a clipped two-axis viewport (wheel and visible X/Y pan buttons), with screen-specific origin/right/bottom screenshots. Pointer-hit mapping retains F7 alarm and F15 instructor interactions. Also moved F9 Day-Ahead legend to its own row and separated economics/Pareto labels.",
+      "review_evidence": {
+        "manual_reviewed": "2026-11-12",
+        "review_scope": "Visual examination of actual Win32 native 1024x768 origin/right/bottom and 1536x960 renders, including Day-Ahead schedule, hourly economics and Pareto panel. Independent operator human-factors acceptance is still pending.",
+        "screenshots": [
+          "screen-09-1024.png",
+          "screen-09-1024-pan-right.png",
+          "screen-09-1024-pan-bottom.png",
+          "screen-08-1024-pan-right.png",
+          "screen-10-1024-pan-right.png"
+        ],
+        "verified_actions_run": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43233186391",
+        "visual_workflow": "https://github.com/abhijith-sivaprasadan/thermotwin/actions/runs/43233186672",
+        "automated_checks": "14 viewport geometry + 28 pan button hits + 28 panned PNGs + 14 pixel-delta checks + 2 F7/F15 mouse-hit checks; screenshots alone not treated as readability proof"
+      }
     }
   ]
 }
